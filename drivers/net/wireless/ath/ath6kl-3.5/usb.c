@@ -1713,17 +1713,18 @@ static void ath6kl_usb_cleanup_scatter(struct ath6kl *ar)
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void ath6kl_usb_early_suspend(struct ath6kl *ar)
 {
-        struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 
-        usb_enable_autosuspend(device->udev);
-
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND))
+		usb_enable_autosuspend(device->udev);
 }
 
 static void ath6kl_usb_late_resume(struct ath6kl *ar)
 {
-        struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 
-        usb_disable_autosuspend(device->udev);
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND))
+        	usb_disable_autosuspend(device->udev);
 }
 #endif
 

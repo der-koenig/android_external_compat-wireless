@@ -24,7 +24,6 @@
 #include "debug.h"
 #include "target.h"
 #include "wlan_location_defs.h"
-#include "rttapi.h"
 #include "htc-ops.h"
 #include "hif-ops.h"
 
@@ -1841,58 +1840,6 @@ static const struct file_operations fops_power_params = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_rtt_write(struct file *file,
-				     const char __user *user_buf,
-				     size_t count, loff_t *ppos)
-{
-	struct ath6kl *ar = file->private_data;
-	struct nsp_mrqst stmrqst;
-	struct nsp_rtt_config strttcfg;
-        u8 ftype = ((struct nsp_header *)user_buf)->frame_type;
-
-        //printk("RTT Request FrameType : %d\n",ftype);
-
-        if(ftype == NSP_MRQST)
-        {
-	 if (copy_from_user(&stmrqst, user_buf+sizeof(struct nsp_header), sizeof(struct nsp_mrqst)))
-		return -EFAULT;
-
-	 if (wmi_rtt_req_meas(ar->wmi,&stmrqst,sizeof(struct nsp_mrqst)))
-		return -EIO;
-        }
-        else if(ftype == NSP_RTTCONFIG)
-        {
-	 if (copy_from_user(&strttcfg, user_buf+sizeof(struct nsp_header), sizeof(struct nsp_rtt_config)))
-		return -EFAULT;
-
-	 if (wmi_rtt_config(ar->wmi,&strttcfg))
-		return -EIO;
-
-        }
-
-	return 0;
-}
-
-static ssize_t ath6kl_rtt_read(struct file *file, 
-                      char __user *user_buf,
-                      size_t count, loff_t *ppos)
-{
-	u8 *buf=NULL;
-	u32 len = 0;
-    
-	rttm_getbuf((void **)&buf,&len);
-    
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
-}
-
-static const struct file_operations fops_rtt = {
-	.read = ath6kl_rtt_read,
-	.write = ath6kl_rtt_write,
-	.open = ath6kl_debugfs_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
 #define SKIP_SPACE                         \
     while (*p == ' ' && *p != '\0')        \
         p++;
@@ -3421,11 +3368,8 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("power_params", S_IWUSR, ar->debugfs_phy, ar,
 				&fops_power_params);
-
-	debugfs_create_file("rtt", S_IRUSR | S_IWUSR,ar->debugfs_phy, ar, 
-				&fops_rtt);
-
-	debugfs_create_file("lpl_force_enable", S_IRUSR | S_IWUSR,
+	
+        debugfs_create_file("lpl_force_enable", S_IRUSR | S_IWUSR,
 				ar->debugfs_phy, ar, &fops_lpl_force_enable);
 
 	debugfs_create_file("mimo_ps_enable", S_IRUSR | S_IWUSR,

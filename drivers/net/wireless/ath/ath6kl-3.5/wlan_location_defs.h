@@ -26,8 +26,15 @@
 #define MAX_RTTREQ_MEAS 10
 #define NUM_WLAN_BANDS 2
 #define MAX_CHAINS 2
+#define NUM_CLKOFFSETCAL_SAMPLES 5
+#define CLKOFFSET_GPIO_PIN 26
  
 #define NSP_MRQST_MEASTYPEMASK 0x3
+
+#define MRQST_MODE_RTT 0x0
+#define MRQST_MODE_CIR 0x1
+#define MRQST_MODE_DBG 0x2
+
 #define NSMP_MRQST_MEASTYPE(mode) (mode & 0x3)
 #define NSP_MRQST_FRAMETYPE(mode) ((mode>>2) & 0x7)
 #define NSP_MRQST_TXCHAIN(mode) ((mode>>5) & 0x3)
@@ -126,6 +133,12 @@ struct nsp_srqst
          * The library will use this Id in its response. */
     
 };
+
+#define MRESP_RTT 0x0
+#define MRESP_CIR 0x1
+#define MRESP_DBG 0x2
+#define MRESP_CLKOFFSETCAL_START 0x3
+#define MRESP_CLKOFFSETCAL_END   0x4
 
 struct nsp_mresphdr {
 	u8 request_id;
@@ -269,6 +282,31 @@ struct nsp_rtt_config
     u32 reserved[4];
 };
 
+struct stRttHostTS
+{
+    u32 sec;
+    u32 nsec;
+};
+
+struct nsp_rttd2h2_clkoffset
+{
+    struct stRttHostTS tabs_h2[NUM_CLKOFFSETCAL_SAMPLES];
+    u8 numsamples;
+    u8 reserved[3];
+};
+
+
+struct nsp_rtt_clkoffset
+{
+    u32 tdelta_d1d2[NUM_CLKOFFSETCAL_SAMPLES];
+    struct stRttHostTS tabs_h1[NUM_CLKOFFSETCAL_SAMPLES];
+    struct stRttHostTS tabs_h2[NUM_CLKOFFSETCAL_SAMPLES];
+    u32 tabs_d1[NUM_CLKOFFSETCAL_SAMPLES];
+    u32 tabs_d2[NUM_CLKOFFSETCAL_SAMPLES];
+    u8  numsamples;
+    u8  reserved[3];
+};
+
 #define MREQ_LEN sizeof(struct nsp_mrqst)
 #define MRES_LEN sizeof(struct nsp_mresphdr)
 #define CIR_RES_LEN sizeof(struct nsp_cir_resp)
@@ -286,6 +324,7 @@ enum NSP_FRAME_TYPE {
     NSP_SLRQST,
     NSP_SLRESP,
     NSP_RTTCONFIG,
+    NSP_RTTCLKCAL_INFO,
 };
 
 

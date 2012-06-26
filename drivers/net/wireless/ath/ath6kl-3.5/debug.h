@@ -32,11 +32,13 @@ enum ATH6KL_MODULE_QUIRKS {
 	ATH6KL_MODULE_P2P_FLOWCTRL	= BIT(9), /* enable p2p flowctrl */
 	ATH6KL_MODULE_ENABLE_USB_REMOTE_WKUP= BIT(10), /* enable usb remote wakeup support */
 	ATH6KL_MODULE_DISABLE_2G_HT40	= BIT(11), /* disable 2.4G HT40 in default */
+	ATH6KL_MODULE_ENABLE_FWLOG		= BIT(12), /* enable fwlog by default */
+	ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND = BIT(13), /* Disable USB Auto-suspend */	
 };
 
 enum ATH6KL_MODULE_P2P {
 	ATH6KL_MODULEP2P_P2P_ENABLE			= BIT(0), /* enable single interface p2p */
-	AT6HKL_MODULEP2P_CONCURRENT_ENABLE  = BIT(1), /* enable p2p_concurrent */
+	ATH6KL_MODULEP2P_CONCURRENT_ENABLE	= BIT(1), /* enable p2p_concurrent */
 };
 
 enum ATH6K_DEBUG_MASK {

@@ -32,6 +32,7 @@ enum ath6kl_tm_attr {
 enum ath6kl_tm_cmd {
 	ATH6KL_TM_CMD_TCMD		= 0,
 	ATH6KL_TM_CMD_WLAN_HB		= 1,
+	ATH6KL_TM_CMD_WIFI_DISC		= 2,
 };
 
 #define ATH6KL_TM_DATA_MAX_LEN		5000
@@ -104,6 +105,35 @@ void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value, void *buf, size_t buf_len
 
 	NLA_PUT_U32(skb, ATH6KL_TM_ATTR_CMD, ATH6KL_TM_CMD_WLAN_HB);
 	NLA_PUT_U32(skb, ATH6KL_TM_ATTR_TYPE, value);
+	NLA_PUT(skb, ATH6KL_TM_ATTR_DATA, buf_len, buf);
+	cfg80211_testmode_event(skb, GFP_ATOMIC);
+	return;
+ 
+nla_put_failure:
+	kfree_skb(skb);
+	printk(KERN_ERR "nla_put failed on testmode event skb!\n");
+}
+#endif
+
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+void ath6kl_tm_disc_event(struct ath6kl *ar, void *buf, size_t buf_len)
+{
+	struct sk_buff *skb;
+
+	if (!buf || buf_len == 0)
+	{
+		printk(KERN_ERR "buf buflen is empty\n");
+		return;
+	}
+
+	skb = cfg80211_testmode_alloc_event_skb(ar->wiphy, buf_len, GFP_ATOMIC);
+
+	if (!skb) {
+		printk(KERN_ERR "failed to allocate testmode event skb!\n");
+		return;
+	}
+
+	NLA_PUT_U32(skb, ATH6KL_TM_ATTR_CMD, ATH6KL_TM_CMD_WIFI_DISC);
 	NLA_PUT(skb, ATH6KL_TM_ATTR_DATA, buf_len, buf);
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
@@ -224,6 +254,45 @@ struct wlan_hb_params {
 };
 #endif
 
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+#define WLAN_WIFI_DISC_MAX_IE_SIZE	200
+
+enum nl80211_wifi_disc_cmd {
+	NL80211_WIFI_DISC_IE		= 0,
+	NL80211_WIFI_DISC_IE_FILTER	= 1,
+	NL80211_WIFI_DISC_START		= 2,
+	NL80211_WIFI_DISC_STOP		= 3,
+};
+
+struct wifi_disc_params {
+	u16 cmd;
+	
+	union {
+		struct {
+			u16 length;
+			u8 ie[WLAN_WIFI_DISC_MAX_IE_SIZE];
+		} ie_params;
+
+		struct {
+			u16 enable;
+			u16 startPos;
+			u16 length;
+			u8 filter[WLAN_WIFI_DISC_MAX_IE_SIZE];
+		} ie_filter_params;
+
+		struct {
+			u16 channel;
+			u16 dwellTime;
+			u16 sleepTime;
+			u16 random;
+			u16 numPeers;
+			u16 peerTimeout;
+			u16 txPower;
+		} start_params;
+	} params;
+};
+#endif
+
 int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
@@ -277,7 +346,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 		if (hb_params->cmd == NL80211_WLAN_HB_ENABLE) {
 			if (hb_params->enable != 0) {
 				if (hb_params->enable & WLAN_HB_TCP_ENABLE) {
-					ar->wlan_hb_enable = 0;
+					ar->wlan_hb_enable |= WLAN_HB_TCP_ENABLE;
 
 					if (ath6kl_wmi_set_heart_beat_params(ar->wmi,
 						vif->fw_vif_idx, WLAN_HB_TCP_ENABLE)) {
@@ -286,7 +355,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 					}
 				}
 				else if (hb_params->enable & WLAN_HB_UDP_ENABLE) {
-					ar->wlan_hb_enable = WLAN_HB_UDP_ENABLE;
+					ar->wlan_hb_enable |= WLAN_HB_UDP_ENABLE;
 				}
 			}
 			else {
@@ -361,6 +430,118 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 
         return 0;
         break;
+#endif
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+	case ATH6KL_TM_CMD_WIFI_DISC:
+	{
+		struct wifi_disc_params *disc_params;
+		struct ath6kl_vif *vif;
+
+		vif = ath6kl_vif_first(ar);
+
+		if (!vif)
+			return -EINVAL;
+
+		if (!tb[ATH6KL_TM_ATTR_DATA]) {
+			printk("%s: NO DATA\n", __func__);
+			return -EINVAL;
+		}
+
+		buf = nla_data(tb[ATH6KL_TM_ATTR_DATA]);
+		buf_len = nla_len(tb[ATH6KL_TM_ATTR_DATA]);
+
+		disc_params = (struct wifi_disc_params *)buf;
+
+		if (disc_params->cmd == NL80211_WIFI_DISC_IE) {
+			u8 ie_hdr[6] = {0xDD, 0x00, 0x00, 0x03, 0x7f, 0x00};
+			u8 *ie = NULL;
+			u16 ie_length = disc_params->params.ie_params.length;
+			
+			ie = kmalloc(ie_length+6, GFP_KERNEL);
+			if (ie == NULL)
+				return -ENOMEM;
+			
+			memcpy(ie, ie_hdr, 6);
+			ie[1] = ie_length+4;
+			memcpy(ie+6, disc_params->params.ie_params.ie, ie_length);
+
+			if (ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+						       WMI_FRAME_PROBE_REQ, ie, ie_length+6)) {
+				kfree(ie);
+				printk("%s: wifi discovery set probe request ie fail\n", __func__);
+				return -EINVAL;
+			}
+
+			if (ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+						       WMI_FRAME_PROBE_RESP, ie, ie_length+6)) {
+				kfree(ie);
+				printk("%s: wifi discovery set probe response ie fail\n", __func__);
+				return -EINVAL;
+			}
+
+			kfree(ie);
+		}
+		else if (disc_params->cmd == NL80211_WIFI_DISC_IE_FILTER) {
+			if (ath6kl_wmi_disc_ie_cmd(ar->wmi, vif->fw_vif_idx, 
+					disc_params->params.ie_filter_params.enable, 
+					disc_params->params.ie_filter_params.startPos, 
+					disc_params->params.ie_filter_params.filter, 
+					disc_params->params.ie_filter_params.length)) {
+				printk("%s: wifi discovery set ie filter fail\n", __func__);
+				return -EINVAL;
+			}
+		}
+		else if (disc_params->cmd == NL80211_WIFI_DISC_START) {
+                        int band, freq, numPeers, random;
+			
+			if (disc_params->params.start_params.channel <= 14)
+				band = IEEE80211_BAND_2GHZ;
+			else
+				band = IEEE80211_BAND_5GHZ;
+			
+			freq = ieee80211_channel_to_frequency(disc_params->params.start_params.channel, band);
+			if (!freq) {
+				printk("%s: wifi discovery start channel %d error\n", 
+					__func__, disc_params->params.start_params.channel);
+				return -EINVAL;
+			}
+			
+			if (disc_params->params.start_params.numPeers == 0) {
+				numPeers = 1;
+			} else if (disc_params->params.start_params.numPeers > 4) {
+				numPeers = 4;
+			} else {
+				numPeers = disc_params->params.start_params.numPeers;
+			}
+			
+			random = (disc_params->params.start_params.random == 0) ? 100 : disc_params->params.start_params.random;
+			
+			if (disc_params->params.start_params.txPower)
+				ath6kl_wmi_set_tx_pwr_cmd(ar->wmi, vif->fw_vif_idx, disc_params->params.start_params.txPower);
+			
+			/* disable scanning */
+			ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0xFFFF, 0, 0,
+					      0, 0, 0, 0, 0, 0, 0);
+
+			if (ath6kl_wmi_disc_mode_cmd(ar->wmi, vif->fw_vif_idx, 1, freq, 
+							disc_params->params.start_params.dwellTime,
+							disc_params->params.start_params.sleepTime, 
+							random, numPeers, 
+							disc_params->params.start_params.peerTimeout)) {
+				printk("%s: wifi discovery start fail\n", __func__);
+				return -EINVAL;
+			}
+		}
+		else if (disc_params->cmd == NL80211_WIFI_DISC_STOP) {
+			if (ath6kl_wmi_disc_mode_cmd(ar->wmi, vif->fw_vif_idx, 0, 0, 0, 0, 0, 0, 0)) {
+				printk("%s: wifi discovery stop fail\n", __func__);
+				return -EINVAL;
+			}
+		}
+	}
+	
+	return 0;
+	break;
 #endif
 	default:
 		return -EOPNOTSUPP;

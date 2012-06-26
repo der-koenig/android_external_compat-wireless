@@ -17,7 +17,7 @@
 #include <linux/moduleparam.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
-
+#include <linux/time.h>
 #include "core.h"
 #include "cfg80211.h"
 #include "debug.h"
@@ -28,7 +28,7 @@
 #include "diagnose.h"
 #endif
 #include "pm.h"
-
+#include "rttm.h"
 unsigned int debug_quirks = 0;
 extern unsigned int ath6kl_p2p;
 
@@ -2391,15 +2391,27 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 #ifdef CONFIG_ANDROID
 static irqreturn_t ath6kl_wow_irq(int irq, void *dev_id)
 {
+        S_RTTM_CONTEXT *prttm=NULL;
+
 #ifdef CONFIG_HAS_WAKELOCK
 	struct ath6kl *ar = (struct ath6kl *)dev_id;
 #endif
+        prttm=DEV_GETRTT_HDL();
 	
 #ifdef CONFIG_HAS_WAKELOCK
 	wake_lock_timeout(&ar->wake_lock, 3*HZ);
 #else
 	/* TODO: What should I do if there is no wake lock?? */
 #endif
+
+        if((prttm)&&(prttm->rttdhclkcal_active))
+        {
+          struct timespec ts;
+          getnstimeofday(&ts);
+          prttm->rttd2h2_clk.tabs_h2[prttm->dhclkcal_index].sec=ts.tv_sec; 
+          prttm->rttd2h2_clk.tabs_h2[prttm->dhclkcal_index].nsec=ts.tv_nsec; 
+          prttm->dhclkcal_index++;
+        }
 	return IRQ_HANDLED;
 }
 #endif
@@ -2502,9 +2514,8 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 		}
 
 #ifdef ATH6KL_SUPPORT_WLAN_HB
-		ar->wlan_hb_enable = 0;
 		ret = ath6kl_wmi_set_heart_beat_params(ar->wmi, vif->fw_vif_idx,
-				ar->wlan_hb_enable);
+				0);
 		if (ret) {
 			ath6kl_warn("set wlan heart beat params failed in resume: %d\n", ret);
 			return ret;
@@ -3626,7 +3637,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 
 	ar->p2p = ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_ENABLE) ||
 				!!ath6kl_p2p;
-	ar->p2p_concurrent = !!(ath6kl_p2p & AT6HKL_MODULEP2P_CONCURRENT_ENABLE);
+	ar->p2p_concurrent = !!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_ENABLE);
 	ar->wiphy = wiphy;
 	ar->dev = dev;
 

@@ -22,6 +22,7 @@ void ath6kl_tm_rx_report_event(struct ath6kl *ar, void *buf, size_t buf_len);
 void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len);
 int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len);
 void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value, void *buf, size_t buf_len);
+void ath6kl_tm_disc_event(struct ath6kl *ar, void *buf, size_t buf_len);
 
 #else
 
@@ -39,6 +40,10 @@ static inline void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_l
 }
 
 static inline void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value, void *buf, size_t buf_len)
+{
+}
+
+static inline void ath6kl_tm_disc_event(struct ath6kl *ar, void *buf, size_t buf_len)
 {
 }
 

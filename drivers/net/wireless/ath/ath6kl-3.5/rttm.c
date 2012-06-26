@@ -31,13 +31,6 @@ int rttm_init(void* ar)
    if(NULL==prttm)
     return -ENOMEM;
    memset(prttm,0,sizeof(S_RTTM_CONTEXT));
-   if(NULL==prttm->cirbuf)
-   {
-    ath6kl_err("RTT Init Failed to AllocMem for rttm context \n");
-    return -ENOMEM;
-   }
-   prttm->pvreadptr = prttm->cirbuf;
-   prttm->pvbufptr = prttm->cirbuf;
    prttm->ar =ar;
    DEV_SETRTT_HDL(prttm);
    //Initialize NL For RTT
@@ -49,88 +42,43 @@ int rttm_init(void* ar)
    return 0;
 }
 
-int rttm_getbuf(void **buf,u32 *len)
-{
-   S_RTTM_CONTEXT *prttm=NULL;
-   prttm=DEV_GETRTT_HDL();
-   if(prttm->nCirResp==0)
-    return -EINVAL;
-   if(0==((S_RTT_PRIV_HDR *)prttm->pvreadptr)->done)
-   {
-     return -EINVAL;
-   }
-   prttm->pvreadptr+=sizeof(S_RTT_PRIV_HDR);
-   if(((struct nsp_mresphdr *)prttm->pvreadptr)->response_type == 1)
-   {
-   *len = MRES_LEN + ((struct nsp_mresphdr *)prttm->pvreadptr)->no_of_responses*CIR_RES_LEN ;
-   }
-   else
-   {
-   *len = MRES_LEN + sizeof(struct nsp_rtt_resp) ;
-   }
-   *buf = prttm->pvreadptr;
-   prttm->pvreadptr+=*len;
-   if(prttm->pvreadptr >= prttm->cirbuf + RTTM_CIR_BUF_SIZE)
-    prttm->pvreadptr = prttm->cirbuf;
-    prttm->nCirResp--;
-   prttm->pvreadptr = prttm->cirbuf;
-   prttm->pvbufptr = prttm->cirbuf;
-   prttm->nCirResp =0;
-   prttm->burst = 0;
-   prttm->burstsize = 0;
-    return 0;
-}
-
 int rttm_recv(void *buf,u32 len)
 {
    S_RTTM_CONTEXT *prttm=NULL;
+   struct nsp_mresphdr *presphdr = (struct nsp_mresphdr *)buf;
+   int resptype = presphdr->response_type;
    prttm=DEV_GETRTT_HDL();
-   ath6kl_dbg(ATH6KL_DBG_RTT,"RTT Resp Type : %d Len : %d ",((struct nsp_mresphdr *)buf)->response_type,len);
-   if(prttm->burst==0)
+
+   printk("RTT Recv Len : %d %d\n",len,resptype); 
+   if((resptype == MRESP_CLKOFFSETCAL_START)||(resptype == MRESP_CLKOFFSETCAL_END))
    {
-     
-     //Begin Burst
-     prttm->burst=1;
-     if(((struct nsp_mresphdr *)buf)->response_type == 1)
-     {
-     prttm->burstsize =MRES_LEN + (((struct nsp_mresphdr *)buf)->no_of_responses*CIR_RES_LEN) ;
-     }
-     else
-     {
-     prttm->burstsize =MRES_LEN + sizeof(struct nsp_rtt_resp) ;
-     }
-    if(prttm->burstsize  > (RTTM_CIR_BUF_SIZE - (prttm->pvbufptr - prttm->cirbuf)))
+    ath6kl_dbg(ATH6KL_DBG_RTT,"RTT ClkCal Request %d \n",resptype);
+    if(resptype == MRESP_CLKOFFSETCAL_START)
     {
-        prttm->pvbufptr = prttm->cirbuf;
-        prttm->pvreadptr = prttm->cirbuf;
+      prttm->rttdhclkcal_active=1;
+      prttm->dhclkcal_index=0;
     }
-     prttm->privptr = prttm->pvbufptr;
-    ((S_RTT_PRIV_HDR *)(prttm->privptr))->done = 0x0;
-     prttm->pvbufptr+=sizeof(S_RTT_PRIV_HDR);
-   }
-   memcpy(prttm->pvbufptr,buf,len);
-   prttm->pvbufptr+=len;
-   prttm->burstsize-=len;
-   if(0==prttm->burstsize)
-   {
-     prttm->burst = 0;
-    //DumpRttResp(prttm->privptr+sizeof(S_RTT_PRIV_HDR));
-    ((S_RTT_PRIV_HDR *)(prttm->privptr))->done = 0x1;
+    else if(resptype == MRESP_CLKOFFSETCAL_END)
+    {
+      prttm->rttdhclkcal_active=0;
+      prttm->dhclkcal_index=0;
+      //Post Response of measurements to Device
+      prttm->mresphdr.frame_type = NSP_RTTCLKCAL_INFO;
+      rttm_issue_request(&prttm->mresphdr,NSP_HDR_LEN + sizeof(struct nsp_rtt_clkoffset));
+    }
     
-    prttm->nCirResp++;
-    {
-      //Pass up Recv RTT Resp by NL
-      void *data=NULL;
-      u32 datalen=0;
-      rttm_getbuf(&data,&datalen);
-      if(data && datalen)
-      {
-      ath6kl_dbg(ATH6KL_DBG_RTT,"NLSend  Len : %d ",datalen);
-      ath_netlink_send(data,datalen);
-      }
-      
-    }
    }
+   else
+   {
+   if(buf && len)
+    {
+    //Pass up Recv RTT Resp by NL
+   
+    //DumpRttResp(buf);
+    ath6kl_dbg(ATH6KL_DBG_RTT,"NLSend  Len : %d ",len);
+    ath_netlink_send(buf,len);
+    }
+   }   
    return 0;
 }
 
@@ -178,34 +126,44 @@ void DumpRttResp(void * data)
 int rttm_issue_request(void *buf,u32 len)
 {
    S_RTTM_CONTEXT *prttm=NULL;
-   struct nsp_rtt_config strttcfg;
    struct nsp_header hdr;
    u32 ftype;
    struct ath6kl *ar=NULL;
+   enum wmi_cmd_id cmd_id=WMI_RTT_MEASREQ_CMDID;
    prttm=DEV_GETRTT_HDL();
 
    ar = prttm->ar;
-  memcpy(&hdr,buf,NSP_HDR_LEN);
-  ftype = hdr.frame_type;
+   memcpy(&hdr,buf,NSP_HDR_LEN);
+   ftype = hdr.frame_type;
    ath6kl_dbg(ATH6KL_DBG_RTT,"RTT Req Type : %d Len : %d ",ftype,len);
    if(ftype == NSP_MRQST)
    {
-     if (wmi_rtt_req_meas(ar->wmi,buf + NSP_HDR_LEN,len))
+     struct nsp_mrqst *pstmrqst = (struct nsp_mrqst *)(buf + NSP_HDR_LEN);
+     ath6kl_dbg(ATH6KL_DBG_RTT,"NSP Request ID:%d mode:%d  channel : %d NoMeas : %d Rate : %x \n ",pstmrqst->request_id,pstmrqst->mode,pstmrqst->channel,pstmrqst->no_of_measurements,pstmrqst->transmit_rate);
+     if(pstmrqst->no_of_measurements > 10)
      {
-        ath6kl_dbg(ATH6KL_DBG_RTT,"RTT Req Fail ");
-	return -EIO;
+          ath6kl_dbg(ATH6KL_DBG_RTT,"RTTREQ No Measurements >10 : %d ",pstmrqst->no_of_measurements);
+	  return -EINVAL;
      }
+     cmd_id = WMI_RTT_MEASREQ_CMDID;
    }
    else if(ftype == NSP_RTTCONFIG)
    {
-     memcpy(&strttcfg ,buf + NSP_HDR_LEN,sizeof(struct nsp_rtt_config));
-     if (wmi_rtt_config(ar->wmi,&strttcfg))
-     {
-        ath6kl_dbg(ATH6KL_DBG_RTT,"RTT Req Fail ");
-        return -EIO;
-     }
+     struct nsp_rtt_config *pstrttcfg = (struct nsp_rtt_config *)(buf + NSP_HDR_LEN);
+     ath6kl_dbg(ATH6KL_DBG_RTT,"NSP RTTCFG 2gCal%d 5gCal:%d FFTScale: %d RngScale:%d CLKSpeed2g : %d \n CLKSpeed5g : %d",pstrttcfg->ClkCal[0],pstrttcfg->ClkCal[1],pstrttcfg->FFTScale,pstrttcfg->RangeScale,pstrttcfg->ClkSpeed[0],pstrttcfg->ClkSpeed[1]);
+     cmd_id = WMI_RTT_CONFIG_CMDID;
+   }
+   else if(ftype == NSP_RTTCLKCAL_INFO)
+   {
+     ath6kl_dbg(ATH6KL_DBG_RTT,"NSP CLK CALINFO CMD\n");
+     cmd_id = WMI_RTT_CLKCALINFO_CMDID;
    }
 
+   if (wmi_rtt_req(ar->wmi,cmd_id,buf + NSP_HDR_LEN,len - NSP_HDR_LEN))
+   {
+       ath6kl_dbg(ATH6KL_DBG_RTT,"RTT Req Fail ");
+       return -EIO;
+   }
   return 0;
 } 
 

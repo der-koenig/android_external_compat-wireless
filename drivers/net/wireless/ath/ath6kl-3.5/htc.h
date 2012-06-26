@@ -569,6 +569,7 @@ struct ath6kl_htc_ops {
 		struct ath6kl_htc_credit_info *cred_info);
 	int (*get_stat)(struct htc_target *target,
 						 u8 *buf, int buf_len);
+	int (*stop_netif_queue_full)(struct htc_target *target);
 };
 
 struct ath6kl_device;

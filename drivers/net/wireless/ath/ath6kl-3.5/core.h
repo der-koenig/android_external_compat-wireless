@@ -45,7 +45,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.67
+#define __BUILD_VERSION_ 3.5.0.74
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -54,6 +54,9 @@
 #ifdef ATH6KL_DIAGNOSTIC
 #include "diagnose.h"
 #endif
+
+#define ATH6KL_SUPPORT_WIFI_DISC 1
+#define ATH6KL_SUPPORT_WLAN_HB   1
 
 #define MAX_ATH6KL                        1
 #define ATH6KL_MAX_RX_BUFFERS             16
@@ -274,6 +277,8 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6006_HW_1_0_BOARD_DATA_FILE         "ath6k/AR6006/hw1.0/bdata.bin"
 #define AR6006_HW_1_0_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6006/hw1.0/bdata.bin"
+
+#define AR6004_MAX_64K_FW_SIZE                58880
 
 #define BDATA_CHECKSUM_OFFSET                 4
 #define BDATA_MAC_ADDR_OFFSET                 8

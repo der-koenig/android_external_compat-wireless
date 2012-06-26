@@ -371,7 +371,7 @@ static inline void set_qcom_a2dp(struct wmi_set_btcoex_a2dp_config_cmd *cmd)
 	struct btcoex_a2dp_optmode_config *optmode_config =
 							&cmd->optmode_config;
 
-	a2dp_config->a2dp_flags |= cpu_to_le32(BTCOEX_A2DP_BT_MAX_DUR | A2DP_CONFIG_ALLOW_OPTIMIZATION);
+	a2dp_config->a2dp_flags |= cpu_to_le32(A2DP_CONFIG_ALLOW_OPTIMIZATION);
 
 	pspoll_config->a2dp_wlan_max_dur =
 				cpu_to_le32(BTCOEX_A2DP_WLAN_MAX_DUR_QCOM_BT);
@@ -631,6 +631,11 @@ int ath6kl_wmi_set_btcoex_set_fe_antenna(struct wmi *wmi, u8 antenna_type)
 	return ret;
 }
 
+/*  This is a temporary WAR since BTC related NL80211 commands are
+ *  defined in Linux nl80211.h.
+ */
+#define NL80211_WMI_SET_BT_HID_CONFIG 12
+
 static int ath6kl_get_wmi_cmd(int nl_cmd)
 {
 	int wmi_cmd = 0;
@@ -694,6 +699,10 @@ static int ath6kl_get_wmi_cmd(int nl_cmd)
 		ath6kl_dbg(ATH6KL_DBG_WMI, "Get BT status\n");
 		wmi_cmd = WMI_GET_BTCOEX_STATS_CMDID;
 		break;
+
+	case NL80211_WMI_SET_BT_HID_CONFIG:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "Set BT hid config\n");
+		wmi_cmd = WMI_SET_BTCOEX_HID_CONFIG_CMDID;
 	}
 	return wmi_cmd;
 }

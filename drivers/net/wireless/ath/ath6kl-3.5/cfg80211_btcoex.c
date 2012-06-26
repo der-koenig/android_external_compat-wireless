@@ -215,6 +215,8 @@ inline u8 get_ant_type(enum nl80211_btcoex_antenna_config config)
 		return WMI_BTCOEX_FE_ANT_SINGLE;
 	case NL80211_BTCOEX_ANTENNA_DASB_LI:
 		return WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO;
+        case NL80211_BTCOEX_ANTENNA_3A:
+                return WMI_BTCOEX_FE_ANT_TRIPLE; 
 	}
 
 	return WMI_BTCOEX_NOT_ENABLED;
@@ -234,7 +236,7 @@ int ath6kl_notify_btcoex_antenna_config(struct wiphy *wiphy,
 		return -ERESTARTSYS;
 	}
 
-	if (config > NL80211_BTCOEX_ANTENNA_DASB_LI) {
+	if (config > NL80211_BTCOEX_ANTENNA_3A) {
 		up(&ar->sem);
 		return -EINVAL;
 	}

@@ -675,6 +675,10 @@ enum wmi_cmd_id {
     WMI_HEART_SET_UDP_PKT_FILTER_CMDID,
     WMI_HEART_SET_NETWORK_INFO_CMDID,
 
+	/* wifi discovery */
+	WMI_DISC_SET_IE_FILTER_CMDID,
+	WMI_DISC_SET_MODE_CMDID,
+        WMI_RTT_CLKCALINFO_CMDID
 };
 
 enum wmi_mgmt_frame_type {
@@ -1415,6 +1419,7 @@ enum wmi_event_id {
 	WMI_P2P_NODE_LIST_EVENTID,
 	WMI_P2P_REQ_TO_AUTH_EVENTID,
 	WMI_DIAGNOSTIC_EVENTID,	/* diagnostic */
+	WMI_DISC_PEER_EVENTID,	/* wifi discovery */
 };
 
 struct wmi_ready_event_2 {
@@ -2759,6 +2764,34 @@ struct wmi_heart_beat_network_info_cmd {
     u8 gateway_mac[ETH_ALEN];
 } __packed;
 
+/* wifi discovery */
+struct wmi_disc_ie_filter_cmd {
+	u8 enable;
+	u8 startPos;
+	u8 length;
+	u8 pattern[1];
+}__packed;
+
+struct wmi_disc_mode_cmd {
+	__le16 enable;
+	__le16 channel; /* channels in Mhz */
+	__le32 home_dwell_time;	/* max duration in the home channel(msec) */
+	__le32 sleepTime;
+	__le32 random;
+	__le32 numPeers;
+	__le32 peerTimeout;
+} __packed;
+
+struct wmi_disc_peer {
+	__le32 rssi;
+	u8 addr[ETH_ALEN];
+} __packed;
+
+struct wmi_disc_peer_event {
+	u8 peer_num;
+	u8 peer_data[1];
+} __packed;
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
@@ -2929,6 +2962,7 @@ void ath6kl_wmi_reset(struct wmi *wmi);
 
 int wmi_rtt_req_meas(struct wmi *wmip,struct nsp_mrqst *pstmrqst,u32 len);
 int wmi_rtt_config(struct wmi *wmip,struct nsp_rtt_config *);
+int wmi_rtt_req(struct wmi *wmip,enum wmi_cmd_id cmd_id,void *data,u32 len);
 
 int ath6kl_wmi_set_green_tx_params(struct wmi *wmi,
 				struct wmi_green_tx_params *params);
@@ -2994,4 +3028,7 @@ int ath6kl_wmi_heart_beat_set_udp_filter(struct wmi *wmi, u8 if_idx,
     u8 *filter, u8 length);
 int ath6kl_wmi_heart_beat_set_network_info(struct wmi *wmi, u8 if_idx,
     u32 device_ip, u32 server_ip, u32 gateway_ip, u8 *gateway_mac);
+int ath6kl_wmi_disc_ie_cmd(struct wmi *wmi, u8 if_idx, u8 enable, u8 startPos, u8 *pattern, u8 length);
+int ath6kl_wmi_disc_mode_cmd(struct wmi *wmi, u8 if_idx, u16 enable, u16 channel, u32 home_dwell_time,
+				u32 sleepTime, u32 random, u32 numPeers, u32 peerTimeout);
 #endif /* WMI_H */

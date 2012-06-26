@@ -100,4 +100,9 @@ static inline int ath6kl_htc_stat(struct htc_target *target,
 	return target->dev->ar->htc_ops->get_stat(target, buf, buf_len);
 }
 
+static inline int ath6kl_htc_stop_netif_queue_full(struct htc_target *target)
+{
+	return target->dev->ar->htc_ops->stop_netif_queue_full(target);
+}
+
 #endif

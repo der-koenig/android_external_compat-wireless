@@ -69,3 +69,4 @@ ccflags-$(CONFIG_FPGA) += -DCONFIG_FPGA
 ccflags-y += -D__CHECK_ENDIAN__
 ccflags-y += -DCONFIG_BTCOEX_OLCA_3_5
 
+EXTRA_CFLAGS += -I${KBUILDPATH}/drivers/net/wireless/ath/ath6kl

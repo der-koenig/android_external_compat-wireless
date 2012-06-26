@@ -196,6 +196,30 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_softmac		= AR6004_HW_1_3_SOFTMAC_FILE,
 	},
 	{
+		.id				= AR6004_HW_1_3_VERSION,
+		.name				= "ar6004 hw 1.3 96K",
+		.dataset_patch_addr		= 0x42f860,
+		.app_load_addr			= 0x1234,
+		.board_ext_data_addr		= 0x42f000,
+		.reserved_ram_size		= 7168,
+		.board_addr			= 0x42e400,
+		.testscript_addr		= 0x434c00,
+
+		.fw = {
+			.dir		= AR6004_HW_1_3_FW_DIR,
+			.fw		= AR6004_HW_1_3_FIRMWARE_FILE,
+			.tcmd	        = AR6004_HW_1_3_TCMD_FIRMWARE_FILE,
+			.api2		= ATH6KL_FW_API2_FILE,
+			.utf		= AR6004_HW_1_3_UTF_FIRMWARE_FILE,
+			.testscript	= AR6004_HW_1_3_TESTSCRIPT_FILE,
+		},
+
+		.fw_board		= AR6004_HW_1_3_BOARD_DATA_FILE,
+		.fw_default_board	= AR6004_HW_1_3_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6004_HW_1_3_EPPING_FILE,
+		.fw_softmac		= AR6004_HW_1_3_SOFTMAC_FILE,
+	},
+	{
 		.id				= AR6004_HW_1_6_VERSION,
 		.name				= "ar6004 hw 1.6",
 		.dataset_patch_addr		= 0x57e884,
@@ -742,6 +766,9 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	param |= (0 << HI_OPTION_MAC_ADDR_METHOD_SHIFT);
 	param |= (0 << HI_OPTION_FW_BRIDGE_SHIFT);
+
+	if(!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FWLOG))
+		param |= HI_OPTION_DISABLE_DBGLOG;
 
 	if (ath6kl_bmi_write(ar,
 			     ath6kl_get_hi_item_addr(ar,
@@ -1918,6 +1945,35 @@ static int ath6kl_init_hw_params(struct ath6kl *ar)
 	return 0;
 }
 
+static int ath6kl_change_hw_params(struct ath6kl *ar)
+{
+	const struct ath6kl_hw *hw;
+	int i;
+
+	/* Currently, we only apply hw params change for AR6004 1.3 */
+	if (ar->version.target_ver != AR6004_HW_1_3_VERSION ||
+	    ar->fw_len < AR6004_MAX_64K_FW_SIZE) {
+		return 0;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(hw_list); i++) {
+		hw = &hw_list[i];
+
+		if (hw->id == ar->version.target_ver)
+			break;
+	}
+
+	if (i == ARRAY_SIZE(hw_list)) {
+		ath6kl_err("Unsupported hardware version: 0x%x\n",
+			   ar->version.target_ver);
+		return -EINVAL;
+	}
+
+	ar->hw = *(hw+1);
+
+	return 0;
+}
+
 static const char *ath6kl_init_get_hif_name(enum ath6kl_hif_type type)
 {
 	switch (type) {
@@ -1952,6 +2008,12 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 	ret = ath6kl_configure_target(ar);
 	if (ret)
 		goto err_power_off;
+
+	ret = ath6kl_change_hw_params(ar);
+	if (ret) {
+		ath6kl_dbg(ATH6KL_DBG_BOOT, "change hw params failed\n");
+		goto err_power_off;
+	}
 
 	ret = ath6kl_init_upload(ar);
 	if (ret)

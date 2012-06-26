@@ -319,6 +319,8 @@ struct host_interest {
 #define HI_OPTION_FW_SUBMODE_P2PCLIENT 0x2
 #define HI_OPTION_FW_SUBMODE_P2PGO     0x3
 
+#define HI_OPTION_DISABLE_DBGLOG       0x40
+
 /* hi_option_flag2 options */
 #define HI_OPTION_DISABLE_MAC_OTP       0x40 /* Disable MAC address overwrite via OTP Feature */
 

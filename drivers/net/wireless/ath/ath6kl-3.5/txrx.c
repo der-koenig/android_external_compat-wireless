@@ -757,10 +757,12 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		    action != HTC_SEND_FULL_DROP) {
 			spin_unlock_bh(&ar->list_lock);
 
-			spin_lock_bh(&vif->if_lock);
-			set_bit(NETQ_STOPPED, &vif->flags);
-			spin_unlock_bh(&vif->if_lock);
-			netif_stop_queue(vif->ndev);
+			if (ath6kl_htc_stop_netif_queue_full(ar->htc_target)) {
+				spin_lock_bh(&vif->if_lock);
+				set_bit(NETQ_STOPPED, &vif->flags);
+				spin_unlock_bh(&vif->if_lock);
+				netif_stop_queue(vif->ndev);
+			}
 
 			return action;
 		}

@@ -1072,6 +1072,12 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 	ev = (struct ath6kl_wmi_regdomain *) datap;
 	reg_code = le32_to_cpu(ev->reg_code);
 
+#ifdef CONFIG_QC_INTERNAL
+	ath6kl_info("%s: 0x%x WWR:%d\n",
+				reg_code & BIT(31) ? "Country Code" : "Reg Domain",
+				reg_code & 0xfff, !!(reg_code & BIT(30)));
+#endif
+
 	if ((reg_code >> ATH6KL_COUNTRY_RD_SHIFT) & COUNTRY_ERD_FLAG)
 		country = ath6kl_regd_find_country((u16) reg_code);
 	else if (!(((u16) reg_code & WORLD_SKU_MASK) == WORLD_SKU_PREFIX)) {
@@ -3549,6 +3555,32 @@ static int ath6kl_wmi_wow_ext_wake_event(struct wmi *wmi, u8 *datap,
 	return 0;
 }
 
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+static int ath6kl_wmi_disc_peer_event_rx(u8 *datap, int len, struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	struct wmi_disc_peer_event *ev;
+	struct wmi_disc_peer *peers;
+	u16 peers_size;
+	u8 peer_num;
+	
+	if (len < sizeof(*ev))
+		return -EINVAL;
+
+	ev = (struct wmi_disc_peer_event *) datap;
+	peer_num = ev->peer_num;
+	peers_size = sizeof(struct wmi_disc_peer)*peer_num;
+	peers = kmalloc(peers_size, GFP_KERNEL);
+	if (peers == NULL)
+		return -EINVAL;
+	
+	memcpy(peers, ev->peer_data, peers_size);
+	ath6kl_tm_disc_event(ar, ev, sizeof(*ev)+peers_size-1);
+		
+	return 0;
+}
+#endif
+
 /* Control Path */
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 {
@@ -3832,6 +3864,12 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_WOW_EXT_WAKE_EVENTID\n");
 		ret = ath6kl_wmi_wow_ext_wake_event(wmi, datap, len);
 		break;
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+	case WMI_DISC_PEER_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_DISC_PEER_EVENTID\n");
+		ret = ath6kl_wmi_disc_peer_event_rx(datap, len, vif);
+		break;
+#endif		
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
 		ret = -EINVAL;
@@ -3894,52 +3932,24 @@ void ath6kl_wmi_shutdown(struct wmi *wmi)
 	kfree(wmi);
 }
 
-int wmi_rtt_req_meas(struct wmi *wmip,struct nsp_mrqst *pstmrqst,u32 len)
-{
-	struct sk_buff *skb;
-	struct nsp_mrqst *cmd;
-	int status;
 
-	//printk("NSP Request ID:%d mode:%d  channel : %d NoMeas : %d Rate : %x \n ",pstmrqst->request_id,pstmrqst->mode,pstmrqst->channel,pstmrqst->no_of_measurements,pstmrqst->transmit_rate);
-	if(pstmrqst->no_of_measurements > 10)
-        {
-          ath6kl_dbg(ATH6KL_DBG_RTT,"RTTREQ No Measurements >10 : %d ",pstmrqst->no_of_measurements);
-	  return -EINVAL;
-        }
+int wmi_rtt_req(struct wmi *wmip,enum wmi_cmd_id cmd_id,void *data,u32 len)
+{
+        struct sk_buff *skb;
+        int status;
+        void *cmd=NULL;
+
 	skb = ath6kl_wmi_get_new_buf(len);
 	if (skb == NULL) {
             ath6kl_dbg(ATH6KL_DBG_RTT,"RTTREQ Failed To get WMI Buffer");
 	    return -ENOMEM;
 	}
 
-	cmd = (struct nsp_mrqst *)skb->data;
+	cmd = skb->data;
 	memset(cmd,0, len);
-	memcpy(cmd, pstmrqst, len);
+	memcpy(cmd, data, len);
     
-	status = ath6kl_wmi_cmd_send(wmip,0,skb,WMI_RTT_MEASREQ_CMDID,
-					NO_SYNC_WMIFLAG);
-	return status;
-}
-
-
-
-int wmi_rtt_config(struct wmi *wmip,struct nsp_rtt_config *pstrttcfg)
-{
-	struct sk_buff *skb;
-	struct nsp_rtt_config *cmd;
-	int status;
-
-	//printk("NSP RTTCFG 2gCal%d 5gCal:%d FFTScale: %d RngScale:%d CLKSpeed2g : %d \n CLKSpeed5g : %d",pstrttcfg->ClkCal[0],pstrttcfg->ClkCal[1],pstrttcfg->FFTScale,pstrttcfg->RangeScale,pstrttcfg->ClkSpeed[0],pstrttcfg->ClkSpeed[1]);
-	skb = ath6kl_wmi_get_new_buf(sizeof(struct nsp_rtt_config));
-	if (skb == NULL) {
-		return -ENOMEM;
-	}
-
-	cmd = (struct nsp_rtt_config *)skb->data;
-	memset(cmd,0, sizeof(struct nsp_rtt_config));
-	memcpy(cmd, pstrttcfg, sizeof(struct nsp_rtt_config));
-    
-	status = ath6kl_wmi_cmd_send(wmip,0,skb,WMI_RTT_CONFIG_CMDID,
+	status = ath6kl_wmi_cmd_send(wmip,0,skb,cmd_id,
 					NO_SYNC_WMIFLAG);
 	return status;
 }
@@ -4595,5 +4605,59 @@ int ath6kl_wmi_heart_beat_set_network_info(struct wmi *wmi, u8 if_idx,
 	
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_HEART_SET_NETWORK_INFO_CMDID,
 		NO_SYNC_WMIFLAG);
+}
+#endif
+
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+int ath6kl_wmi_disc_ie_cmd(struct wmi *wmi, u8 if_idx, u8 enable, u8 startPos, u8 *pattern, u8 length)
+{
+	struct sk_buff *skb;
+	struct wmi_disc_ie_filter_cmd *cmd;
+	int ret;
+	
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd) + length);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_disc_ie_filter_cmd *) skb->data;
+	
+	cmd->enable = enable;
+	cmd->startPos = startPos;
+	cmd->length = length;
+
+	if (cmd->enable)
+		memcpy(cmd->pattern, pattern, cmd->length);
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_DISC_SET_IE_FILTER_CMDID,
+				  NO_SYNC_WMIFLAG);
+
+	return ret;
+}
+
+int ath6kl_wmi_disc_mode_cmd(struct wmi *wmi, u8 if_idx, u16 enable, u16 channel, u32 home_dwell_time,
+				u32 sleepTime, u32 random, u32 numPeers, u32 peerTimeout)
+{
+	struct sk_buff *skb;
+	struct wmi_disc_mode_cmd *cmd;
+	int ret;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_disc_mode_cmd *) skb->data;
+	
+	cmd->enable = enable;
+	cmd->channel = cpu_to_le16(channel);
+	cmd->home_dwell_time = cpu_to_le32(home_dwell_time);
+	cmd->sleepTime = cpu_to_le32(sleepTime);
+	cmd->random = cpu_to_le32(random);
+	cmd->numPeers = cpu_to_le32(numPeers);
+	cmd->peerTimeout = cpu_to_le32(peerTimeout);
+	
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_DISC_SET_MODE_CMDID,
+				  NO_SYNC_WMIFLAG);
+				  
+	return ret;
 }
 #endif

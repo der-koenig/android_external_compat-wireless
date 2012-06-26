@@ -2899,6 +2899,11 @@ int ath6kl_htc_mbox_stat(struct htc_target *target,
 	return 0;
 }
 
+int ath6kl_htc_mbox_stop_netif_queue_full(struct htc_target *target)
+{
+	return 0;
+}
+
 static const struct ath6kl_htc_ops ath6kl_htc_mbox_ops = {
 	.create = ath6kl_htc_mbox_create,
 	.wait_target = ath6kl_htc_mbox_wait_target,
@@ -2914,6 +2919,7 @@ static const struct ath6kl_htc_ops ath6kl_htc_mbox_ops = {
 	.add_rxbuf_multiple = ath6kl_htc_mbox_add_rxbuf_multiple,
 	.credit_setup = ath6kl_htc_mbox_credit_setup,
 	.get_stat = ath6kl_htc_mbox_stat,
+	.stop_netif_queue_full = ath6kl_htc_mbox_stop_netif_queue_full,
 };
 
 void ath6kl_htc_mbox_attach(struct ath6kl *ar)
