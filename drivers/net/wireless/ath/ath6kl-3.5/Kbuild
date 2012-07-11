@@ -1,0 +1,48 @@
+ifeq ($(BUILD_ATH6KL_VER_35), 1)
+obj-m          += wlan.o
+
+wlan-y += src/debug.o
+wlan-y += src/bmi.o
+wlan-y += src/cfg80211.o
+wlan-y += src/cfg80211_btcoex.o
+wlan-y += src/init.o
+wlan-y += src/main.o
+wlan-y += src/txrx.o
+wlan-y += src/wmi.o
+wlan-y += src/wmi_btcoex.o
+wlan-y += src/testmode.o
+wlan-y += src/rttm.o
+wlan-y += src/diag.o
+wlan-y += src/htcoex.o
+wlan-y += src/ath_netlink.o
+wlan-y += src/pm.o
+wlan-y += src/p2p.o
+
+ifeq ($(BUILD_ATH6KL_TYPE), usb)
+wlan-y += src/htc_pipe.o
+wlan-y += src/usb.o
+endif
+
+ifeq ($(BUILD_ATH6KL_TYPE), sdio)
+wlan-y += src/msm.o
+wlan-y += src/htc.o
+wlan-y += src/hif.o
+wlan-y += src/sdio.o
+endif
+
+ccflags-y += -DCONFIG_ATH6KL_DEBUG
+ccflags-y += -DCONFIG_NL80211_TESTMODE
+ccflags-y += -DCONFIG_CFG80211_DEFAULT_PS
+ccflags-y += -DCONFIG_CFG80211_WEXT
+ccflags-y += -DCONFIG_CFG80211_INTERNAL_REGDB
+ccflags-y += -D__CHECK_ENDIAN__
+
+ccflags-y += -I../external/compat-wireless/include
+ccflags-y += -I../external/compat-wireless/net/wireless
+ccflags-y += -include ../../external/compat-wireless/include/linux/ieee80211.h
+ccflags-y += -include ../../external/compat-wireless/include/linux/nl80211.h
+ccflags-y += -include ../../external/compat-wireless/include/net/cfg80211.h
+ccflags-y += -include ../../external/compat-wireless/include/linux/compat-2.6.h
+ccflags-y += -include ../../$(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/linux/version.h
+
+endif
