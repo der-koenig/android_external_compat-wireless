@@ -1,3 +1,26 @@
+ifeq ($(BUILD_ATH6KL_VER_35), 1)
+obj-m += wlan.o
+
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/debug.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/htc_pipe.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/bmi.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/cfg80211.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/cfg80211_btcoex.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/init.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/main.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/txrx.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/wmi.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/wmi_btcoex.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/usb.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/testmode.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/rttm.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/diag.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/htcoex.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/ath_netlink.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/pm.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/p2p.o
+endif
+
 ifeq ($(BUILD_ATH6KL_VER_32), 1)
 obj-m += wlan.o
 
