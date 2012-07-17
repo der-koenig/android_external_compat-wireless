@@ -2984,7 +2984,7 @@ int ath6kl_wmi_pktlog_event_rx(struct wmi *wmi, u8 *datap, u32 len);
 
 int ath6kl_wmi_simple_cmd(struct wmi *wmi, u8 if_idx, enum wmi_cmd_id cmd_id);
 
-inline struct sk_buff *ath6kl_wmi_get_new_buf(u32 size);
+struct sk_buff *ath6kl_wmi_get_new_buf(u32 size);
 
 int ath6kl_wmi_abort_scan_cmd(struct wmi *wmi, u8 if_idx);
 

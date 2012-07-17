@@ -777,7 +777,7 @@ static int ath6kl_wmi_flowctrl_ind_event_rx(u8 *datap, int len, struct ath6kl_vi
 	return 0;
 }
 
-inline struct sk_buff *ath6kl_wmi_get_new_buf(u32 size)
+struct sk_buff *ath6kl_wmi_get_new_buf(u32 size)
 {
 	struct sk_buff *skb;
 

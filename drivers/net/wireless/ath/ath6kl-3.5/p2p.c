@@ -431,34 +431,37 @@ int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
 {	
 	int ret = 0;
 	
-	switch(type) {   
-	case NL80211_IFTYPE_STATION:
-		*opmode = HI_OPTION_FW_MODE_BSS_STA;
-		*subopmode = HI_OPTION_FW_SUBMODE_NONE;
-		break;
-	case NL80211_IFTYPE_P2P_DEVICE:
+
+	/* FIXME : nl80211.h not yet support this type. */
+	if (type == NL80211_IFTYPE_P2P_DEVICE) {
 		*opmode = HI_OPTION_FW_MODE_BSS_STA;
 		*subopmode = HI_OPTION_FW_SUBMODE_P2PDEV;
-		break;
-	case NL80211_IFTYPE_P2P_CLIENT:
-		*opmode = HI_OPTION_FW_MODE_BSS_STA;
-		*subopmode = HI_OPTION_FW_SUBMODE_P2PCLIENT;
-		break;
-	case NL80211_IFTYPE_P2P_GO:
-		*opmode = HI_OPTION_FW_MODE_BSS_STA;
-		*subopmode = HI_OPTION_FW_SUBMODE_P2PGO;
-		break;
-	case NL80211_IFTYPE_UNSPECIFIED:
-	case NL80211_IFTYPE_ADHOC:
-	case NL80211_IFTYPE_AP:
-	case NL80211_IFTYPE_AP_VLAN:
-	case NL80211_IFTYPE_WDS:
-	case NL80211_IFTYPE_MONITOR:
-	case NL80211_IFTYPE_MESH_POINT:
-	default:
-		ath6kl_err("error interface type %d\n", type);
-		ret = -1;
-		break;
+	} else {
+		switch(type) {   
+		case NL80211_IFTYPE_STATION:
+			*opmode = HI_OPTION_FW_MODE_BSS_STA;
+			*subopmode = HI_OPTION_FW_SUBMODE_NONE;
+			break;
+		case NL80211_IFTYPE_P2P_CLIENT:
+			*opmode = HI_OPTION_FW_MODE_BSS_STA;
+			*subopmode = HI_OPTION_FW_SUBMODE_P2PCLIENT;
+			break;
+		case NL80211_IFTYPE_P2P_GO:
+			*opmode = HI_OPTION_FW_MODE_BSS_STA;
+			*subopmode = HI_OPTION_FW_SUBMODE_P2PGO;
+			break;
+		case NL80211_IFTYPE_UNSPECIFIED:
+		case NL80211_IFTYPE_ADHOC:
+		case NL80211_IFTYPE_AP:
+		case NL80211_IFTYPE_AP_VLAN:
+		case NL80211_IFTYPE_WDS:
+		case NL80211_IFTYPE_MONITOR:
+		case NL80211_IFTYPE_MESH_POINT:
+		default:
+			ath6kl_err("error interface type %d\n", type);
+			ret = -1;
+			break;
+		}
 	}
 
 	return ret;

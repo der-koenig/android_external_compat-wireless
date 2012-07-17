@@ -90,7 +90,7 @@ static void htcoex_get_coexinfo(struct htcoex_bss_info *coex_bss,
 
 		if (cap_info & IEEE80211_HT_CAP_40MHZ_INTOLERANT)
 			coex_info->intolerant40++;
-	} else if (coex_bss->channel->band == NL80211_BAND_2GHZ) {
+	} else if (coex_bss->channel->band == IEEE80211_BAND_2GHZ) {
 		int i;
 
 		for (i = 0; i < coex_info->num_chans; i++) {
@@ -457,7 +457,7 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 
 	/* Start if BSS is 11n and 2G channel. */
 	if ((coex->flags & ATH6KL_HTCOEX_FLAGS_ENABLED) &&
-		(bss->channel->band == NL80211_BAND_2GHZ) &&
+		(bss->channel->band == IEEE80211_BAND_2GHZ) &&
 		(htcoex_get_elem(WLAN_EID_HT_CAPABILITY, 		/* FIXME : other way? */
 				 bss->information_elements,
 				 bss->len_information_elements) != NULL)){
