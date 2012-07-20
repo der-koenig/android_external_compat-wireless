@@ -37,7 +37,7 @@ unsigned int htc_bundle_send = 0;
 static unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 8;
-unsigned int ath6kl_p2p;
+unsigned int ath6kl_p2p = 0x3;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -2375,6 +2375,12 @@ int ath6kl_core_init(struct ath6kl *ar)
 	if ( !test_bit(TESTMODE_EPPING, &ar->flag) )
 		wifi_diag_init();
 #endif
+
+	/* Defer some tasks to worker after driver init. */
+	if (!ret) {
+		INIT_WORK(&ar->init_defer_wk, ath6kl_core_init_defer);
+		schedule_work(&ar->init_defer_wk);
+	}
 
 	return ret;
 

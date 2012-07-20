@@ -3638,6 +3638,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	ar->p2p = ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_ENABLE) ||
 				!!ath6kl_p2p;
 	ar->p2p_concurrent = !!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_ENABLE);
+	ar->p2p_dedicate = 1;
 	ar->wiphy = wiphy;
 	ar->dev = dev;
 
@@ -3958,4 +3959,33 @@ void ath6kl_deinit_ieee80211_hw(struct ath6kl *ar)
 #endif
 	wiphy_unregister(ar->wiphy);
 	wiphy_free(ar->wiphy);
+}
+
+void ath6kl_core_init_defer(struct work_struct *wk)
+{
+	struct ath6kl *ar;
+	struct vif_params params;
+
+	ar = container_of(wk, struct ath6kl,
+			    init_defer_wk);
+
+	/* Automatically create p2p0 interface in P2P concurrent mode. */
+	if ((ar->p2p_concurrent) &&
+	    (ar->p2p_dedicate)) {
+		ath6kl_info("Create dedicated p2p interface\n");
+
+		params.use_4addr = 0;
+
+		rtnl_lock();
+		if (ath6kl_cfg80211_add_iface(ar->wiphy, 
+						"p2p%d", 
+						NL80211_IFTYPE_STATION, 
+						NULL,
+						&params) == NULL) {
+			ath6kl_err("Create dedicated p2p interface fail!\n");
+		}
+		rtnl_unlock();
+	}
+
+	return;
 }

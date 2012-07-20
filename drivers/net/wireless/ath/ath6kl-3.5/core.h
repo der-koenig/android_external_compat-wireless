@@ -934,6 +934,7 @@ struct ath6kl {
 
 	bool p2p;
 	bool p2p_concurrent;
+	bool p2p_dedicate;
 
 	struct ath6kl_btcoex btcoex_info;
 	u32 mod_debug_quirks;
@@ -1016,6 +1017,8 @@ struct ath6kl {
 #ifdef ATH6KL_SUPPORT_WLAN_HB
 	int wlan_hb_enable;
 #endif
+
+	struct work_struct init_defer_wk;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)

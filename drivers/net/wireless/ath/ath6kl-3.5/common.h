@@ -81,6 +81,7 @@ struct ath6kl_htc_credit_info;
 
 struct ath6kl *ath6kl_core_alloc(struct device *sdev);
 int ath6kl_core_init(struct ath6kl *ar);
+void ath6kl_core_init_defer(struct work_struct *wk);
 void ath6kl_core_cleanup(struct ath6kl *ar);
 struct sk_buff *ath6kl_buf_alloc(int size);
 #endif /* COMMON_H */
