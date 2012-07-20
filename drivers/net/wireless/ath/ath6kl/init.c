@@ -35,6 +35,7 @@ static unsigned int suspend_mode = 3;
 static unsigned int wow_mode;
 static unsigned int uart_debug;
 static unsigned int ar6k_clock = 19200000;
+static unsigned short locally_administered_bit;
 
 module_param(debug_mask, uint, 0644);
 module_param(testmode, uint, 0644);
@@ -42,6 +43,7 @@ module_param(suspend_mode, uint, 0644);
 module_param(wow_mode, uint, 0644);
 module_param(uart_debug, uint, 0644);
 module_param(ar6k_clock, uint, 0644);
+module_param(locally_administered_bit, ushort, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -1034,9 +1036,6 @@ static int ath6kl_fetch_fw_apin(struct ath6kl *ar, const char *name)
 				   ar->hw.reserved_ram_size);
 			break;
 		case ATH6KL_FW_IE_CAPABILITIES:
-			if (ie_len < DIV_ROUND_UP(ATH6KL_FW_CAPABILITY_MAX, 8))
-				break;
-
 			ath6kl_dbg(ATH6KL_DBG_BOOT,
 				   "found firmware capabilities ie (%zd B)\n",
 				   ie_len);
@@ -1044,6 +1043,9 @@ static int ath6kl_fetch_fw_apin(struct ath6kl *ar, const char *name)
 			for (i = 0; i < ATH6KL_FW_CAPABILITY_MAX; i++) {
 				index = i / 8;
 				bit = i % 8;
+
+				if (index == ie_len)
+					break;
 
 				if (data[index] & (1 << bit))
 					__set_bit(i, ar->fw_capabilities);
@@ -1673,6 +1675,7 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 	}
 
 	if (!timeleft || signal_pending(current)) {
+		clear_bit(WMI_READY, &ar->flag);
 		ath6kl_err("wmi is not ready or wait was interrupted\n");
 		ret = -EIO;
 		goto err_htc_stop;
@@ -1771,7 +1774,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ret = ath6kl_fetch_firmwares(ar);
 	if (ret)
 		goto err_htc_cleanup;
-	ath6kl_mangle_mac_address(ar);
+	ath6kl_mangle_mac_address(ar, locally_administered_bit);
 
 	/* FIXME: we should free all firmwares in the error cases below */
 

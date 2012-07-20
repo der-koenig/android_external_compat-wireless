@@ -9,7 +9,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/export.h>
 #include <linux/device.h>
 
 int __netdev_printk(const char *level, const struct net_device *dev,

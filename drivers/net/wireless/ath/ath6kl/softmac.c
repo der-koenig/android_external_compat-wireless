@@ -134,7 +134,7 @@ static int ath6kl_fetch_mac_file(struct ath6kl *ar)
 }
 #endif
 
-void ath6kl_mangle_mac_address(struct ath6kl *ar)
+void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit)
 {
 	u8 *ptr_mac;
 	int i, ret;
@@ -194,6 +194,9 @@ void ath6kl_mangle_mac_address(struct ath6kl *ar)
 
 	kfree(ath6kl_softmac);
 #endif
+
+	if (locally_administered_bit)
+		ptr_mac[0] |= 0x02;
 
 	ath6kl_calculate_crc(ar->target_type, ar->fw_board, ar->fw_board_len);
 }

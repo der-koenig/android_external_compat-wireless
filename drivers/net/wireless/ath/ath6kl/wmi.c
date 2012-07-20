@@ -1825,7 +1825,7 @@ int ath6kl_wmi_beginscan_cmd(struct wmi *wmi, u8 if_idx,
 {
 	struct sk_buff *skb;
 	struct wmi_begin_scan_cmd *sc;
-	s8 size;
+	unsigned int size;
 	int i, band, ret;
 	struct ath6kl *ar = wmi->parent_dev;
 	int num_rates;
@@ -2737,8 +2737,19 @@ static int ath6kl_wmi_host_sleep_mode_cmd_prcd_evt_rx(struct wmi *wmi,
 						      struct ath6kl_vif *vif)
 {
 	struct ath6kl *ar = wmi->parent_dev;
+	struct ath6kl_vif *vif_temp, *vif_to_use = NULL;
 
-	set_bit(HOST_SLEEP_MODE_CMD_PROCESSED, &vif->flags);
+	list_for_each_entry(vif_temp, &ar->vif_list, list) {
+		if (test_and_clear_bit(NOTIFY_HSLEEP_EVT, &vif_temp->flags)) {
+			vif_to_use = vif_temp;
+			break;
+		}
+	}
+
+	if (!vif_to_use)
+		vif_to_use = vif;
+
+	set_bit(HOST_SLEEP_MODE_CMD_PROCESSED, &vif_to_use->flags);
 	wake_up(&ar->event_wq);
 
 	return 0;

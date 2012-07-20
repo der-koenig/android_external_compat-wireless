@@ -63,6 +63,7 @@
 #define MAX_DEF_COOKIE_NUM                180
 #define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
+#define WMI_MAX_COOKIE_NUM                80
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
 
@@ -124,6 +125,12 @@ enum ath6kl_fw_capability {
 	 * FW supports matching of ssid in schedule scan
 	 */
 	ATH6KL_FW_CAPABILITY_SCHED_SCAN_MATCH_LIST,
+
+	/* Firmware supports filtering BSS results by RSSI */
+	ATH6KL_FW_CAPABILITY_RSSI_SCAN_THOLD,
+
+	/* FW sets mac_addr[4] ^= 0x80 for newly created interfaces */
+	ATH6KL_FW_CAPABILITY_CUSTOM_MAC_ADDR,
 
 	/* this needs to be last */
 	ATH6KL_FW_CAPABILITY_MAX,
@@ -529,6 +536,7 @@ enum ath6kl_vif_state {
 	HOST_SLEEP_MODE_CMD_PROCESSED,
 	NETDEV_MCAST_ALL_ON,
 	NETDEV_MCAST_ALL_OFF,
+	NOTIFY_HSLEEP_EVT,
 };
 
 struct ath6kl_vif {
@@ -648,6 +656,8 @@ struct ath6kl {
 	u8 next_ep_id;
 	struct ath6kl_cookie *cookie_list;
 	u32 cookie_count;
+	struct ath6kl_cookie *wmi_cookie_list;
+	u32 wmi_cookie_count;
 	enum htc_endpoint_id ac2ep_map[WMM_NUM_AC];
 	bool ac_stream_active[WMM_NUM_AC];
 	u8 ac_stream_pri_map[WMM_NUM_AC];
@@ -712,6 +722,7 @@ struct ath6kl {
 	struct ath6kl_mbox_info mbox_info;
 
 	struct ath6kl_cookie cookie_mem[MAX_COOKIE_NUM];
+	struct ath6kl_cookie wmi_cookie_mem[WMI_MAX_COOKIE_NUM];
 	unsigned long flag;
 
 	u8 *fw_board;
@@ -814,8 +825,9 @@ int ath6kl_read_fwlogs(struct ath6kl *ar);
 void ath6kl_init_profile_info(struct ath6kl_vif *vif);
 void ath6kl_tx_data_cleanup(struct ath6kl *ar);
 
-struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar);
-void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie);
+struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar, bool isctrl);
+void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie,
+			bool ctrl_ep);
 int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev);
 
 struct aggr_info *aggr_init(struct ath6kl_vif *vif);
@@ -877,6 +889,6 @@ void ath6kl_check_wow_status(struct ath6kl *ar, struct sk_buff *skb,
 			     bool is_event_pkt);
 void ath6kl_sdio_init_platform(void);
 void ath6kl_sdio_exit_platform(void);
-void ath6kl_mangle_mac_address(struct ath6kl *ar);
+void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit);
 
 #endif /* CORE_H */

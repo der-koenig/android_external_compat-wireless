@@ -2081,11 +2081,12 @@ static int ath6kl_cfg80211_host_sleep(struct ath6kl *ar, struct ath6kl_vif *vif)
 	int ret, left;
 
 	clear_bit(HOST_SLEEP_MODE_CMD_PROCESSED, &vif->flags);
+	set_bit(NOTIFY_HSLEEP_EVT, &vif->flags);
 
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						 ATH6KL_HOST_MODE_ASLEEP);
 	if (ret)
-		return ret;
+		goto hsleep_fail;
 
 	left = wait_event_interruptible_timeout(ar->event_wq,
 						is_hsleep_mode_procsed(vif),
@@ -2112,7 +2113,35 @@ static int ath6kl_cfg80211_host_sleep(struct ath6kl *ar, struct ath6kl_vif *vif)
 		}
 	}
 
+hsleep_fail:
+	if (ret)
+		clear_bit(NOTIFY_HSLEEP_EVT, &vif->flags);
+
 	return ret;
+}
+
+static int ath6kl_get_conn_vif(struct ath6kl *ar, struct ath6kl_vif **vif)
+{
+	struct ath6kl_vif *vif_temp;
+	bool connected = false;
+
+	list_for_each_entry(vif_temp, &ar->vif_list, list) {
+		if (test_bit(CONNECTED, &vif_temp->flags)) {
+			if (!connected) {
+				*vif = vif_temp;
+				connected = true;
+			} else
+				return -EIO;
+		}
+	}
+
+	if (!vif)
+		return -EIO;
+
+	if (!connected)
+		return -ENOTCONN;
+
+	return 0;
 }
 
 static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
@@ -2126,9 +2155,9 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	u8 index = 0;
 	__be32 ips[MAX_IP_ADDRS];
 
-	vif = ath6kl_vif_first(ar);
-	if (!vif)
-		return -EIO;
+	ret = ath6kl_get_conn_vif(ar, &vif);
+	if (ret)
+		return ret;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -2240,9 +2269,9 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 	struct ath6kl_vif *vif;
 	int ret;
 
-	vif = ath6kl_vif_first(ar);
-	if (!vif)
-		return -EIO;
+	ret = ath6kl_get_conn_vif(ar, &vif);
+	if (ret)
+		return ret;
 
 #ifdef CONFIG_HAS_WAKELOCK
 	wake_lock_timeout(&ar->wake_lock, 5);
@@ -3628,9 +3657,13 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	vif->htcap[IEEE80211_BAND_5GHZ].ht_enable = true;
 
 	memcpy(ndev->dev_addr, ar->mac_addr, ETH_ALEN);
-	if (fw_vif_idx != 0)
+	if (fw_vif_idx != 0) {
 		ndev->dev_addr[0] = (ndev->dev_addr[0] ^ (1 << fw_vif_idx)) |
 				     0x2;
+		if (test_bit(ATH6KL_FW_CAPABILITY_CUSTOM_MAC_ADDR,
+			     ar->fw_capabilities))
+			ndev->dev_addr[4] ^= 0x80;
+	}
 
 	init_netdev(ndev);
 
