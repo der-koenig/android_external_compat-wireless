@@ -5,7 +5,6 @@ else
 	DLKM_DIR := build/dlkm
 endif
 
-ifneq ($(call is-android-codename,JELLY_BEAN),true)
 ifeq ($(BOARD_HAS_ATH_WLAN), true)
 
 export BUILD_ATH6KL_VER_32=1
@@ -23,7 +22,6 @@ LOCAL_MODULE_KBUILD_NAME := wlan.ko
 LOCAL_MODULE_TAGS        := debug
 LOCAL_MODULE_PATH        := $(TARGET_OUT)/lib/modules/ath6kl
 include $(DLKM_DIR)/AndroidKernelModule.mk
-endif
 endif
 
 ifeq ($(BOARD_HAS_ATH_ETH_ALX), true)
