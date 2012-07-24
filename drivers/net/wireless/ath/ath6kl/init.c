@@ -1734,7 +1734,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 	struct ath6kl_bmi_target_info targ_info;
 	struct net_device *ndev;
 	int ret = 0, i;
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+	struct net_device *ndev_p2p0;
+#endif
 	ar->ath6kl_wq = create_singlethread_workqueue("ath6kl");
 	if (!ar->ath6kl_wq)
 		return -ENOMEM;
@@ -1807,6 +1809,10 @@ int ath6kl_core_init(struct ath6kl *ar)
 	/* Add an initial station interface */
 	ndev = ath6kl_interface_add(ar, "wlan%d", NL80211_IFTYPE_STATION, 0,
 				    INFRA_NETWORK);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+	ndev_p2p0 = ath6kl_cfg80211_add_p2p0_iface(ar);
+#endif
 
 	rtnl_unlock();
 
@@ -1891,6 +1897,9 @@ err_rxbuf_cleanup:
 	ath6kl_cleanup_amsdu_rxbufs(ar);
 	rtnl_lock();
 	ath6kl_deinit_if_data(netdev_priv(ndev));
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+	ath6kl_deinit_if_data(netdev_priv(ndev_p2p0));
+#endif
 	rtnl_unlock();
 	wiphy_unregister(ar->wiphy);
 err_debug_init:

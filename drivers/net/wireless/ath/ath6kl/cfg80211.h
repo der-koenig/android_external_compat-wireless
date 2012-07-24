@@ -62,4 +62,8 @@ void ath6kl_cfg80211_stop_all(struct ath6kl *ar);
 void ath6kl_cfg80211_sta_bmiss_enhance(struct ath6kl_vif *vif, bool enable);
 
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+struct net_device *ath6kl_cfg80211_add_p2p0_iface(struct ath6kl *ar);
+#endif
+
 #endif /* ATH6KL_CFG80211_H */
