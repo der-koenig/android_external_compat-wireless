@@ -1304,6 +1304,13 @@ out:
 	list_splice_tail(&mc_filter_new, &vif->mc_filter);
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+static int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+{
+	return 0;
+}
+#endif
+
 static struct net_device_ops ath6kl_netdev_ops = {
 	.ndo_open               = ath6kl_open,
 	.ndo_stop               = ath6kl_close,
@@ -1313,6 +1320,9 @@ static struct net_device_ops ath6kl_netdev_ops = {
 	.ndo_set_features       = ath6kl_set_features,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 	.ndo_set_rx_mode	= ath6kl_set_multicast_list,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+	.ndo_do_ioctl           = ath6kl_ioctl,
+#endif
 };
 
 void init_netdev(struct net_device *dev)
