@@ -23,6 +23,16 @@
 #define GET_INODE_FROM_FILEP(filp) \
 	((filp)->f_path.dentry->d_inode)
 
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+
+#define ATH6KL_INIT_TIMEOUT	(5 * HZ)
+
+static wait_queue_head_t init_wq;
+static atomic_t init_done = ATOMIC_INIT(0);
+
+#endif
+
 int android_readwrite_file(const char *filename,
 			   char *rbuf, const char *wbuf, size_t length)
 {
@@ -171,3 +181,33 @@ void __exit ath6kl_sdio_exit_platform(void)
 	mdelay(1000);
 
 }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+int ath6kl_wait_for_init_comp(void)
+{
+	int left, ret = 0;
+
+	if (atomic_read(&init_done) == 1)
+		return ret;
+
+	init_waitqueue_head(&init_wq);
+
+	left = wait_event_interruptible_timeout(init_wq,
+						atomic_read(&init_done) == 1,
+						ATH6KL_INIT_TIMEOUT);
+	if (left == 0) {
+		printk(KERN_ERR "timeout while waiting for init operation\n");
+		ret = -ETIMEDOUT;
+	} else if (left < 0) {
+		printk(KERN_ERR "wait for init operation failed: %d\n", left);
+		ret = left;
+	}
+
+	return ret;
+}
+void ath6kl_notify_init_done(void)
+{
+	atomic_set(&init_done, 1);
+	wake_up(&init_wq);
+}
+#endif
