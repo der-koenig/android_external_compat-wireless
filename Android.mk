@@ -22,18 +22,6 @@ LOCAL_MODULE_KBUILD_NAME := wlan.ko
 LOCAL_MODULE_TAGS        := debug
 LOCAL_MODULE_PATH        := $(TARGET_OUT)/lib/modules/ath6kl
 include $(DLKM_DIR)/AndroidKernelModule.mk
-
-# Create symbolic links to the drivers
-ifeq ($(call is-android-codename,JELLY_BEAN),true)
-ifeq ($(call is-board-platform,msm7627a),true)
-$(shell mkdir -p $(TARGET_OUT)/lib/modules; \
-        ln -sf /system/lib/modules/ath6kl/ath6kl_sdio.ko \
-               $(TARGET_OUT)/lib/modules/wlan.ko;	\
-        ln -sf /system/lib/modules/ath6kl/cfg80211.ko \
-               $(TARGET_OUT)/lib/modules/cfg.ko)
-endif
-endif
-
 endif
 
 ifeq ($(BOARD_HAS_ATH_ETH_ALX), true)
