@@ -2157,7 +2157,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 {
 	struct in_device *in_dev;
 	struct in_ifaddr *ifa;
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif = NULL;
 	int ret;
 	u32 filter = 0;
 	u16 i, bmiss_time;
