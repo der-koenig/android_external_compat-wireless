@@ -17,6 +17,7 @@ wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/htcoex.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/ath_netlink.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/pm.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/p2p.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/ap.o
 
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/msm.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/htc.o
