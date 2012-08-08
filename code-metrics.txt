@@ -1,12 +1,12 @@
 
 [36mcompat-wireless code metrics[00m
 
-[35m    824403[00m - Total upstream lines of code being pulled
+[35m    824512[00m - Total upstream lines of code being pulled
 [01;32m      2420[00m - backport code changes
 [01;32m      2088[00m - backport code additions
 [01;32m       332[00m - backport code deletions
-[01;32m      9093[00m - backport from compat module
-[01;32m     11513[00m - total backport code
+[01;32m      9094[00m - backport from compat module
+[01;32m     11514[00m - total backport code
 [31m    1.3965[00m - % of code consists of backport work
 [01;33m        28[00m - Code changes posted but not yet merged
 [01;33m        12[00m - Code additions posted but not yet merged
@@ -14,5 +14,5 @@
 [31m    0.0034[00m - % of code not yet merged
 
 Base tree: [01;32math6kl[00m
-Base tree version: [35mmsm-2012-06-21-14-gbed779f[00m
-compat-wireless release: [01;33mLOST_REQ_20120308-35-g84da518-p[00m
+Base tree version: [35mmsm-2012-06-21-22-g7354c54[00m
+compat-wireless release: [01;33mbranching-3.2.3-p[00m
