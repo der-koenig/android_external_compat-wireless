@@ -76,6 +76,7 @@ struct btcoex_optmode_sco_config {
 	__le32 sco_low_rate_cnt;
 	__le32 sco_hi_pkt_ratio;
 	__le32 sco_max_aggr_size;
+	__le32 sco_null_backoff;
 } __packed;
 
 struct btcoex_wlan_sco_config {
@@ -163,6 +164,6 @@ int ath6kl_wmi_set_btcoex_sco_op(struct wmi *wmi, bool esco, u32 tx_interval,
 int ath6kl_wmi_set_btcoex_a2dp_op(struct wmi *wmi, u32 role, u32 ver, u32 ven);
 int ath6kl_wmi_set_btcoex_set_colocated_bt(struct wmi *wmi, u8 dev_type);
 int ath6kl_wmi_set_btcoex_set_fe_antenna(struct wmi *wmi, u8 antenna_type);
-int ath6kl_wmi_send_btcoex_cmd(struct wmi *wmi,
+int ath6kl_wmi_send_btcoex_cmd(struct ath6kl *ar,
 				u8 *buf, int len);
 #endif /* WMI_BTCOEX_H */

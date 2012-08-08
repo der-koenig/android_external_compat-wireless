@@ -328,6 +328,8 @@ struct host_interest {
 
 #define HI_OPTION_FW_BRIDGE_SHIFT 0x04
 
+#define HI_OPTION_DISABLE_P2P_DEDICATE          0x100 /* Disable p2p dedicate device */
+
 /* Fw Mode/SubMode Mask
 |------------------------------------------------------------------------------|
 |   SUB   |   SUB   |   SUB   |  SUB    |         |         |         |

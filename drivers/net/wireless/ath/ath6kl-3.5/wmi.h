@@ -101,6 +101,7 @@ struct wmi_data_sync_bufs {
 struct wmi_mgmt_tx_frame {
 	struct list_head list;
 
+	struct ath6kl_vif *vif;
 	u8 *mgmt_tx_frame;
 	size_t mgmt_tx_frame_len;
 	int mgmt_tx_frame_idx;
@@ -678,7 +679,9 @@ enum wmi_cmd_id {
 	/* wifi discovery */
 	WMI_DISC_SET_IE_FILTER_CMDID,
 	WMI_DISC_SET_MODE_CMDID,
-        WMI_RTT_CLKCALINFO_CMDID
+        WMI_RTT_CLKCALINFO_CMDID,
+
+	WMI_AP_POLL_STA_CMDID
 };
 
 enum wmi_mgmt_frame_type {
@@ -1943,6 +1946,8 @@ struct wmi_get_keepalive_cmd {
 	u8 keep_alive_intvl;
 } __packed;
 
+#define MAX_APP_IE_LEN		(255)
+
 struct wmi_set_appie_cmd {
 	u8 mgmt_frm_type; /* enum wmi_mgmt_frame_type */
 	u8 ie_len;
@@ -2217,7 +2222,7 @@ struct wmi_per_sta_stat {
 	__le32 rx_discard;
 	u8 aid;
 	u8 tx_ucast_rate;
-	u8 reserved[2];
+	__le16 last_txrx_time;	/* unit is (ms./1024). Target time, not host time. */
 } __packed;
 
 struct wmi_ap_mode_stat {
@@ -2792,6 +2797,11 @@ struct wmi_disc_peer_event {
 	u8 peer_data[1];
 } __packed;
 
+struct wmi_ap_poll_sta_cmd {
+	u8 aid;
+	u8 reserved[7];
+} __packed;
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
@@ -3031,4 +3041,5 @@ int ath6kl_wmi_heart_beat_set_network_info(struct wmi *wmi, u8 if_idx,
 int ath6kl_wmi_disc_ie_cmd(struct wmi *wmi, u8 if_idx, u8 enable, u8 startPos, u8 *pattern, u8 length);
 int ath6kl_wmi_disc_mode_cmd(struct wmi *wmi, u8 if_idx, u16 enable, u16 channel, u32 home_dwell_time,
 				u32 sleepTime, u32 random, u32 numPeers, u32 peerTimeout);
+int ath6kl_wmi_ap_poll_sta(struct wmi *wmi, u8 if_idx, u8 aid);
 #endif /* WMI_H */

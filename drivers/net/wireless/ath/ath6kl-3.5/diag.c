@@ -961,13 +961,14 @@ ath6kl_wmi_stat_rx_rate_event(struct ath6kl_vif *vif, struct wmi *wmi, u8 *datap
 	u32 size, i;
 	u32 rx_rate_pkt[44];
 
-	printk("ath6kl_wmi_stat_rx_rate_event\n");
 	memcpy(&rx_rate_pkt[0], datap, sizeof(u32)*44);
 	
 	if (!diag_local_test) {
 		if(!(vif->diag.cfg_mask & WIFI_DIAG_RX_STAT_EVENTENABLE) || diag_evt_callback == NULL)
 			return -1;    
 	}
+
+	printk("ath6kl_wmi_stat_rx_rate_event\n");
 
 	size = sizeof(*pwifi_diag_rxstat_event) + sizeof(*prx_stat_event_data);
 	skb = ath6kl_wmi_get_new_buf(size);
@@ -1003,13 +1004,14 @@ ath6kl_wmi_stat_tx_rate_event(struct ath6kl_vif *vif, struct wmi *wmi, u8 *datap
 	u32 size, i;
 	u32 tx_rate_pkt[44];
 
-	printk("ath6kl_wmi_stat_tx_rate_event\n");
 	memcpy(&tx_rate_pkt[0], datap, sizeof(u32)*44);
 
 	if (!diag_local_test) {
 		if(!(vif->diag.cfg_mask & WIFI_DIAG_TX_STAT_EVENTENABLE) || diag_evt_callback == NULL)
 			return -1;    
 	}
+
+	printk("ath6kl_wmi_stat_tx_rate_event\n");
 
 	size = sizeof(*pwifi_diag_txstat_event) + sizeof(*ptx_stat_event_data);
 	skb = ath6kl_wmi_get_new_buf(size);

@@ -80,11 +80,13 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 	return conn;
 }
 
-static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u16 aid, u8 *wpaie,
+static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid, u8 *wpaie,
 			u8 ielen, u8 keymgmt, u8 ucipher, u8 auth, u8 apsd_info)
 {
 	struct ath6kl_sta *sta;
 	u8 free_slot;
+
+	BUG_ON(aid > AP_MAX_NUM_STA);
 
 	free_slot = aid - 1;
 
@@ -104,9 +106,11 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u16 aid, u8 *wpa
 	sta->psq_age_timer.function = ath6kl_ps_queue_age_handler;
 	sta->psq_age_timer.data = (unsigned long)sta;
 	aggr_reset_state(sta->aggr_conn_cntxt);
+	sta->last_txrx_time_tgt = 0;
+	sta->last_txrx_time = 0;
 
 	vif->sta_list_index = vif->sta_list_index | (1 << free_slot);
-	vif->ap_stats.sta[free_slot].aid = cpu_to_le32(aid);
+	vif->ap_stats.sta[free_slot].aid = aid;
 	spin_unlock_bh(&sta->lock);
 }
 
@@ -669,7 +673,7 @@ int ath6kl_read_fwlogs(struct ath6kl *ar)
 
 		address = TARG_VTOP(ar->target_type,
 				    le32_to_cpu(debug_buf.next));
-		ath6kl_diag_read(ar, address, &debug_buf, sizeof(debug_buf));
+		ret = ath6kl_diag_read(ar, address, &debug_buf, sizeof(debug_buf));
 		if (ret)
 			goto out;
 
@@ -790,11 +794,20 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 	}
 
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
+
+	/* 
+	 * NOTE : Default disable TX-AMSDU in AP/P2P-GO modes. 
+	 *        User can turn it on through the debugfs. 
+	 */
+	clear_bit(AMSDU_ENABLED, &vif->flags);
+	ath6kl_dbg(ATH6KL_DBG_INFO,
+		"Disable TX-AMSDU\n");
+
 	set_bit(CONNECTED, &vif->flags);
 	netif_carrier_on(vif->ndev);
 }
 
-void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u16 aid, u8 *mac_addr,
+void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
 				u8 assoc_req_len, u8 *assoc_info, u8 apsd_info)
 {
@@ -1142,7 +1155,8 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 	struct wmi_ap_mode_stat *p = (struct wmi_ap_mode_stat *) ptr;
 	struct wmi_ap_mode_stat *ap = &vif->ap_stats;
 	struct wmi_per_sta_stat *st_ap, *st_p;
-	u8 ac;
+	u8 ac, slot;
+	u16 updated = 0;
 
 	if (vif->nw_type == AP_NETWORK) {
 		if ((len + 4) >= sizeof(*p)) {
@@ -1150,16 +1164,30 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 				st_ap = &ap->sta[ac];
 				st_p = &p->sta[ac];
 
-				ath6kl_add_le32(&st_ap->tx_bytes, st_p->tx_bytes);
-				ath6kl_add_le32(&st_ap->tx_pkts, st_p->tx_pkts);
-				ath6kl_add_le32(&st_ap->tx_error, st_p->tx_error);
-				ath6kl_add_le32(&st_ap->tx_discard, st_p->tx_discard);
-				ath6kl_add_le32(&st_ap->rx_bytes, st_p->rx_bytes);
-				ath6kl_add_le32(&st_ap->rx_pkts, st_p->rx_pkts);
-				ath6kl_add_le32(&st_ap->rx_error, st_p->rx_error);
-				ath6kl_add_le32(&st_ap->rx_discard, st_p->rx_discard);
-				st_ap->aid = st_p->aid;
-				st_ap->tx_ucast_rate = st_p->tx_ucast_rate;
+				/* 
+				 * Target may insert garbage data and only update the 
+				 * associated stations. 
+				 */
+				if ((st_p->aid == 0) ||
+				    (st_p->aid > AP_MAX_NUM_STA))
+				    continue;
+
+				slot = (1 << (st_p->aid - 1));
+				if ((vif->sta_list_index & slot) &&
+				    (!(updated & slot))) {
+				    	updated |= slot;
+					ath6kl_add_le32(&st_ap->tx_bytes, st_p->tx_bytes);
+					ath6kl_add_le32(&st_ap->tx_pkts, st_p->tx_pkts);
+					ath6kl_add_le32(&st_ap->tx_error, st_p->tx_error);
+					ath6kl_add_le32(&st_ap->tx_discard, st_p->tx_discard);
+					ath6kl_add_le32(&st_ap->rx_bytes, st_p->rx_bytes);
+					ath6kl_add_le32(&st_ap->rx_pkts, st_p->rx_pkts);
+					ath6kl_add_le32(&st_ap->rx_error, st_p->rx_error);
+					ath6kl_add_le32(&st_ap->rx_discard, st_p->rx_discard);
+					st_ap->aid = st_p->aid;
+					st_ap->tx_ucast_rate = st_p->tx_ucast_rate;
+					st_ap->last_txrx_time = le16_to_cpu(st_p->last_txrx_time);
+				}
 			}
 		}
 	} else {
@@ -1454,6 +1482,9 @@ static int ath6kl_close(struct net_device *dev)
 		break;
 	}
 
+	/* Stop keep-alive. */
+	ath6kl_ap_keepalive_stop(vif);
+
 	ath6kl_disconnect(vif);
 
 	vif->sme_state = SME_DISCONNECTED;
@@ -1556,7 +1587,8 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 						    (vif->nw_type == INFRA_NETWORK) && 
 						    (not_allow_ch) &&
 						    (test_bit(CONNECTED, &vif->flags))) {
-							ath6kl_info("Disconnect because of band changed!");
+							ath6kl_dbg(ATH6KL_DBG_INFO,
+								"Disconnect because of band changed!");
 							vif->reconnect_flag = 0;
 							ret = ath6kl_disconnect(vif);
 							memset(vif->ssid, 0, sizeof(vif->ssid));
@@ -1567,10 +1599,11 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 				} else if ((pos = strstr(user_cmd, "P2P_SET_NOA ")) != NULL) {
 					/* SET::P2P_SET_NOA {count} {duration} {interval} */
 
-					/* FIXME : remove when ready */
-					ret = -EFAULT;	
-					break;
-
+					/* 
+					 * NOTE : it's better to query current NoA of target and 
+					 *        rearrange it to avoid conflict with user's if
+					 *        need.
+					 */
 					if (android_cmd.used_len > 12) {
 						if (down_interruptible(&vif->ar->sem)) {
 							ath6kl_err("busy, couldn't get access\n");
@@ -1604,7 +1637,7 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 					} else
 						ret = -EFAULT;						
 				} else {
-					ath6kl_err("%s : not yet support \"%s\"\n", 
+					ath6kl_dbg(ATH6KL_DBG_TRC, "%s : not yet support \"%s\"\n",
 									__func__, 
 									user_cmd);
 					ret = -EOPNOTSUPP;

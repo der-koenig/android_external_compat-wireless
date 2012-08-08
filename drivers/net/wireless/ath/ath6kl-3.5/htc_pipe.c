@@ -22,6 +22,7 @@
 
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
+extern unsigned int htc_bundle_send_timer;
 
 #define HTC_PACKET_CONTAINER_ALLOCATION 32
 #define HTC_CONTROL_BUFFER_SIZE (HTC_MAX_CTRL_MSG_LEN + HTC_HDR_LENGTH)
@@ -34,6 +35,7 @@ extern unsigned int htc_bundle_send;
 static int ath6kl_htc_pipe_tx(struct htc_target *handle,
 	struct htc_packet *packet);
 static void ath6kl_htc_pipe_cleanup(struct htc_target *handle);
+static void htc_tx_bundle_timer_handler(unsigned long ptr);
 
 /* htc pipe tx path */
 static inline void restore_tx_packet(struct htc_packet *packet)
@@ -270,7 +272,7 @@ static int htc_issue_packets(struct htc_target *target,
 		   (unsigned long)pkt_queue, get_queue_depth(pkt_queue));
     if (htc_bundle_send && (ep->pipeid_ul != 0 /* HIF_TX_CTRL_PIPE */)) {
         /* only for HIF data pipes */
-        struct sk_buff *msg_bundle[HTC_HOST_MAX_MSG_PER_BUNDLE];
+        struct sk_buff *msg_bundle[HTC_HOST_MAX_MSG_PER_BUNDLE] = {};
         int msgs_to_bundle = 0;
         while (!list_empty(pkt_queue)) {
             packet = list_first_entry(pkt_queue,
@@ -406,6 +408,8 @@ static int htc_issue_packets(struct htc_target *target,
 	return status;
 }
 
+#define HTC_BUNDLE_SEND_TH  6000
+
 static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 					  struct htc_endpoint *ep,
 					  struct list_head *callers_send_queue)
@@ -421,6 +425,25 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 		   __func__, (unsigned long)callers_send_queue,
 		   (callers_send_queue ==
 		    NULL) ? 0 : get_queue_depth(callers_send_queue));
+
+	if( htc_bundle_send && htc_bundle_send_timer && ep->eid==ENDPOINT_2){
+	      /* init bundle send timer */
+		if(ep->timer_init==0){
+			setup_timer(&ep->timer, htc_tx_bundle_timer_handler,
+                            (unsigned long) target);
+			mod_timer(&ep->timer, jiffies + msecs_to_jiffies(htc_bundle_send_timer));
+			ep->timer_init = 1;
+		}
+             /* check if we need to queue packet for bundle send */ 
+		if(ep->call_by_timer==0 && ep->pass_th){
+			spin_lock_bh(&target->tx_lock);
+			if(get_queue_depth(&ep->txq) < HTC_HOST_MAX_MSG_PER_BUNDLE){
+			    spin_unlock_bh(&target->tx_lock);
+			    return 0;
+			}
+			spin_unlock_bh(&target->tx_lock);
+		}
+	}
 
 	/* init the local send queue */
 	INIT_LIST_HEAD(&send_queue);
@@ -610,6 +633,30 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 	spin_unlock_bh(&target->tx_lock);
 
 	return HTC_SEND_QUEUE_OK;
+}
+
+static void htc_tx_bundle_timer_handler(unsigned long ptr)
+{
+    struct htc_target *target = (struct htc_target *)ptr;
+    struct htc_endpoint *endpoint = &target->endpoint[ENDPOINT_2];
+    static u32 count=0;
+    static u32 tx_issued=0;
+    
+    endpoint->call_by_timer = 1;
+    count++;
+
+    if((count%(1000/htc_bundle_send_timer)) == 0){
+        //printk("timer tx_issued=%d\n", endpoint->ep_st.tx_issued-tx_issued);
+        if((endpoint->ep_st.tx_issued-tx_issued)>HTC_BUNDLE_SEND_TH)
+            endpoint->pass_th = 1;
+        else
+            endpoint->pass_th = 0;
+        tx_issued = endpoint->ep_st.tx_issued;
+    }
+    htc_try_send(target, endpoint, NULL);
+    endpoint->call_by_timer = 0;;
+
+    mod_timer(&endpoint->timer, jiffies + msecs_to_jiffies(htc_bundle_send_timer));
 }
 
 static void htc_tx_resource_available(struct htc_target *context, u8 pipeid)
@@ -1027,6 +1074,22 @@ static int htc_send_pkts_sched_check(struct htc_target *target, enum htc_endpoin
 
 		if (list_empty(tx_queue)) {
 			ac_queue_status[eid - 2] = 1;
+		}
+
+		if(htc_bundle_send && htc_bundle_send_timer && eid == ENDPOINT_2){
+			/* init bundle send timer */
+			if(endpoint->timer_init==0){
+			    setup_timer(&endpoint->timer, htc_tx_bundle_timer_handler,
+                            (unsigned long) target);
+			    mod_timer(&endpoint->timer, jiffies + msecs_to_jiffies(htc_bundle_send_timer));
+			    endpoint->timer_init = 1;
+			}
+			/* check if we need to queue packet for bundle send */ 
+			if(endpoint->pass_th && 
+			   get_queue_depth(&endpoint->txq) < HTC_HOST_MAX_MSG_PER_BUNDLE){
+			    spin_unlock_bh(&target->tx_lock);
+			    return 0;
+			}
 		}
 	}
    	spin_unlock_bh(&target->tx_lock);
@@ -1567,7 +1630,7 @@ static int htc_wait_recv_ctrl_message(struct htc_target *target)
 		count--;
 
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout((HZ / 1000) * (HTC_TARGET_RESPONSE_POLL_WAIT));
+		schedule_timeout(msecs_to_jiffies(HTC_TARGET_RESPONSE_POLL_MS));
 		set_current_state(TASK_RUNNING);
 	}
 	if (count <= 0) {
@@ -1990,6 +2053,11 @@ static void ath6kl_htc_pipe_stop(struct htc_target *handle)
 		ep = &target->endpoint[i];
 		htc_flush_rx_queue(target, ep);
 		htc_flush_tx_endpoint(target, ep, HTC_TX_PACKET_TAG_ALL);
+		if(i==ENDPOINT_2 && ep->timer_init){
+                del_timer(&ep->timer);
+                ep->call_by_timer = 0;
+                ep->timer_init = 0;
+		}
 	}
 
 	spin_lock_bh(&target->rx_lock);

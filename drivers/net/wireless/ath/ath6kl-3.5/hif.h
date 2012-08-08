@@ -36,6 +36,7 @@
 
 #define MANUFACTURER_ID_AR6003_BASE        0x300
 #define MANUFACTURER_ID_AR6004_BASE        0x400
+#define MANUFACTURER_ID_AR6006_BASE        0x600
     /* SDIO manufacturer ID and Codes */
 #define MANUFACTURER_ID_ATH6KL_BASE_MASK     0xFF00
 #define MANUFACTURER_CODE                  0x271	/* Atheros */

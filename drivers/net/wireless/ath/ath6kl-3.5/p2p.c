@@ -71,7 +71,12 @@ int ath6kl_p2p_ps_reset_noa(struct p2p_ps_info *p2p_ps)
 {
 	if ((!p2p_ps) || 
 	    (p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
-	    ath6kl_err("failed to reset P2P-GO noa\n");
+	    /* 
+	     * This could happend if NOA_INFO event is later than
+	     * GO's DISCONNECT event.
+	     */
+	    ath6kl_dbg(ATH6KL_DBG_INFO,
+	    	"failed to reset P2P-GO noa, %p\n", p2p_ps);
 	    return -1;
 	}
 
@@ -383,11 +388,6 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 	spin_lock(&p2p_ps->p2p_ps_lock);
 	if ((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) ||
 	    (p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED)){
-#if 0
-		/* Bypass it if don't care this. */
-		ath6kl_err("this setting (frame type %d) will not include NoA IE!\n", 
-	    			mgmt_frm_type);
-#else
 		/*
 		 * Append the last NoA IE to *ie and also update *len to let caller
 		 * use the new one.
@@ -418,7 +418,6 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 		ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			   "p2p_ps change app IE len -> %d\n",
 			   *len);
-#endif
 	}
 	spin_unlock(&p2p_ps->p2p_ps_lock);
 
@@ -430,7 +429,6 @@ int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
 				    u8 *subopmode)
 {	
 	int ret = 0;
-	
 
 	/* FIXME : nl80211.h not yet support this type. */
 	if (type == NL80211_IFTYPE_P2P_DEVICE) {
@@ -474,23 +472,25 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 	u8 fw_vif_idx = vif->fw_vif_idx;
 	u8 opmode, subopmode;
 	long left;
+	u8 skip_vif = 1;
 
-#if 0	/* TODO */
-	ath6kl_info("ath6kl : don't care firmware port status, idx %d type %d\n", 
-			vif->fw_vif_idx, type);
-	return 0;
-#endif
+	/* HACK */
+	if (ar->p2p_compat)
+		return 0;
 
 	/* 
 	 * Only need to do this if virtual interface used but bypass vif_max=2 case.
 	 * This case suppose be used only for special P2P purpose that is without 
 	 * dedicated P2P-Device.
 	 * 
-         * 1st interface always be created by driver init phase and WMI interface 
-         * not yet ready. Actually, we don't need to reset it because current design 
-         * always STA interface in firmware and host sides.
+	 * 1st interface always be created by driver init phase and WMI interface 
+	 * not yet ready. Actually, we don't need to reset it because current design 
+	 * always STA interface in firmware and host sides.
 	 */
-	if ((ar->vif_max > 2) && fw_vif_idx) {
+	if (ar->p2p_dedicate) {
+		skip_vif = 2;
+	}
+	if ((ar->vif_max > skip_vif) && fw_vif_idx) {
 		/* 
 		 * WAR : NL80211 no really have P2P_DEVICE type and current 
 		 *       wpa_supplicant use P2P_CLIENT as interface type then 
@@ -498,7 +498,7 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 		 *       Current design always treat last virtual interface as 
 		 *       dedicated P2P_DEVICE.
 		 */
-		if (fw_vif_idx == (ar->vif_max - 1))
+		if (ar->p2p_dedicate && (fw_vif_idx == (ar->vif_max - 1)))
 			type = NL80211_IFTYPE_P2P_DEVICE;
 
 		if (ath6kl_p2p_utils_trans_porttype(type, &opmode, &subopmode) == 0) {
@@ -841,7 +841,8 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 					
 					list_del(&packet->list);
 					if (packet->recycle_count > ATH6KL_P2P_FLOWCTRL_RECYCLE_LIMIT) {
-						ath6kl_info("recycle packet exceeded limitation\n");
+						ath6kl_dbg(ATH6KL_DBG_INFO,
+							"recycle packet exceeded limitation\n");
 						packet->status = 0;
 						list_add_tail(&packet->list, &container);
 

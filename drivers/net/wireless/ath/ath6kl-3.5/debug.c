@@ -497,9 +497,11 @@ static ssize_t read_file_tgt_stats(struct file *file, char __user *user_buf,
 
 	tgt_stats = &vif->target_stats;
 
-	buf = kzalloc(buf_len, GFP_KERNEL);
-	if (!buf)
+	buf = (char *)kzalloc(buf_len, GFP_KERNEL);
+	if (!buf) {
+		kfree(buf);
 		return -ENOMEM;
+	}
 
 	if (down_interruptible(&ar->sem)) {
 		kfree(buf);
@@ -660,8 +662,9 @@ static ssize_t read_file_credit_dist_stats(struct file *file,
 	char *buf;
 	unsigned int buf_len, len = 0;
 	ssize_t ret_cnt;
+	struct list_head *list_head = &target->cred_dist_list;
 
-	if ( WARN_ON(&target->cred_dist_list) )
+	if (WARN_ON(list_head->next == NULL))
 		return -EFAULT;
 
 	buf_len = CREDIT_INFO_DISPLAY_STRING_LEN +
@@ -1420,6 +1423,7 @@ static ssize_t ath6kl_create_qos_write(struct file *file,
 	if (!vif)
 		return -EIO;
 
+	memset(&pstream, 0x00, sizeof(struct wmi_create_pstream_cmd));
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
@@ -3290,6 +3294,159 @@ static const struct file_operations fops_scan_params = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for AP Keep-alive */
+static ssize_t ath6kl_ap_keepalive_params_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	char *p;
+	int internal, cycle;
+	char buf[32];
+	ssize_t len;
+	int i;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	p = buf;
+	
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &internal);
+
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &cycle);
+	
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if (vif)
+			ath6kl_ap_keepalive_config(vif, 
+						   (u32)internal,
+						   (u32)cycle);
+	}
+
+	return count;
+}
+
+static ssize_t ath6kl_ap_keepalive_params_read(struct file *file, 
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	u8 buf[128];
+	unsigned int len = 0;
+	int i;
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if ((vif) &&
+		    (vif->ap_keepalive_ctx)) {
+		    	if (vif->ap_keepalive_ctx->flags & ATH6KL_AP_KA_FLAGS_BY_SUPP)
+				len += scnprintf(buf + len, sizeof(buf) - len, 
+					"int-%d offload to supplicant/hostapd\n",
+					i);
+			else
+				len += scnprintf(buf + len, sizeof(buf) - len, 
+						"int-%d flags %x, interval %d ms., cycle %d\n",
+						i,
+						vif->ap_keepalive_ctx->flags,
+						vif->ap_keepalive_ctx->ap_ka_interval,
+						vif->ap_keepalive_ctx->ap_ka_reclaim_cycle);
+		}
+	}
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+/* debug fs for AP Keep-alive */
+static const struct file_operations fops_ap_keepalive_params = {
+	.read = ath6kl_ap_keepalive_params_read,
+	.write = ath6kl_ap_keepalive_params_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath6kl_tgt_ap_stat_read(struct file *file, 
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	static u8 buf[2048];
+	u8 *p;
+	unsigned int len = 0;
+	int i, j, buf_len;
+	long left;
+
+	p = buf;
+	buf_len = sizeof(buf);
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+
+		if ((vif) &&
+		    (vif->nw_type == AP_NETWORK)) {
+			struct wmi_ap_mode_stat *ap_stats;
+			
+			if (down_interruptible(&ar->sem))
+				return -EBUSY;
+
+			set_bit(STATS_UPDATE_PEND, &vif->flags);
+
+			if (ath6kl_wmi_get_stats_cmd(ar->wmi, vif->fw_vif_idx)) {
+				up(&ar->sem);
+				return -EIO;
+			}
+
+			left = wait_event_interruptible_timeout(ar->event_wq,
+								!test_bit(STATS_UPDATE_PEND,
+								&vif->flags), WMI_TIMEOUT);
+			up(&ar->sem);
+
+			if (left <= 0)
+				return -ETIMEDOUT;
+
+			len += scnprintf(p + len, buf_len - len, "VIF[%d] \n",
+					vif->fw_vif_idx);
+
+			ap_stats = &vif->ap_stats;
+			for (j = 0; j < AP_MAX_NUM_STA; j ++) {
+				struct wmi_per_sta_stat *per_sta_stat = &ap_stats->sta[j];
+
+				if (per_sta_stat->aid) {
+					len += scnprintf(p + len, buf_len - len,
+						" STA - AID %02d tx_bytes/pkts/error %d/%d/%d rx_bytes/pkts/error %d/%d/%d tx_ucast_rate %d last_txrx_time %d\n",
+						per_sta_stat->aid,
+						per_sta_stat->tx_bytes,
+						per_sta_stat->tx_pkts,
+						per_sta_stat->tx_error,
+						per_sta_stat->rx_bytes,
+						per_sta_stat->rx_pkts,
+						per_sta_stat->rx_error,
+						per_sta_stat->tx_ucast_rate,
+						per_sta_stat->last_txrx_time);
+				}
+			}
+		}
+	}
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+/* debug fs for AP Stats. */
+static const struct file_operations fops_tgt_ap_stats = {
+	.read = ath6kl_tgt_ap_stat_read,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -3434,6 +3591,12 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("scan_params", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_scan_params);
+
+	debugfs_create_file("ap_keepalive_params", S_IRUSR,
+			    ar->debugfs_phy, ar, &fops_ap_keepalive_params);
+
+	debugfs_create_file("tgt_ap_stats", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_tgt_ap_stats);
 
 	return 0;
 }

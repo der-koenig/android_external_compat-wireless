@@ -61,15 +61,28 @@ int ath6kl_hif_rw_comp_handler(void *context, int status)
 }
 #define REG_DUMP_COUNT_AR6003   60
 #define REGISTER_DUMP_LEN_MAX   60
+#define REG_DUMP_COUNT_AR6004   60
 
 static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 {
 	__le32 regdump_val[REGISTER_DUMP_LEN_MAX];
 	u32 i, address, regdump_addr = 0;
 	int ret;
+	int dumpcount = REG_DUMP_COUNT_AR6004;
 
-	if (ar->target_type != TARGET_TYPE_AR6003)
+	if (ar->target_type != TARGET_TYPE_AR6003 &&
+		ar->target_type != TARGET_TYPE_AR6004)
 		return;
+
+	switch (ar->target_type) {
+	case TARGET_TYPE_AR6003:
+		dumpcount = REG_DUMP_COUNT_AR6003;
+		break;
+	case TARGET_TYPE_AR6004:
+	default:
+		dumpcount = REG_DUMP_COUNT_AR6004;
+		break;
+	}
 
 	/* the reg dump pointer is copied to the host interest area */
 	address = ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_failure_state));
@@ -80,7 +93,7 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 
 	if (ret || !regdump_addr) {
 		ath6kl_warn("failed to get ptr to register dump area: %d\n",
-			    ret);
+				ret);
 		return;
 	}
 
@@ -90,7 +103,7 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 
 	/* fetch register dump data */
 	ret = ath6kl_diag_read(ar, regdump_addr, (u8 *)&regdump_val[0],
-				  REG_DUMP_COUNT_AR6003 * (sizeof(u32)));
+				dumpcount * (sizeof(u32)));
 	if (ret) {
 		ath6kl_warn("failed to get register dump: %d\n", ret);
 		return;
@@ -98,17 +111,17 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 
 	ath6kl_info("crash dump:\n");
 	ath6kl_info("hw 0x%x fw %s\n", ar->wiphy->hw_version,
-		    ar->wiphy->fw_version);
+			ar->wiphy->fw_version);
 
-	BUILD_BUG_ON(REG_DUMP_COUNT_AR6003 % 4);
+	BUILD_BUG_ON(dumpcount % 4);
 
-	for (i = 0; i < REG_DUMP_COUNT_AR6003 / 4; i++) {
+	for (i = 0; i < dumpcount / 4; i++) {
 		ath6kl_info("%d: 0x%8.8x 0x%8.8x 0x%8.8x 0x%8.8x\n",
-			    4 * i,
-			    le32_to_cpu(regdump_val[i]),
-			    le32_to_cpu(regdump_val[i + 1]),
-			    le32_to_cpu(regdump_val[i + 2]),
-			    le32_to_cpu(regdump_val[i + 3]));
+				4 * i,
+				le32_to_cpu(regdump_val[i]),
+				le32_to_cpu(regdump_val[i + 1]),
+				le32_to_cpu(regdump_val[i + 2]),
+				le32_to_cpu(regdump_val[i + 3]));
 	}
 
 }

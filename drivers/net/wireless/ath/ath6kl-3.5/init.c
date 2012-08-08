@@ -34,10 +34,15 @@
 unsigned int debug_mask;
 unsigned int htc_bundle_recv = 0;
 unsigned int htc_bundle_send = 0;
+unsigned int htc_bundle_send_timer = 0;
 static unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
-unsigned int ath6kl_wow_gpio = 8;
+unsigned int ath6kl_wow_gpio = 9;
+#ifdef CONFIG_ANDROID
 unsigned int ath6kl_p2p = 0x3;
+#else
+unsigned int ath6kl_p2p;
+#endif
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -52,6 +57,7 @@ module_param(diag_local_test, uint, 0644);
 module_param(debug_mask, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
 module_param(htc_bundle_send, uint, 0644);
+module_param(htc_bundle_send_timer, uint, 0644);
 module_param(testmode, uint, 0644);
 module_param(ath6kl_wow_ext, uint, 0644);
 module_param(ath6kl_wow_gpio, uint, 0644);
@@ -180,7 +186,6 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0x434c00,
-
 		.fw = {
 			.dir		= AR6004_HW_1_3_FW_DIR,
 			.fw		= AR6004_HW_1_3_FIRMWARE_FILE,
@@ -250,16 +255,18 @@ static const struct ath6kl_hw hw_list[] = {
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 11264,
-		.board_addr			= 0x465400,
+		.board_addr			= 0x45fc00,
 
 		.fw = {
 			.dir		= AR6006_HW_1_0_FW_DIR,
-			.fw		= AR6006_HW_1_0_FIRMWARE_FILE,
+ 			.fw		= AR6006_HW_1_0_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
 		},
 
 		.fw_board		= AR6006_HW_1_0_BOARD_DATA_FILE,
 		.fw_default_board	= AR6006_HW_1_0_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6006_HW_1_0_EPPING_FILE,
+		.fw_softmac		= AR6006_HW_1_0_SOFTMAC_FILE,
 	},
 };
 
@@ -290,7 +297,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 #define CONFIG_AR600x_DEBUG_UART_TX_PIN 8
 #define CONFIG_AR6004_DEBUG_UART_TX_PIN 11
-#define CONFIG_AR6006_DEBUG_UART_TX_PIN 7
+#define CONFIG_AR6006_DEBUG_UART_TX_PIN 24
 
 #define ATH6KL_DATA_OFFSET    64
 struct sk_buff *ath6kl_buf_alloc(int size)
@@ -405,7 +412,8 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 
 	memset(&connect, 0, sizeof(connect));
 
-	if ( ar->version.target_ver == AR6004_HW_1_6_VERSION ) {
+	if ( ar->version.target_ver == AR6004_HW_1_6_VERSION ||
+		ar->version.target_ver == AR6006_HW_1_0_VERSION ) {
 		connect.conn_flags |= HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL;
 	}
 
@@ -634,7 +642,7 @@ static int ath6kl_target_config_wlan_params(struct ath6kl *ar, int idx)
 			status = -EIO;
 		}
 
-	if (ar->p2p && (ar->vif_max == 1 || idx)) {
+	if (ar->p2p && (ar->vif_max == 1 || idx || !(ar->p2p_dedicate))) {
 		ret = ath6kl_wmi_info_req_cmd(ar->wmi, idx,
 					      P2P_FLAG_CAPABILITIES_REQ |
 					      P2P_FLAG_MACADDR_REQ |
@@ -647,7 +655,7 @@ static int ath6kl_target_config_wlan_params(struct ath6kl *ar, int idx)
 		}
 	}
 
-	if (ar->p2p && (ar->vif_max == 1 || idx)) {
+	if (ar->p2p && (ar->vif_max == 1 || idx || !(ar->p2p_dedicate))) {
 		/* Enable Probe Request reporting for P2P */
 		ret = ath6kl_wmi_probe_report_req_cmd(ar->wmi, idx, true);
 		if (ret) {
@@ -700,22 +708,50 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		fw_mode |= fw_iftype << (i * HI_OPTION_FW_MODE_BITS);
 
 	/*
-	 * By default, submodes :
+	 * p2p_dedicate, submodes :
 	 *		vif[0] - AP/STA/IBSS
 	 *		vif[1] - "P2P dev"/"P2P GO"/"P2P Client"
 	 *		vif[2] - "P2P dev"/"P2P GO"/"P2P Client"
+	 *
+	 * !p2p_dedicate, submodes:
+	 *		vif[0] - "AP/STA/IBSS/P2P dev"
+	 *		vif[1]- "P2P dev"/"P2P GO"/"P2P Client"
 	 */
-
+	 
 	for (i = 0; i < ar->max_norm_iface; i++)
 		fw_submode |= HI_OPTION_FW_SUBMODE_NONE <<
-			      (i * HI_OPTION_FW_SUBMODE_BITS);
+				(i * HI_OPTION_FW_SUBMODE_BITS);
 
-	for (i = ar->max_norm_iface; i < ar->vif_max; i++)
-		fw_submode |= HI_OPTION_FW_SUBMODE_P2PDEV <<
-			      (i * HI_OPTION_FW_SUBMODE_BITS);
+	if (ar->p2p_dedicate) {
+		for (i = ar->max_norm_iface; i < ar->vif_max; i++)
+			fw_submode |= HI_OPTION_FW_SUBMODE_P2PDEV <<
+						(i * HI_OPTION_FW_SUBMODE_BITS);
+	} else if (ar->p2p) {
+		for (i = 0; i < ar->vif_max; i++)
+			fw_submode |= HI_OPTION_FW_SUBMODE_P2PDEV <<
+						(i * HI_OPTION_FW_SUBMODE_BITS);
+	}
 
-	if (ar->p2p && ar->vif_max == 1)
-		fw_submode = HI_OPTION_FW_SUBMODE_P2PDEV;
+	/* Check if we shall disable p2p dedicate mode in firmware */
+	param = 0;
+
+	if (ath6kl_bmi_read(ar,
+			    ath6kl_get_hi_item_addr(ar,
+			    HI_ITEM(hi_option_flag2)),
+			    (u8 *)&param, 4) != 0) {
+		ath6kl_err("bmi_read_memory for setting fwmode failed\n");
+		return -EIO;
+	}	
+
+	if (ar->p2p_concurrent && !ar->p2p_dedicate) {
+		param |= HI_OPTION_DISABLE_P2P_DEDICATE;
+		if (ath6kl_bmi_write(ar, ath6kl_get_hi_item_addr(ar,
+				HI_ITEM(hi_option_flag2)),
+				(u8 *)&param, 4) != 0) {
+			ath6kl_err("bmi_write_memory for hi_option_flag2 failed\n");
+			return -EIO;
+		}
+	}
 
 #ifdef ATH6KL_DIAGNOSTIC
 	param = 115200;
@@ -729,7 +765,12 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-	param = 3;
+	if (ar->hif_type == ATH6KL_HIF_TYPE_USB) {
+		param = 0;
+	} else {
+		param = 3;
+	}
+
 	if (ath6kl_bmi_write(ar,
 		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_pktlog_num_buffers)),
 		(u8 *)&param, 4) != 0) {
@@ -969,10 +1010,6 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 {
 	const char *filename;
 	int ret;
-
-	/* AR6006 doesn't need uploading boarddata currently */
-	if (ar->target_type == TARGET_TYPE_AR6006)
-		return 0;
 
 	if (ar->fw_board != NULL)
 		return 0;
@@ -1415,12 +1452,6 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 	u32 board_data_size, board_ext_data_size;
 	int ret;
 
-	/* AR6006 doesn't need uploading boarddata currently */
-	if(ar->target_type != TARGET_TYPE_AR6006) {
-		if (WARN_ON(ar->fw_board == NULL))
-			return -ENOENT;
-	}
-
 	/*
 	 * Determine where in Target RAM to write Board Data.
 	 * For AR6004, host determine Target RAM address for
@@ -1450,10 +1481,6 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 		ath6kl_err("Failed to get board file target address.\n");
 		return -EINVAL;
 	}
-
-	/* AR6006 only need to set boarddata address currently */
-	if (ar->target_type == TARGET_TYPE_AR6006)
-		return 0;
 
 	switch (ar->target_type) {
 	case TARGET_TYPE_AR6003:
@@ -1743,8 +1770,9 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		status = ath6kl_bmi_reg_write(ar, address, param);
 		if (status)
 			return status;
-	} else if ( (ar->target_type == TARGET_TYPE_AR6004) &&
-		(ar->version.target_ver == AR6004_HW_1_6_VERSION) ) {
+	} else if ( (ar->target_type == TARGET_TYPE_AR6006) ||
+		((ar->target_type == TARGET_TYPE_AR6004) &&
+		(ar->version.target_ver == AR6004_HW_1_6_VERSION)) ) {
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "FPGA is running at 40/44MHz\n");
 		param = 0;
 		address = RTC_BASE_ADDRESS + CPU_CLOCK_ADDRESS;
@@ -1821,7 +1849,7 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "Enable wow extension with gpio#%d, param: 0x%08x\n", 
 			ath6kl_wow_gpio, param);
 	}	
-	
+
 	param = 0;
 	address = RTC_BASE_ADDRESS + LPO_CAL_ADDRESS;
 	param = SM(LPO_CAL_ENABLE, 1);
@@ -2005,15 +2033,15 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 	if (ret)
 		return ret;
 
-	ret = ath6kl_configure_target(ar);
-	if (ret)
-		goto err_power_off;
-
 	ret = ath6kl_change_hw_params(ar);
 	if (ret) {
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "change hw params failed\n");
 		goto err_power_off;
 	}
+
+	ret = ath6kl_configure_target(ar);
+	if (ret)
+		goto err_power_off;
 
 	ret = ath6kl_init_upload(ar);
 	if (ret)
@@ -2173,7 +2201,7 @@ static u32 ath6kl_init_get_subtype(struct ath6kl *ar)
 	is_2ss = is_dual_band = 0;
 	is_ht40 = 1;
 	if (ar->fw_board) {
-		if ((ar->fw_board[BDATA_TXRXMASK_OFFSET] & 0x30) == 0x30)
+		if ((ar->fw_board[BDATA_TXRXMASK_OFFSET] & 0x03) == 0x03)
 			is_2ss = 1;
 		if (ar->fw_board[BDATA_OPFLAGS_OFFSET] & (1 << 0))
 			is_dual_band = 1;
@@ -2292,6 +2320,10 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	for (i = 0; i < ar->vif_max; i++)
 		ar->avail_idx_map |= BIT(i);
+
+	/* HACK */
+	if (ar->p2p_compat)
+		ar->avail_idx_map = 0x3;
 
 	rtnl_lock();
 
@@ -2438,6 +2470,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		ath6kl_wmi_abort_scan_cmd(vif->ar->wmi, vif->fw_vif_idx);
 		cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;
+		clear_bit(SCANNING, &vif->flags);
 	}
 }
 

@@ -42,6 +42,7 @@ ath6kl_sdio-y += ath_netlink.o
 ath6kl_sdio-$(CONFIG_QC_INTERNAL) += intra_reg.o
 ath6kl_sdio-y += pm.o
 ath6kl_sdio-y += p2p.o
+ath6kl_sdio-y += ap.o
 
 obj-$(CONFIG_ATH6KL_USB) += ath6kl_usb.o
 ath6kl_usb-y += debug.o
@@ -63,6 +64,7 @@ ath6kl_usb-y += ath_netlink.o
 ath6kl_usb-$(CONFIG_QC_INTERNAL) += intra_reg.o
 ath6kl_usb-y += pm.o
 ath6kl_usb-y += p2p.o
+ath6kl_usb-y += ap.o
 
 ccflags-$(CONFIG_QC_INTERNAL) += -DCONFIG_QC_INTERNAL
 ccflags-$(CONFIG_FPGA) += -DCONFIG_FPGA

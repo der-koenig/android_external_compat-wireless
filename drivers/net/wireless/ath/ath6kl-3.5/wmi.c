@@ -526,13 +526,25 @@ static int ath6kl_wmi_remain_on_chnl_event_rx(struct wmi *wmi, u8 *datap,
 		   freq, dur);
 	chan = ieee80211_get_channel(ar->wiphy, freq);
 	if (!chan) {
-		ath6kl_dbg(ATH6KL_DBG_WMI, "remain_on_chnl: Unknown channel "
-			   "(freq=%u)\n", freq);
+		ath6kl_err("RoC : remain_on_chnl: Unknown channel "
+			   "(freq=%u) (dur=%u)\n", freq, dur);
 		return -EINVAL;
 	}
-	id = vif->last_roc_id;
 
+	spin_lock_bh(&vif->if_lock);
+	id = vif->last_roc_id;
+	spin_unlock_bh(&vif->if_lock);
+
+	clear_bit(ROC_PEND, &vif->flags);
 	set_bit(ROC_ONGOING, &vif->flags);
+
+	/* RoC already be cancelled by user. */
+	if (id == vif->last_cancel_roc_id) {
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"RoC : This RoC already be cancelled by user %x\n", id);
+
+		return 0;
+	}
 
 	cfg80211_ready_on_channel(vif->ndev, id, chan, NL80211_CHAN_NO_HT,
 				  dur, GFP_ATOMIC);
@@ -561,16 +573,48 @@ static int ath6kl_wmi_cancel_remain_on_chnl_event_rx(struct wmi *wmi,
 		   "status=%u\n", freq, dur, ev->status);
 	chan = ieee80211_get_channel(ar->wiphy, freq);
 	if (!chan) {
-		ath6kl_dbg(ATH6KL_DBG_WMI, "cancel_remain_on_chnl: Unknown "
-			   "channel (freq=%u)\n", freq);
+		spin_lock_bh(&vif->if_lock);
+		vif->last_cancel_roc_id = 0;
+		spin_unlock_bh(&vif->if_lock);
+
+		ath6kl_err("RoC : cancel_remain_on_chnl: Unknown "
+			   "channel (freq=%u) (dur=%u)\n", freq, dur);
 		return -EINVAL;
 	}
+
+	/* If the channel already be closed and send TX fail to supplicant. */
+	if (!list_empty(&wmi->mgmt_tx_frame_list)) {
+		struct wmi_mgmt_tx_frame *mgmt_tx_frame, *tmp;
+		
+		list_for_each_entry_safe(mgmt_tx_frame, tmp, &wmi->mgmt_tx_frame_list,
+				list) {
+
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"RoC close but not yet get previous tx-status %x %d\n", 
+				   mgmt_tx_frame->mgmt_tx_frame_idx, vif->fw_vif_idx);
+
+			if (mgmt_tx_frame->vif == vif) {
+				list_del(&mgmt_tx_frame->list);
+
+				cfg80211_mgmt_tx_status(vif->ndev, 
+							mgmt_tx_frame->mgmt_tx_frame_idx,
+							mgmt_tx_frame->mgmt_tx_frame,
+							mgmt_tx_frame->mgmt_tx_frame_len,
+							false, GFP_ATOMIC);
+				kfree(mgmt_tx_frame->mgmt_tx_frame);
+				kfree(mgmt_tx_frame);
+			}
+		}
+	}
+
+	spin_lock_bh(&vif->if_lock);
 	if (vif->last_cancel_roc_id &&
 	    vif->last_cancel_roc_id + 1 == vif->last_roc_id)
 		id = vif->last_cancel_roc_id; /* event for cancel command */
 	else
 		id = vif->last_roc_id; /* timeout on uncanceled r-o-c */
 	vif->last_cancel_roc_id = 0;
+	spin_unlock_bh(&vif->if_lock);
 
 	clear_bit(ROC_ONGOING, &vif->flags);
 	if (test_bit(ROC_CANCEL_PEND, &vif->flags)) {
@@ -944,6 +988,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 							ev->u.ap_bss.aid);
 			ath6kl_connect_ap_mode_bss(
 				vif, le16_to_cpu(ev->u.ap_bss.ch));
+
+			/* Start keep-alive if need. */
+			ath6kl_ap_keepalive_start(vif);
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_WMI, "%s: aid %u mac_addr %pM "
 				   "auth=%u keymgmt=%u cipher=%u apsd_info=%u "
@@ -3270,6 +3317,9 @@ int ath6kl_wmi_send_action_cmd(struct wmi *wmi, u8 if_idx, u32 id, u32 freq,
 			return -ENOMEM;
 		}
 
+		mgmt_tx_frame->vif = ath6kl_get_vif_by_index(wmi->parent_dev, if_idx);
+		WARN_ON(!mgmt_tx_frame->vif);
+			
 		memcpy(buf, data, data_len);
 		mgmt_tx_frame->mgmt_tx_frame = buf;
 		mgmt_tx_frame->mgmt_tx_frame_len = data_len;
@@ -4661,3 +4711,22 @@ int ath6kl_wmi_disc_mode_cmd(struct wmi *wmi, u8 if_idx, u16 enable, u16 channel
 	return ret;
 }
 #endif
+
+int ath6kl_wmi_ap_poll_sta(struct wmi *wmi, u8 if_idx, u8 aid)
+{
+	struct sk_buff *skb;
+	struct wmi_ap_poll_sta_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, 
+			"keep_alive_nulldata: aid %d\n", aid);
+	
+	cmd = (struct wmi_ap_poll_sta_cmd *)skb->data;
+	cmd->aid = aid;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_AP_POLL_STA_CMDID,
+				NO_SYNC_WMIFLAG);
+}

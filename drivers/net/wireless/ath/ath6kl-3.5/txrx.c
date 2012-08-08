@@ -32,8 +32,8 @@ static const u8 up_to_ac[] = {
 	WMM_AC_VO,
 };
 
-static int aggr_tx(struct ath6kl_vif *vif, struct sk_buff **skb);
-static int aggr_tx_flush(struct ath6kl_vif *vif);
+static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta, struct sk_buff **skb);
+static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn);
 
 static u8 ath6kl_ibss_map_epid(struct sk_buff *skb, struct net_device *dev,
 			       u32 *map_no)
@@ -96,7 +96,8 @@ static u8 ath6kl_ibss_map_epid(struct sk_buff *skb, struct net_device *dev,
 }
 
 static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
-				u32 *flags)
+				u32 *flags,
+				struct ath6kl_sta **sta)
 {
 	struct ethhdr *datap = (struct ethhdr *) skb->data;
 	struct ath6kl_sta *conn = NULL;
@@ -167,6 +168,9 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 			/* Inform the caller that the skb is consumed */
 			return true;
 		}
+
+		/* FIXME : host to somewhere instead of function parameter. */
+		*sta = conn;
 
 		if (conn->sta_flags & STA_PS_SLEEP) {
 			if (!((conn->sta_flags & STA_PS_POLLED) || (conn->sta_flags & STA_PS_APSD_TRIGGER))) {
@@ -422,6 +426,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 	bool chk_adhoc_ps_mapping = false;
 	u32 wmi_data_flags = 0;
 	int ret, aggr_tx_status = AGGR_TX_UNKNOW;
+	struct ath6kl_sta *conn = NULL;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
 		   "%s: skb=0x%p, data=0x%p, len=0x%x\n", __func__,
@@ -441,7 +446,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* AP mode Power saving processing */
 	if (vif->nw_type == AP_NETWORK) {
-		if (ath6kl_powersave_ap(vif, skb, &wmi_data_flags))
+		if (ath6kl_powersave_ap(vif, skb, &wmi_data_flags, &conn))
 			return 0;
 	}
 
@@ -515,8 +520,8 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 	if ((test_bit(AMSDU_ENABLED, &vif->flags)) &&
 		(vif->aggr_cntxt->tx_amsdu_enable) &&
 		(!chk_adhoc_ps_mapping) &&
-		(vif->nw_type == INFRA_NETWORK)) {			/* TBD : Only STA mode now. */
-		aggr_tx_status = aggr_tx(vif, &skb);
+		(vif->nw_type & (INFRA_NETWORK | AP_NETWORK))) {
+		aggr_tx_status = aggr_tx(vif, conn, &skb);
 
 		if (aggr_tx_status == AGGR_TX_OK)
 			return 0;
@@ -527,7 +532,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 
 		if ((vif->aggr_cntxt->tx_amsdu_seq_pkt) &&
 			(aggr_tx_status == AGGR_TX_BYPASS))
-			aggr_tx_flush(vif);
+			aggr_tx_flush(vif, conn);
 	}
 
 	spin_lock_bh(&ar->lock);
@@ -623,6 +628,7 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 	struct ath6kl *ar = devt;
 	enum htc_endpoint_id eid;
 	int i;
+	u8 num_stream_active;
 
 	eid = ar->ac2ep_map[traffic_class];
 
@@ -671,6 +677,16 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 			}
 		}
 	}
+
+	/* check the number of active stream */
+	num_stream_active = 0;
+
+	for (i = 0; i < WMM_NUM_AC; i++) {
+		if (ar->ac_stream_active[i] == true)
+			num_stream_active++;
+	}
+
+	ar->ac_stream_active_num = num_stream_active;
 
 	spin_unlock_bh(&ar->lock);
 
@@ -757,7 +773,8 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		    action != HTC_SEND_FULL_DROP) {
 			spin_unlock_bh(&ar->list_lock);
 
-			if (ath6kl_htc_stop_netif_queue_full(ar->htc_target)) {
+			if (ath6kl_htc_stop_netif_queue_full(ar->htc_target) ||
+			    ar->ac_stream_active_num == 1) {
 				spin_lock_bh(&vif->if_lock);
 				set_bit(NETQ_STOPPED, &vif->flags);
 				spin_unlock_bh(&vif->if_lock);
@@ -1397,7 +1414,7 @@ static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
 				aggr_conn->timer_scheduled = true;
 				mod_timer(&aggr_conn->timer,
 					  (jiffies +
-					   HZ * (aggr_conn->aggr_cntxt->rx_aggr_timeout) / 1000));
+					   msecs_to_jiffies(aggr_conn->aggr_cntxt->rx_aggr_timeout)));
 				rxtid->progress = false;
 				rxtid->timer_mon = true;
 				spin_unlock_bh(&rxtid->lock);
@@ -1692,8 +1709,10 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 		if (ps_state) {
 			conn->sta_flags |= STA_PS_SLEEP;
-			if (!prev_ps)
+			if (!prev_ps) {
+				aggr_tx_flush(vif , conn);
 				ath6kl_ps_queue_age_start(conn);
+			}
 		} else {
 			conn->sta_flags &= ~STA_PS_SLEEP;
 			if (prev_ps)
@@ -1855,7 +1874,7 @@ static void aggr_tx_delete_tid_state(struct aggr_conn_info *aggr_conn, u8 tid)
 	return;
 }
 
-static int aggr_tx(struct ath6kl_vif *vif, struct sk_buff **skb)
+static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta, struct sk_buff **skb)
 {
 #define	ETHERTYPE_IP	0x0800		/* IP  protocol */
 #define IP_PROTO_TCP	0x6			/* TCP protocol */
@@ -1890,12 +1909,33 @@ static int aggr_tx(struct ath6kl_vif *vif, struct sk_buff **skb)
 		if (ip_hdr->protocol == IP_PROTO_TCP) {
 			struct ath6kl_sta *conn = ath6kl_find_sta(vif, eth_hdr->h_dest);
 
+			if (!sta)
+				conn = ath6kl_find_sta(vif, eth_hdr->h_dest);
+			else {
+				/* Only in AP mode and we already know the station. */
+				WARN_ON(vif->nw_type != AP_NETWORK);
+
+				conn = sta;
+			}
+
 			ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "aggr tx ", (*skb)->data, (*skb)->len);
 
 			if (conn) {
 				struct sk_buff *amsdu_skb;
 				struct wmi_data_hdr *wmi_hdr = (struct wmi_data_hdr *)((u8 *)eth_hdr - sizeof(struct wmi_data_hdr));
 				u16 info2_tmp;
+
+				/* Not allow TX-AMSDU during STA sleep. */
+				if ((vif->nw_type == AP_NETWORK) &&
+				    (conn->sta_flags & (STA_PS_SLEEP | 
+							STA_PS_POLLED |
+							STA_PS_APSD_TRIGGER))) {
+					ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+								   "%s: STA is in sleep state, aid %d sta_flags %x\n", __func__,
+									conn->aid,
+									conn->sta_flags);
+					return AGGR_TX_BYPASS;
+				}
 
 				txtid = AGGR_GET_TXTID(conn->aggr_conn_cntxt, ((wmi_hdr->info >> WMI_DATA_HDR_UP_SHIFT) & WMI_DATA_HDR_UP_MASK));
 
@@ -1977,8 +2017,9 @@ static int aggr_tx(struct ath6kl_vif *vif, struct sk_buff **skb)
 						memcpy(eth_hdr->h_source, vif->ndev->dev_addr, ETH_ALEN);
 					} else {
 						memcpy(eth_hdr->h_dest, conn->mac, ETH_ALEN);
-						memcpy(eth_hdr->h_source, vif->bssid, ETH_ALEN);
+						memcpy(eth_hdr->h_source, vif->ndev->dev_addr, ETH_ALEN);
 					}
+
 					eth_hdr->h_proto = htons(amsdu_skb->len);
 
 					/* Correct final skb's data and length. */
@@ -2025,7 +2066,6 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 	if (amsdu_skb == NULL) {
 		txtid->num_tx_null++;
 		spin_unlock_bh(&txtid->lock);
-		//ath6kl_err("aggr_tx_tid NULL, tid = %d aid = %d\n", txtid->tid, txtid->aid);
 		return -EINVAL;
 	}
 
@@ -2050,9 +2090,9 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 	} else {
 		struct ath6kl_sta *conn = ath6kl_find_sta_by_aid(vif, txtid->aid);
 
-		if (!conn) {
+		if (conn) {
 			memcpy(eth_hdr->h_dest, conn->mac, ETH_ALEN);
-			memcpy(eth_hdr->h_source, vif->bssid, ETH_ALEN);
+			memcpy(eth_hdr->h_source, vif->ndev->dev_addr, ETH_ALEN);
 		} else {
 			aggr_tx_reset_aggr(txtid, true, timer_stop);
 			spin_unlock_bh(&txtid->lock);
@@ -2154,23 +2194,27 @@ static void aggr_tx_timeout(unsigned long arg)
 	return;
 }
 
-static int aggr_tx_flush(struct ath6kl_vif *vif)
+static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn)
 {
-	int sta_num = (vif->nw_type == AP_NETWORK) ? AP_MAX_NUM_STA : 1;
-	int i, tid;
+	int tid;
 
-	/* TBD : Only flush the same DA in AP mode. */
-	for (i = 0; i < sta_num; i++) {
-		struct ath6kl_sta *conn = &vif->sta_list[i];
-
-		for (tid = (NUM_OF_TIDS - 1); tid >= 0; tid--) {
-			struct txtid *txtid = AGGR_GET_TXTID(conn->aggr_conn_cntxt, tid);
-
-			ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU, "%s: flush sta-%d %d\n", __func__, i, sta_num);
-			aggr_tx_tid(txtid, true);
-		}
+	if (conn == NULL) {
+		if (vif->nw_type == INFRA_NETWORK) 
+			conn = &vif->sta_list[0];
+		else if (vif->nw_type == AP_NETWORK) 
+			return 0;
+		else
+			BUG_ON(1);
 	}
 
+	/* In AP mode, these packages will be queued in target side. */
+	for (tid = (NUM_OF_TIDS - 1); tid >= 0; tid--) {
+		struct txtid *txtid = AGGR_GET_TXTID(conn->aggr_conn_cntxt, tid);
+
+		ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU, 
+				"%s: flush sta aid %d \n", __func__, conn->aid);
+		aggr_tx_tid(txtid, true);
+	}
 	return 0;
 }
 
@@ -2430,6 +2474,11 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;
 	aggr->tx_amsdu_timeout = AGGR_TX_TIMEOUT;
 
+	/* 
+	 * NOTE : Now, it will be off after AP/P2P-GO start unless the user
+	 *        want to use it.
+	 */
+	 
 	/* Always enable host-based A-MSDU. */
 	set_bit(AMSDU_ENABLED, &vif->flags);
 

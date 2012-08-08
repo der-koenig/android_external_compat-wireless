@@ -24,7 +24,7 @@
 /* constants */
 #define TX_URB_COUNT            32
 #define RX_URB_COUNT            32
-#define ATH6KL_USB_RX_BUFFER_SIZE  2048
+#define ATH6KL_USB_RX_BUFFER_SIZE  1700
 #define ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE  16896
 #define ATH6KL_USB_TX_BUNDLE_BUFFER_SIZE  16384
 #define WORKER_LOCK_BIT	0
@@ -956,6 +956,12 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 				   "ath6kl usb recv callback buf:0x%p\n", buf);
+			
+			if(!device->htc_callbacks.rx_completion){
+				dev_kfree_skb(buf);
+				continue;
+			}
+
 			device->htc_callbacks.
 				rx_completion(device->ar->htc_target, buf,
 					      pipe->logical_pipe_num);

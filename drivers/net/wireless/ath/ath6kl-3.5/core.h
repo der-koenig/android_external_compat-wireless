@@ -39,13 +39,14 @@
 #include "wmi_btcoex.h"
 #include "htcoex.h"
 #include "p2p.h"
+#include "ap.h"
 #include <linux/wireless.h>
 
 #define MAKE_STR(symbol) #symbol
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.74
+#define __BUILD_VERSION_ 3.5.0.100
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -96,6 +97,10 @@
 #define ATH6KL_SCAN_ACT_DEWELL_TIME	20 /* in ms. */
 #define ATH6KL_SCAN_PAS_DEWELL_TIME	50 /* in ms. */
 #define ATH6KL_SCAN_PROBE_PER_SSID	1
+#define ATH6KL_SCAN_FG_MAX_PERIOD	(5)	/* in sec. */
+
+/* Remain-on-channel */
+#define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
 
 /* includes also the null byte */
 #define ATH6KL_FIRMWARE_MAGIC               "QCA-ATH6KL"
@@ -256,7 +261,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_3_SOFTMAC_FILE            "ath6k/AR6004/hw1.3/softmac.bin"
 
 /* AR6004 1.6 definitions */
-#define AR6004_HW_1_6_VERSION                 0x31c808f5
+#define AR6004_HW_1_6_VERSION                 0x31c80954
 #define AR6004_HW_1_6_FW_DIR			"ath6k/AR6004/hw1.6"
 #define AR6004_HW_1_6_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_6_FIRMWARE_FILE           "fw.ram.bin"
@@ -270,13 +275,15 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
 
 /* AR6006 1.0 definitions */
-#define AR6006_HW_1_0_VERSION                 0x3000270f
+#define AR6006_HW_1_0_VERSION                 0x31c80958
 #define AR6006_HW_1_0_FW_DIR			"ath6k/AR6006/hw1.0"
 #define AR6006_HW_1_0_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_0_FIRMWARE_FILE           "fw.ram.bin"
 #define AR6006_HW_1_0_BOARD_DATA_FILE         "ath6k/AR6006/hw1.0/bdata.bin"
+#define AR6006_HW_1_0_EPPING_FILE             "ath6k/AR6006/hw1.0/epping.bin"
 #define AR6006_HW_1_0_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6006/hw1.0/bdata.bin"
+#define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
 
 #define AR6004_MAX_64K_FW_SIZE                58880
 
@@ -552,7 +559,7 @@ struct ath6kl_sta {
 	struct ath6kl_vif *vif;
 	spinlock_t lock;	/* ath6kl_sta global lock, psq_data & psq_mgmt also use it. */
 
-	/* AP-PS*/
+	/* AP-PS */
 	struct ath6kl_ps_buf_head psq_data;
 	struct ath6kl_ps_buf_head psq_mgmt;
 	struct timer_list psq_age_timer;
@@ -560,6 +567,10 @@ struct ath6kl_sta {
 
 	/* TX/RX-AMSDU */
 	struct aggr_conn_info *aggr_conn_cntxt;	
+
+	/* AP-Keepalive */
+	u16 last_txrx_time_tgt;		/* target time. */
+	unsigned long last_txrx_time;	/* in jiffies., host time. */
 };
 
 struct ath6kl_version {
@@ -719,12 +730,14 @@ enum ath6kl_vif_state {
 	STATS_UPDATE_PEND,
 	AMSDU_ENABLED,
 	HOST_SLEEP_MODE_CMD_PROCESSED,
+	ROC_PEND,
 	ROC_ONGOING,
 	ROC_CANCEL_PEND,
 	DISCONNECT_PEND,
 	PMKLIST_GET_PEND,
 	PORT_STATUS_PEND,
 	WLAN_WOW_ENABLE,
+	SCANNING,
 };
 
 struct ath6kl_vif {
@@ -764,7 +777,7 @@ struct ath6kl_vif {
 	struct wmi_ap_mode_stat ap_stats;
 	u8 ap_country_code[3];
 	struct ath6kl_sta sta_list[AP_MAX_NUM_STA];
-	u8 sta_list_index;
+	u16 sta_list_index;	/* at least AP_MAX_NUM_STA bits */
 	struct ath6kl_req_key ap_mode_bkey;
 	struct ath6kl_ps_buf_head psq_mcast;
 	spinlock_t psq_mcast_lock;
@@ -788,10 +801,13 @@ struct ath6kl_vif {
 	struct p2p_ps_info *p2p_ps_info_ctx;
 	enum scanband_type scanband_type;
 	u32 scanband_chan;
+	struct ap_keepalive_info *ap_keepalive_ctx;
+	struct timer_list sche_scan_timer;
+	int sche_scan_interval;			/* in ms. */
 };
 
 #define WOW_LIST_ID		0
-#define WOW_HOST_REQ_DELAY	500 /* ms */
+#define WOW_HOST_REQ_DELAY	5000 /* ms */
 
 /* Flag info */
 enum ath6kl_dev_state {
@@ -859,6 +875,7 @@ struct ath6kl {
 	bool ac_stream_active[WMM_NUM_AC];
 	u8 ac_stream_pri_map[WMM_NUM_AC];
 	u8 hiac_stream_active_pri;
+	u8 ac_stream_active_num;
 	u8 ep2ac_map[ENDPOINT_MAX];
 	enum htc_endpoint_id ctrl_ep;
 	struct ath6kl_htc_credit_info credit_state_info;
@@ -932,9 +949,13 @@ struct ath6kl {
 
 	struct dentry *debugfs_phy;
 
-	bool p2p;
-	bool p2p_concurrent;
-	bool p2p_dedicate;
+	bool p2p;			/* Support P2P or not */
+	bool p2p_concurrent;		/* Support P2P-Concurrent or not */
+	bool p2p_multichan_concurrent;	/* Support P2P-Multi-Channel-Concurrent or not */
+	bool p2p_dedicate;		/* Need Dedicated-P2P-Device interface or not */
+	bool p2p_compat;		/* Support ath6kl-3.2's P2P-Concurrent or not */
+
+	bool sche_scan;
 
 	struct ath6kl_btcoex btcoex_info;
 	u32 mod_debug_quirks;
@@ -1118,7 +1139,7 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel,
 			  u8 beacon_ie_len, u8 assoc_req_len,
 			  u8 assoc_resp_len, u8 *assoc_info);
 void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel);
-void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u16 aid, u8 *mac_addr,
+void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
 				u8 assoc_req_len, u8 *assoc_info, u8 apsd_info);
 void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason,

@@ -141,7 +141,7 @@ static void htcoex_scan_start(unsigned long arg)
 	}
 
 	/* bypass this time if ROC is ongoing. */
-	if (test_bit(ROC_ONGOING, &vif->flags))
+	if (test_bit(ROC_PEND, &vif->flags))
 		goto resche;
 
 	ret = ath6kl_wmi_startscan_cmd(ar->wmi, vif->fw_vif_idx, WMI_LONG_SCAN,

@@ -116,6 +116,7 @@
 /* HTC operational parameters */
 #define HTC_TARGET_RESPONSE_TIMEOUT        2000	/* in ms */
 #define HTC_TARGET_RESPONSE_POLL_WAIT      10
+#define HTC_TARGET_RESPONSE_POLL_MS	   (HTC_TARGET_RESPONSE_POLL_WAIT)
 #define HTC_TARGET_RESPONSE_POLL_COUNT     200
 #define HTC_TARGET_DEBUG_INTR_MASK         0x01
 #define HTC_TARGET_CREDIT_INTR_MASK        0xF0
@@ -328,8 +329,10 @@ struct htc_packet {
 	 * a network buffer
 	 */
 	struct sk_buff *skb;
-        u8 connid;
-        u8 recycle_count;
+
+	/* P2P flowctrl */
+	u8 connid;
+	u8 recycle_count;
 };
 
 enum htc_send_full_action {
@@ -528,6 +531,11 @@ struct htc_endpoint {
 	u8 pipeid_dl;
 	struct list_head tx_lookup_queue;
 	bool tx_credit_flow_enabled;
+	
+	struct timer_list timer;
+	u8 call_by_timer;
+	u8 timer_init;
+	u8 pass_th;
 };
 
 struct htc_control_buffer {

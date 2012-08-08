@@ -146,6 +146,27 @@ static int ath6kl_sdio_func0_cmd52_wr_byte(struct mmc_card *card,
 	return mmc_wait_for_cmd(card->host, &io_cmd, 0);
 }
 
+static int ath6kl_sdio_func0_cmd52_rd_byte(struct mmc_card *card,
+                                           unsigned int address,
+                                           unsigned char *byte)
+{
+	struct mmc_command io_cmd;
+	u32 err;
+
+	*byte = 0;
+	memset(&io_cmd, 0, sizeof(io_cmd));
+	ath6kl_sdio_set_cmd52_arg(&io_cmd.arg, 0, 0, address, *byte);
+	io_cmd.opcode = SD_IO_RW_DIRECT;
+	io_cmd.flags = MMC_RSP_R5 | MMC_CMD_AC;
+
+	err = mmc_wait_for_cmd(card->host, &io_cmd, 0);
+	if (!err) {
+		*byte = io_cmd.resp[0] & 0xff;
+	}
+
+	return err;
+}
+
 static int ath6kl_sdio_io(struct sdio_func *func, u32 request, u32 addr,
 			  u8 *buf, u32 len)
 {
@@ -771,17 +792,28 @@ static int ath6kl_sdio_config(struct ath6kl *ar)
 
 	if ((ar_sdio->id->device & MANUFACTURER_ID_ATH6KL_BASE_MASK) >=
 	    MANUFACTURER_ID_AR6003_BASE) {
-		/* enable 4-bit ASYNC interrupt on AR6003 or later */
-		ret = ath6kl_sdio_func0_cmd52_wr_byte(func->card,
-						CCCR_SDIO_IRQ_MODE_REG,
-						SDIO_IRQ_MODE_ASYNC_4BIT_IRQ);
-		if (ret) {
-			ath6kl_err("Failed to enable 4-bit async irq mode %d\n",
-				   ret);
-			goto out;
-		}
+		unsigned char sdio_irq_mode;
 
-		ath6kl_dbg(ATH6KL_DBG_BOOT, "4-bit async irq mode enabled\n");
+		ret = ath6kl_sdio_func0_cmd52_rd_byte(func->card,
+				CCCR_SDIO_IRQ_MODE_REG,	
+				&sdio_irq_mode);
+		if (ret) {
+			ath6kl_err("Failed to read CCCR SDIO IRQ mode reg %d\n",
+				ret);
+			goto out;
+		} else if (!(sdio_irq_mode & SDIO_IRQ_MODE_ASYNC_4BIT_IRQ)) {
+			/* enable 4-bit ASYNC interrupt on AR6003 or later */
+			ret = ath6kl_sdio_func0_cmd52_wr_byte(func->card,
+							CCCR_SDIO_IRQ_MODE_REG,
+							(sdio_irq_mode | SDIO_IRQ_MODE_ASYNC_4BIT_IRQ));
+			if (ret) {
+				ath6kl_err("Failed to enable 4-bit async irq mode %d\n",
+					   ret);
+				goto out;
+			}
+
+			ath6kl_dbg(ATH6KL_DBG_BOOT, "4-bit async irq mode enabled\n");
+		}
 	}
 
 	/* give us some time to enable, in ms */
@@ -1360,6 +1392,8 @@ static const struct sdio_device_id ath6kl_sdio_devices[] = {
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6003_BASE | 0x1))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6004_BASE | 0x0))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6004_BASE | 0x1))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6006_BASE | 0x0))},
+        {SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6006_BASE | 0x1))},
 	{},
 };
 
