@@ -198,5 +198,8 @@ void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit)
 	if (locally_administered_bit)
 		ptr_mac[0] |= 0x02;
 
+	if (locally_administered_bit)
+		ptr_mac[0] |= 0x02;
+
 	ath6kl_calculate_crc(ar->target_type, ar->fw_board, ar->fw_board_len);
 }
