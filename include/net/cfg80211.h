@@ -1688,6 +1688,11 @@ struct cfg80211_ops {
 
 	int	(*set_mac_acl)(struct wiphy *wiphy, struct net_device *dev,
 			       struct cfg80211_acl_params *params);
+
+	int     (*set_wow_mode)(struct wiphy *wiphy,
+				struct cfg80211_wowlan *wow);
+
+	int     (*clr_wow_mode)(struct wiphy *wiphy);
 };
 
 /*
