@@ -2345,7 +2345,7 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 		spin_lock_bh(&rxtid->lock);
 		rxtid->seq_next = seq_no;
 		hold_q_size = TID_WINDOW_SZ(win_sz) * sizeof(struct skb_hold_q);
-		rxtid->hold_q = kzalloc(hold_q_size, GFP_KERNEL);
+		rxtid->hold_q = kzalloc(hold_q_size, GFP_ATOMIC);
 
 		if (!rxtid->hold_q) {
 		    spin_unlock_bh(&rxtid->lock);		
