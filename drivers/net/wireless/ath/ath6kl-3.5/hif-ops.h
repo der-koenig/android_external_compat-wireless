@@ -83,7 +83,6 @@ static inline void ath6kl_hif_cleanup_scatter(struct ath6kl *ar)
 	return ar->hif_ops->cleanup_scatter(ar);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 static inline int ath6kl_hif_suspend(struct ath6kl *ar,
 				     struct cfg80211_wowlan *wow)
 {
@@ -128,7 +127,6 @@ static inline int ath6kl_hif_resume(struct ath6kl *ar)
 
 	return ar->hif_ops->resume(ar);
 }
-#endif
 
 static inline int ath6kl_hif_power_on(struct ath6kl *ar)
 {

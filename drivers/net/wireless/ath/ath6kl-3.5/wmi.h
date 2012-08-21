@@ -679,9 +679,21 @@ enum wmi_cmd_id {
 	/* wifi discovery */
 	WMI_DISC_SET_IE_FILTER_CMDID,
 	WMI_DISC_SET_MODE_CMDID,
+
         WMI_RTT_CLKCALINFO_CMDID,
 
-	WMI_AP_POLL_STA_CMDID
+	WMI_P2P_SET_PROFILE_CMDID,
+
+	/* P2P FW GO PS Command */
+	WMI_P2P_FW_SET_NOA_CMDID,
+	WMI_P2P_FW_GET_NOA_CMDID,                /* F0AA */
+	WMI_P2P_FW_SET_OPPPS_CMDID,
+	WMI_P2P_FW_GET_OPPPS_CMDID,
+
+	/*led cotrol*/
+	WMI_ENABLE_BLINKING_LED_CMDID,
+    
+	WMI_AP_POLL_STA_CMDID,
 };
 
 enum wmi_mgmt_frame_type {
@@ -1423,6 +1435,7 @@ enum wmi_event_id {
 	WMI_P2P_REQ_TO_AUTH_EVENTID,
 	WMI_DIAGNOSTIC_EVENTID,	/* diagnostic */
 	WMI_DISC_PEER_EVENTID,	/* wifi discovery */
+	WMI_BSS_RSSI_INFO_EVENTID,
 };
 
 struct wmi_ready_event_2 {

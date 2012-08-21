@@ -26,6 +26,7 @@
 #include "wlan_location_defs.h"
 #include "htc-ops.h"
 #include "hif-ops.h"
+#include <net/iw_handler.h>
 
 extern unsigned int debug_mask;
 
@@ -40,30 +41,87 @@ struct ath6kl_fwlog_slot {
 #define ATH6KL_FWLOG_MAX_ENTRIES 20
 #define ATH6KL_FWLOG_VALID_MASK 0x1ffff
 
+#define ATH6KL_FWLOG_NUM_ARGS_OFFSET             30
+#define ATH6KL_FWLOG_NUM_ARGS_MASK               0xC0000000 /* Bit 30-31 */
+#define AT6HKL_FWLOG_NUM_ARGS_MAX                2 /* Upper limit is width of mask */
+
+#define ATH6KL_FWGLOG_GET_NUMARGS(arg) \
+	((arg & ATH6KL_FWLOG_NUM_ARGS_MASK) >> ATH6KL_FWLOG_NUM_ARGS_OFFSET)
+
 int ath6kl_printk(const char *level, const char *fmt, ...)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	struct va_format vaf;
-#endif
 	va_list args;
 	int rtn;
 
 	va_start(args, fmt);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
 	rtn = printk("%sath6kl: %pV", level, &vaf);
-#else
-	printk("%sath6kl: ", level);
-	rtn = vprintk(fmt, args);
-#endif
 
 	va_end(args);
 
 	return rtn;
 }
+
+#define EVENT_ID_LEN 2
+
+void ath6kl_send_genevent_to_app(struct net_device *dev,
+					u16 event_id,
+					u8 *datap, int len)
+{
+	char *buf;
+	u16 size;
+	union iwreq_data wrqu;
+
+	size = len + EVENT_ID_LEN;
+
+	if (size > IW_GENERIC_IE_MAX)
+		return;
+
+	buf = kmalloc(size, GFP_ATOMIC);
+	if (buf == NULL)
+		return;
+
+	memset(buf, 0, size);
+	memcpy(buf, &event_id, EVENT_ID_LEN);
+	memcpy(buf + EVENT_ID_LEN, datap, len);
+
+	memset(&wrqu, 0, sizeof(wrqu));
+	wrqu.data.length = size;
+	wireless_send_event(dev, IWEVGENIE, &wrqu, buf);
+	kfree(buf);
+}
+
+void ath6kl_send_event_to_app(struct net_device *dev,
+					u16 event_id,
+					u8 *datap, int len)
+{
+	char *buf;
+	u16 size;
+	union iwreq_data wrqu;
+
+	size = len + EVENT_ID_LEN;
+
+	if (size > IW_CUSTOM_MAX)
+		return;
+
+	buf = kmalloc(size, GFP_ATOMIC);
+	if (buf == NULL)
+		return;
+
+	memset(buf, 0, size);
+	memcpy(buf, &event_id, EVENT_ID_LEN);
+	memcpy(buf + EVENT_ID_LEN, datap, len);
+
+	memset(&wrqu, 0, sizeof(wrqu));
+	wrqu.data.length = size;
+	wireless_send_event(dev, IWEVCUSTOM, &wrqu, buf);
+	kfree(buf);
+}
+
 
 #ifdef CONFIG_ATH6KL_DEBUG
 
@@ -251,6 +309,63 @@ static const struct file_operations fops_war_stats = {
 };
 
 
+static u32
+ath6kl_fwlog_fragment(const u8 *datap, u32 len, u32 limit)
+{
+	u32 *buffer;
+	u32 count;
+	u32 numargs;
+	u32 length;
+	u32 fraglen;
+
+	count = fraglen = 0;
+	buffer = (u32 *)datap;
+	length = (limit >> 2);
+
+	if (len <= limit) {
+		fraglen = len;
+	} else {
+		while (count < length) {
+			numargs = ATH6KL_FWGLOG_GET_NUMARGS(buffer[count]);
+			fraglen = (count << 2);
+			count += numargs + 1;
+		}
+	}
+
+	return fraglen;
+}
+
+
+static void
+ath6kl_debug_fwlog_event_send(struct ath6kl *ar, const u8 *buffer, u32 length)
+{
+#define MAX_WIRELESS_EVENT_SIZE 252
+
+	/*
+	 * Break it up into chunks of MAX_WIRELESS_EVENT_SIZE bytes of messages.
+	 * There seems to be a limitation on the length of message that could be
+	 * transmitted to the user app via this mechanism.
+	 */
+	u32 send, sent;
+	struct ath6kl_vif *vif;
+	struct net_device *dev;
+
+	vif = ath6kl_vif_first(ar);
+	dev = vif->ndev;
+
+	sent = 0;
+	send = ath6kl_fwlog_fragment(&buffer[sent], length - sent,
+			MAX_WIRELESS_EVENT_SIZE);
+	while (send) {
+		ath6kl_send_event_to_app(dev, WMIX_DBGLOG_EVENTID, 
+			(u8*)&buffer[sent], send);
+		sent += send;
+		send = ath6kl_fwlog_fragment(&buffer[sent], length - sent,
+				MAX_WIRELESS_EVENT_SIZE);
+	}
+}
+
+
 void ath6kl_debug_fwlog_event(struct ath6kl *ar, const void *buf, size_t len)
 {
 	struct ath6kl_fwlog_slot *slot;
@@ -259,6 +374,9 @@ void ath6kl_debug_fwlog_event(struct ath6kl *ar, const void *buf, size_t len)
 
 	if (WARN_ON(len > ATH6KL_FWLOG_PAYLOAD_SIZE))
 		return;
+
+	if(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FWLOG_EXT))
+		ath6kl_debug_fwlog_event_send(ar, buf, len);
 
        slot_len = sizeof(*slot) + ATH6KL_FWLOG_PAYLOAD_SIZE;
 

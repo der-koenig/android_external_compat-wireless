@@ -1817,7 +1817,7 @@ static struct net_device_ops ath6kl_netdev_ops = {
 
 void init_netdev(struct net_device *dev)
 {
-	netdev_attach_ops(dev, &ath6kl_netdev_ops);
+	dev->netdev_ops = &ath6kl_netdev_ops;
 	dev->destructor = free_netdev;
 	dev->watchdog_timeo = ATH6KL_TX_TIMEOUT;
 

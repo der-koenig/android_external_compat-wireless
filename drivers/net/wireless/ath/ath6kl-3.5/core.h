@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.100
+#define __BUILD_VERSION_ 3.5.0.106
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -275,7 +275,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
 
 /* AR6006 1.0 definitions */
-#define AR6006_HW_1_0_VERSION                 0x31c80958
+#define AR6006_HW_1_0_VERSION                 0x31c80960
 #define AR6006_HW_1_0_FW_DIR			"ath6k/AR6006/hw1.0"
 #define AR6006_HW_1_0_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_0_FIRMWARE_FILE           "fw.ram.bin"
@@ -321,7 +321,8 @@ struct ath6kl_android_wifi_priv_cmd {
 
 #define AGGR_NUM_OF_FREE_NETBUFS    16
 
-#define AGGR_RX_TIMEOUT          50	/* in ms */
+#define AGGR_RX_TIMEOUT          100	/* in ms */
+#define AGGR_RX_TIMEOUT_VO       50 /* in ms */
 
 #define AGGR_GET_RXTID_STATS(_p, _x)     (&(_p->stat[(_x)]))
 #define AGGR_GET_RXTID(_p, _x)           (&(_p->rx_tid[(_x)]))
@@ -403,14 +404,19 @@ struct skb_hold_q {
 
 struct rxtid {
 	bool aggr;
-	bool progress;
-	bool timer_mon;
 	u16 win_sz;
 	u16 seq_next;
 	u32 hold_q_sz;
 	struct skb_hold_q *hold_q;
 	struct sk_buff_head q;
 	spinlock_t lock;
+    u16 timerwait_seq_num; /* current wait seq_no next */
+	bool sync_next_seq;
+	struct timer_list tid_timer;
+	u8 tid_timer_scheduled;
+	u8	tid;
+	u16	issue_timer_seq;
+	struct aggr_conn_info *aggr_conn;
 };
 
 struct rxtid_stats {
@@ -472,13 +478,11 @@ struct aggr_info {
 
 struct aggr_conn_info {
 	u8 aggr_sz;
-	u8 timer_scheduled;
-	struct timer_list timer;
 	struct aggr_info *aggr_cntxt;
 	struct net_device *dev;
 	struct rxtid rx_tid[NUM_OF_TIDS];
 	struct rxtid_stats stat[NUM_OF_TIDS];
-
+	u32 tid_timeout_setting[NUM_OF_TIDS];
 	/* TX A-MSDU */
 	struct txtid tx_tid[NUM_OF_TIDS];
 };

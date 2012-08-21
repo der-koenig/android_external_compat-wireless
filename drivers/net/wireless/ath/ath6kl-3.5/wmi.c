@@ -25,7 +25,6 @@
 #ifdef ATH6KL_DIAGNOSTIC
 struct wmi *globalwmi;
 #endif
-#include "btc.h"
 
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
@@ -3698,22 +3697,22 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_READY_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_READY_EVENTID\n");
 		ret = ath6kl_wmi_ready_event_rx(wmi, datap, len);
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_CONNECT_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_CONNECT_EVENTID\n");
 		ret = ath6kl_wmi_connect_event_rx(wmi, datap, len, vif);
-		cfg80211_send_genevent_to_app(skb->dev, id, datap, len);
+		ath6kl_send_genevent_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_DISCONNECT_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_DISCONNECT_EVENTID\n");
 		ret = ath6kl_wmi_disconnect_event_rx(wmi, datap, len, vif);
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_PEER_NODE_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_PEER_NODE_EVENTID\n");
 		ret = ath6kl_wmi_peer_node_event_rx(wmi, datap, len);
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_TKIP_MICERR_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_TKIP_MICERR_EVENTID\n");
@@ -3730,7 +3729,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_PSTREAM_TIMEOUT_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_PSTREAM_TIMEOUT_EVENTID\n");
 		ret = ath6kl_wmi_pstream_timeout_event_rx(wmi, datap, len);
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_NEIGHBOR_REPORT_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_NEIGHBOR_REPORT_EVENTID\n");
@@ -3740,7 +3739,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_SCAN_COMPLETE_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_SCAN_COMPLETE_EVENTID\n");
 		ret = ath6kl_wmi_scan_complete_rx(wmi, datap, len, vif);
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_CMDERROR_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_CMDERROR_EVENTID\n");
@@ -3756,7 +3755,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		break;
 	case WMI_ERROR_REPORT_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_ERROR_REPORT_EVENTID\n");
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_OPT_RX_FRAME_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_OPT_RX_FRAME_EVENTID\n");
@@ -3790,7 +3789,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		break;
 	case WMI_TX_RETRY_ERR_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_TX_RETRY_ERR_EVENTID\n");
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_SNR_THRESHOLD_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_SNR_THRESHOLD_EVENTID\n");
@@ -3798,7 +3797,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		break;
 	case WMI_LQ_THRESHOLD_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_LQ_THRESHOLD_EVENTID\n");
-		cfg80211_send_event_to_app(skb->dev, id, datap, len);
+		ath6kl_send_event_to_app(skb->dev, id, datap, len);
 		break;
 	case WMI_APLIST_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_APLIST_EVENTID\n");

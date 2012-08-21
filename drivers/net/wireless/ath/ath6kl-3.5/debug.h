@@ -38,6 +38,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15), /* offload AP keep-alive to supplicant */
 	ATH6KL_MODULE_DISABLE_ADD_P2P_INF = BIT(16), /* disable create dedicated p2p interface */
 	ATH6KL_MODULE_ENABLE_SCHE_SCAN  = BIT(17), /* enable sche-scan */
+	ATH6KL_MODULE_ENABLE_FWLOG_EXT  = BIT(18), /* enable extensive fwlog */
 };
 
 enum ATH6KL_MODULE_P2P {
@@ -109,6 +110,14 @@ static inline int ath6kl_mod_debug_quirks(struct ath6kl *ar,
 	else
 		return 0;
 }
+
+void ath6kl_send_event_to_app(struct net_device *dev,
+					u16 event_id,
+					u8 *datap, int len);
+
+void ath6kl_send_genevent_to_app(struct net_device *dev,
+					u16 event_id,
+					u8 *datap, int len);
 
 #ifdef CONFIG_QC_INTERNAL
 int ath6kl_set_rd(struct ath6kl *ar);

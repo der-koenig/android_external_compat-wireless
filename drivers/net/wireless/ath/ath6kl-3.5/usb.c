@@ -24,7 +24,11 @@
 /* constants */
 #define TX_URB_COUNT            32
 #define RX_URB_COUNT            32
+#ifdef CONFIG_ANDROID
 #define ATH6KL_USB_RX_BUFFER_SIZE  1700
+#else
+#define ATH6KL_USB_RX_BUFFER_SIZE  2048
+#endif
 #define ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE  16896
 #define ATH6KL_USB_TX_BUNDLE_BUFFER_SIZE  16384
 #define WORKER_LOCK_BIT	0

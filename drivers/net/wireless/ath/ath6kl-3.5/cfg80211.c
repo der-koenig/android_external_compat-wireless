@@ -126,12 +126,13 @@ static struct ieee80211_supported_band ath6kl_band_2ghz = {
 	.n_bitrates = ath6kl_g_rates_size,
 	.bitrates = ath6kl_g_rates,
 	.ht_cap = {
-		.ht_supported   = true,                                         
-		.cap            = IEEE80211_HT_CAP_MAX_AMSDU |                  
-							IEEE80211_HT_CAP_SUP_WIDTH_20_40 |            
-							IEEE80211_HT_CAP_SGI_40 |                     
-							IEEE80211_HT_CAP_DSSSCCK40 |                  
-							IEEE80211_HT_CAP_SM_PS,                       
+		.ht_supported   = true,
+		.cap            = IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
+				  IEEE80211_HT_CAP_SGI_20 |
+				  IEEE80211_HT_CAP_SGI_40 |
+				  IEEE80211_HT_CAP_TX_STBC |
+				  0x100 | /* FIXME : One chain RX STBC */
+				  IEEE80211_HT_CAP_SM_PS,                  
 		.ampdu_factor   = IEEE80211_HT_MAX_AMPDU_64K,
 		.ampdu_density  = IEEE80211_HT_MPDU_DENSITY_8,
 		.mcs = { 
@@ -146,12 +147,13 @@ static struct ieee80211_supported_band ath6kl_band_5ghz = {
 	.n_bitrates = ath6kl_a_rates_size,
 	.bitrates = ath6kl_a_rates,
 	.ht_cap = {
-		.ht_supported   = true,                                         
-		.cap            = IEEE80211_HT_CAP_MAX_AMSDU |                  
-							IEEE80211_HT_CAP_SUP_WIDTH_20_40 |            
-							IEEE80211_HT_CAP_SGI_40 |                     
-							IEEE80211_HT_CAP_DSSSCCK40 |                  
-							IEEE80211_HT_CAP_SM_PS,                       
+		.ht_supported   = true,
+		.cap            = IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
+				  IEEE80211_HT_CAP_SGI_20 |
+				  IEEE80211_HT_CAP_SGI_40 |
+				  IEEE80211_HT_CAP_TX_STBC |
+				  0x100 | /* FIXME : One chain RX STBC */
+				  IEEE80211_HT_CAP_SM_PS,
 		.ampdu_factor   = IEEE80211_HT_MAX_AMPDU_64K,
 		.ampdu_density  = IEEE80211_HT_MPDU_DENSITY_8,
 		.mcs = { 
@@ -1055,10 +1057,21 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	if (!vif->usr_bss_filter) {
 		clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
+                
+                /* 
 		ret = ath6kl_wmi_bssfilter_cmd(
 			ar->wmi, vif->fw_vif_idx,
 			(test_bit(CONNECTED, &vif->flags) ?
-			 ALL_BUT_BSS_FILTER : ALL_BSS_FILTER), 0);
+			  ALL_BUT_BSS_FILTER : ALL_BSS_FILTER), 0); */
+                /* 
+                 *  EV: 109005
+                 *  Fix bug that Probe response from the connected AP will be filtered by setting this filter ,
+                 *  thus the AP's information won't be updated.
+                 */ 
+		ret = ath6kl_wmi_bssfilter_cmd(
+			ar->wmi, vif->fw_vif_idx, ALL_BSS_FILTER , 0);
+
+
 		if (ret) {
 			ath6kl_err("couldn't set bss filtering\n");
 			up(&ar->sem);
@@ -2642,7 +2655,7 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 	return 0;
 }
 
-#if defined(CONFIG_PM) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+#ifdef CONFIG_PM
 
 /* hif layer decides what suspend mode to use */
 static int __ath6kl_cfg80211_suspend(struct wiphy *wiphy,
@@ -3808,7 +3821,7 @@ static struct cfg80211_ops ath6kl_cfg80211_ops = {
 	.del_pmksa = ath6kl_del_pmksa,
 	.flush_pmksa = ath6kl_flush_pmksa,
 	CFG80211_TESTMODE_CMD(ath6kl_tm_cmd)
-#if defined(CONFIG_PM) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+#ifdef CONFIG_PM
 	.suspend = __ath6kl_cfg80211_suspend,
 	.resume = __ath6kl_cfg80211_resume,
 #ifdef CONFIG_ANDROID
@@ -4073,10 +4086,13 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 		}
 	}
 
-	/* update MCS rate mask. */
+	/* update MCS rate mask & TX STBC. */
 	if (!(ar->target_subtype & TARGET_SUBTYPE_2SS)) {
 		ath6kl_band_2ghz.ht_cap.mcs.rx_mask[1] = 0;
 		ath6kl_band_5ghz.ht_cap.mcs.rx_mask[1] = 0;
+
+		ath6kl_band_2ghz.ht_cap.cap &= ~IEEE80211_HT_CAP_TX_STBC;
+		ath6kl_band_5ghz.ht_cap.cap &= ~IEEE80211_HT_CAP_TX_STBC;
 	}
 
 	/* update 2G-HT40 capability. */

@@ -39,7 +39,11 @@ static unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
 #ifdef CONFIG_ANDROID
+#ifdef ATH6KL_MCC
+unsigned int ath6kl_p2p = 0x13;
+#else
 unsigned int ath6kl_p2p = 0x3;
+#endif
 #else
 unsigned int ath6kl_p2p;
 #endif
@@ -2371,11 +2375,16 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	/* FIXME : handle error code */
 	ar->p2p_flowctrl_ctx = ath6kl_p2p_flowctrl_conn_list_init(ar);
+#ifdef ATH6KL_MCC
+	ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
+	ath6kl_info("ath6kl : enable P2P flowctrl \n");
+#else
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_FLOWCTRL))
 		ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
 	else {
 		ath6kl_info("ath6kl : disable P2P flowctrl \n");
 	}
+#endif
 
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_CUTPOWER))
 		ar->conf_flags |= ATH6KL_CONF_SUSPEND_CUTPOWER;
