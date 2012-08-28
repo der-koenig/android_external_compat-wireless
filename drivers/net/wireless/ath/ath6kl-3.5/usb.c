@@ -39,6 +39,7 @@ enum ATH6KL_USB_PIPE_ID {
 	ATH6KL_USB_PIPE_TX_DATA_LP,
 	ATH6KL_USB_PIPE_TX_DATA_MP,
 	ATH6KL_USB_PIPE_TX_DATA_HP,
+	ATH6KL_USB_PIPE_TX_DATA_VHP,
 	ATH6KL_USB_PIPE_RX_CTRL,
 	ATH6KL_USB_PIPE_RX_DATA,
 	ATH6KL_USB_PIPE_RX_DATA2,
@@ -135,6 +136,7 @@ struct ath6kl_urb_context {
 #define ATH6KL_USB_EP_ADDR_APP_DATA_LP_OUT      0x02
 #define ATH6KL_USB_EP_ADDR_APP_DATA_MP_OUT      0x03
 #define ATH6KL_USB_EP_ADDR_APP_DATA_HP_OUT      0x04
+#define ATH6KL_USB_EP_ADDR_APP_DATA_VHP_OUT     0x05
 
 /* diagnostic command defnitions */
 #define ATH6KL_USB_CONTROL_REQ_SEND_BMI_CMD        1
@@ -271,7 +273,7 @@ static int ath6kl_usb_alloc_pipe_resources(struct ath6kl_usb_pipe *pipe,
 
         if (htc_bundle_send) {
             /* In tx bundle mode, only pre-allocate bundle buffers for data pipes */
-            if (pipe->logical_pipe_num >= ATH6KL_USB_PIPE_TX_DATA_LP && pipe->logical_pipe_num <= ATH6KL_USB_PIPE_TX_DATA_HP) {
+            if (pipe->logical_pipe_num >= ATH6KL_USB_PIPE_TX_DATA_LP && pipe->logical_pipe_num <= ATH6KL_USB_PIPE_TX_DATA_VHP) {
                 urb_context->buf = dev_alloc_skb(ATH6KL_USB_TX_BUNDLE_BUFFER_SIZE);
                 if (NULL == urb_context->buf) {
                     ath6kl_dbg(ATH6KL_DBG_USB,
@@ -378,6 +380,9 @@ static u8 ath6kl_usb_get_logical_pipe_num(struct ath6kl_usb *device,
 		break;
 	case ATH6KL_USB_EP_ADDR_APP_DATA_HP_OUT:
 		pipe_num = ATH6KL_USB_PIPE_TX_DATA_HP;
+		*urb_count = TX_URB_COUNT;
+	case ATH6KL_USB_EP_ADDR_APP_DATA_VHP_OUT:
+		pipe_num = ATH6KL_USB_PIPE_TX_DATA_VHP;
 		*urb_count = TX_URB_COUNT;
 		break;
 	default:
@@ -626,10 +631,14 @@ static void ath6kl_usb_flush_all(struct ath6kl_usb *device)
 
 	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
 		/* flush only USB scheduled work, instead of flushing all */
-		pipe = &device->pipes[i].ar_usb->pipes[i];
-		flush_work(&pipe->io_complete_work);
-		if (device->pipes[i].ar_usb != NULL)
-			usb_kill_anchored_urbs(&device->pipes[i].urb_submitted);
+		if (device->pipes[i].ar_usb) {
+                        if( &device->pipes[i].urb_submitted )
+				usb_kill_anchored_urbs(&device->pipes[i].urb_submitted);
+			pipe = &device->pipes[i].ar_usb->pipes[i];
+			if(pipe) {
+				flush_work(&pipe->io_complete_work);
+			}
+		}
 	}
 
 	/* flushing any pending I/O may schedule work
@@ -1119,7 +1128,7 @@ static void hif_start(struct ath6kl *ar)
 
 	/* set the TX resource avail threshold for each TX pipe */
 	for (i = ATH6KL_USB_PIPE_TX_CTRL;
-	     i <= ATH6KL_USB_PIPE_TX_DATA_HP; i++) {
+	     i <= ATH6KL_USB_PIPE_TX_DATA_VHP; i++) {
 		device->pipes[i].urb_cnt_thresh =
 		    device->pipes[i].urb_alloc / 2;
 	}
@@ -1242,7 +1251,16 @@ static int ath6kl_usb_send_bundle(struct ath6kl *ar, u8 pid,
                 pipe->ep_address, stream_netlen);
 
         usb_anchor_urb(urb, &pipe->urb_submitted);
-        usb_status = usb_submit_urb(urb, GFP_ATOMIC);        
+
+	spin_lock_bh(&ar->state_lock);
+	if((ar->state == ATH6KL_STATE_DEEPSLEEP)||
+            (ar->state == ATH6KL_STATE_WOW)){
+		usb_status = -EINVAL;
+	}else {
+		usb_status = usb_submit_urb(urb, GFP_ATOMIC);        
+	}
+	spin_unlock_bh(&ar->state_lock);
+
         if (usb_status) {
 			pipe_st->num_tx_multi_err++;
             ath6kl_dbg(ATH6KL_DBG_USB_BULK,
@@ -1322,8 +1340,16 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 		   pipe->logical_pipe_num, pipe->usb_pipe_handle,
 		   pipe->ep_address, len);
 
-	usb_anchor_urb(urb, &pipe->urb_submitted);
-	usb_status = usb_submit_urb(urb, GFP_ATOMIC);
+	usb_anchor_urb(urb, &pipe->urb_submitted);	
+	
+	spin_lock_bh(&ar->state_lock);
+	if((ar->state == ATH6KL_STATE_DEEPSLEEP)||
+	   (ar->state == ATH6KL_STATE_WOW)){
+		usb_status = -EINVAL;
+	}else {
+		usb_status = usb_submit_urb(urb, GFP_ATOMIC);
+	}
+	spin_unlock_bh(&ar->state_lock);
 
 	if (usb_status) {
 		pipe_st->num_tx_err++;

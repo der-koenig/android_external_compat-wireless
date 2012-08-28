@@ -605,6 +605,8 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 			goto fail_tx;
 	}
 
+	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
+
 	/*
 	 * HTC interface is asynchronous, if this fails, cleanup will
 	 * happen in the ath6kl_tx_complete callback.
@@ -764,6 +766,16 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 * dropping the packets which overflowed.
 		 */
 		action = HTC_SEND_FULL_DROP;
+	} else if (ar->vif_max > 1) { /* WAR: EV108182 */
+	    	int i, ongoing_tx = 0;
+		
+		for (i = 0; i < ar->vif_max; i++) {
+			if (ar->tx_on_vif & (1 << i))
+				ongoing_tx++;
+		}
+
+		if (ongoing_tx > 1)
+			return action;
 	}
 
 	/* FIXME: Locking */
@@ -905,6 +917,8 @@ void ath6kl_tx_complete(struct htc_target *target,
 			ath6kl_free_cookie(ar, ath6kl_cookie);
 			continue;
 		}
+
+		ar->tx_on_vif &= ~(1 << if_idx);
 
 		if (status) {
 			if (status == -ECANCELED)
@@ -2185,6 +2199,8 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 		else if (ret < 0)	/* Error, drop it. */
 			goto fail_tx;
 	}
+
+	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
 
 	/*
 	 * HTC interface is asynchronous, if this fails, cleanup will

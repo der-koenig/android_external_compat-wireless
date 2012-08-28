@@ -2533,7 +2533,9 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 			ath6kl_err("wow suspend failed: %d\n", ret);
 			return ret;
 		}
+		spin_lock_bh(&ar->state_lock);
 		ar->state = ATH6KL_STATE_WOW;
+		spin_unlock_bh(&ar->state_lock);
 		break;
 
 	case ATH6KL_CFG_SUSPEND_DEEPSLEEP:
@@ -2551,8 +2553,9 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 				ath6kl_warn("wmi powermode command failed during suspend: %d\n",
 				    ret);
 			}
-
+			spin_lock_bh(&ar->state_lock);
 			ar->state = ATH6KL_STATE_DEEPSLEEP;
+			spin_unlock_bh(&ar->state_lock);
 
 			clear_bit(WLAN_ENABLED, &vif->flags);
 			netif_dormant_on(vif->ndev);
@@ -2602,6 +2605,10 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 	case  ATH6KL_STATE_WOW:
 		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "wow mode resume\n");
 
+		spin_lock_bh(&ar->state_lock);
+		ar->state = ATH6KL_STATE_ON;
+		spin_unlock_bh(&ar->state_lock);
+
 		ret = ath6kl_wow_resume(ar);
 		if (ret) {
 			ath6kl_warn("wow mode resume failed: %d\n", ret);
@@ -2617,11 +2624,15 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 		}
 #endif
 
-		ar->state = ATH6KL_STATE_ON;
+		
 		break;
 
 	case ATH6KL_STATE_DEEPSLEEP:
 		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "deep sleep resume\n");
+
+		spin_lock_bh(&ar->state_lock);
+		ar->state = ATH6KL_STATE_ON; 
+		spin_unlock_bh(&ar->state_lock);
 
 		set_bit(WLAN_ENABLED, &vif->flags);
 		netif_dormant_off(vif->ndev);
@@ -2634,7 +2645,6 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 			}
 		}
 
-		ar->state = ATH6KL_STATE_ON;
 
 		break;
 
@@ -3994,6 +4004,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 
 	spin_lock_init(&ar->lock);
 	spin_lock_init(&ar->list_lock);
+	spin_lock_init(&ar->state_lock);
 
 	init_waitqueue_head(&ar->event_wq);
 	sema_init(&ar->sem, 1);

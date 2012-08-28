@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.106
+#define __BUILD_VERSION_ 3.5.0.107
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -839,6 +839,7 @@ struct ath6kl {
 	struct device *dev;
 	struct wiphy *wiphy;
 
+	spinlock_t state_lock;
 	enum ath6kl_state state;
 	unsigned int testmode;
 
@@ -1044,6 +1045,8 @@ struct ath6kl {
 #endif
 
 	struct work_struct init_defer_wk;
+
+	u32 tx_on_vif; 
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)

@@ -268,15 +268,17 @@ static int htc_issue_packets(struct htc_target *target,
 	struct htc_packet *packet = NULL;
 
 	ath6kl_dbg(ATH6KL_DBG_HTC,
-		   "%s: queue: 0x%lX, pkts %d\n", __func__,
-		   (unsigned long)pkt_queue, get_queue_depth(pkt_queue));
+                   "%s: queue: 0x%lX, pkts %d\n", __func__,
+                   (unsigned long)pkt_queue, get_queue_depth(pkt_queue));
     if (htc_bundle_send && (ep->pipeid_ul != 0 /* HIF_TX_CTRL_PIPE */)) {
         /* only for HIF data pipes */
         struct sk_buff *msg_bundle[HTC_HOST_MAX_MSG_PER_BUNDLE] = {};
         int msgs_to_bundle = 0;
+        int bundle_credit_used = 0;
+                        
         while (!list_empty(pkt_queue)) {
             packet = list_first_entry(pkt_queue,
-					struct htc_packet, list);
+                                        struct htc_packet, list);
             list_del(&packet->list);
             
             nbuf = packet->skb;
@@ -315,10 +317,22 @@ static int htc_issue_packets(struct htc_target *target,
             /* pkt_queue is less than HTC_HOST_MAX_MSG_PER_BUNDLE */
             msg_bundle[msgs_to_bundle] = nbuf;
             msgs_to_bundle++;
+            bundle_credit_used += packet->info.tx.cred_used;
         }
         
         status = ath6kl_hif_pipe_send_bundle(target->dev->ar, 
                 ep->pipeid_ul, msg_bundle, msgs_to_bundle);
+
+        if(status != 0) {
+                spin_lock_bh(&target->tx_lock);
+                /* reclaim credits */
+                if (ep->eid>= ENDPOINT_2 && ep->eid <= ENDPOINT_5)
+                        target->avail_tx_credits += bundle_credit_used;
+                else
+                        ep->cred_dist.credits += bundle_credit_used;
+                spin_unlock_bh(&target->tx_lock);
+
+        }
     }
     else {
 
