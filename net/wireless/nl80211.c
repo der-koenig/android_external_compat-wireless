@@ -210,7 +210,7 @@ static const struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] = {
 	[NL80211_ATTR_BTCOEX_DATA] = { .type = NLA_BINARY,
 				      .len = IEEE80211_MAX_DATA_LEN },
 	[NL80211_ATTR_STA_CAP_REQ] = { .type = NLA_U8 },
-	[NL80211_ATTR_ACS] = { .type = NLA_FLAG },
+	[NL80211_ATTR_ACS] = { .type = NLA_U8 },
 	[NL80211_ATTR_MAC_ACL] = { .type = NLA_U8 },
 	[NL80211_ATTR_MAC_ADDRS] = { .type = NLA_NESTED },
 	[NL80211_ATTR_ACL_POLICY] = { .type = NLA_U8 },
@@ -2231,8 +2231,8 @@ static int nl80211_addset_beacon(struct sk_buff *skb, struct genl_info *info)
 
 		if (info->attrs[NL80211_ATTR_ACS]) {
 			if (rdev->wiphy.flags & WIPHY_FLAG_SUPPORTS_ACS)
-				params.auto_channel_select =
-					!!info->attrs[NL80211_ATTR_ACS];
+				params.auto_channel_select = nla_get_u8(
+					info->attrs[NL80211_ATTR_ACS]);
 			else
 				return -EINVAL;
 		}

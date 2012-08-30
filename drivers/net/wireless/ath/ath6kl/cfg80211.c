@@ -150,15 +150,11 @@ static bool __ath6kl_cfg80211_sscan_stop(struct ath6kl_vif *vif)
 {
 	struct ath6kl *ar = vif->ar;
 
-	if (ar->state != ATH6KL_STATE_SCHED_SCAN)
+	if (!test_and_clear_bit(SCHED_SCANNING, &vif->flags))
 		return false;
 
 	del_timer_sync(&vif->sched_scan_timer);
-
-	ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
-					   ATH6KL_HOST_MODE_AWAKE);
-
-	ar->state = ATH6KL_STATE_ON;
+	ath6kl_wmi_enable_sched_scan_cmd(ar->wmi, vif->fw_vif_idx, false);
 
 	return true;
 }
@@ -285,7 +281,7 @@ static void ath6kl_set_key_mgmt(struct ath6kl_vif *vif, u32 key_mgmt)
 	}
 }
 
-static bool ath6kl_cfg80211_ready(struct ath6kl_vif *vif)
+bool ath6kl_cfg80211_ready(struct ath6kl_vif *vif)
 {
 	struct ath6kl *ar = vif->ar;
 
@@ -2079,12 +2075,11 @@ static int ath6kl_cfg80211_host_sleep(struct ath6kl *ar, struct ath6kl_vif *vif)
 	int ret, left;
 
 	clear_bit(HOST_SLEEP_MODE_CMD_PROCESSED, &vif->flags);
-	set_bit(NOTIFY_HSLEEP_EVT, &vif->flags);
 
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						 ATH6KL_HOST_MODE_ASLEEP);
 	if (ret)
-		goto hsleep_fail;
+		return ret;
 
 	left = wait_event_interruptible_timeout(ar->event_wq,
 						is_hsleep_mode_procsed(vif),
@@ -2111,64 +2106,23 @@ static int ath6kl_cfg80211_host_sleep(struct ath6kl *ar, struct ath6kl_vif *vif)
 		}
 	}
 
-hsleep_fail:
-	if (ret)
-		clear_bit(NOTIFY_HSLEEP_EVT, &vif->flags);
-
 	return ret;
 }
 
-static int ath6kl_get_conn_vif(struct ath6kl *ar, struct ath6kl_vif **vif)
+static int ath6kl_wow_suspend_vif(struct ath6kl_vif *vif,
+				  struct cfg80211_wowlan *wow, u32 *filter)
 {
-	struct ath6kl_vif *vif_temp;
-	bool connected = false;
-
-	list_for_each_entry(vif_temp, &ar->vif_list, list) {
-		if (test_bit(CONNECTED, &vif_temp->flags)) {
-			if (!connected) {
-				*vif = vif_temp;
-				connected = true;
-			} else
-				return -EIO;
-		}
-	}
-
-	if (!vif)
-		return -EIO;
-
-	if (!connected)
-		return -ENOTCONN;
-
-	return 0;
-}
-
-static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
-{
+	struct ath6kl *ar = vif->ar;
 	struct in_device *in_dev;
 	struct in_ifaddr *ifa;
-	struct ath6kl_vif *vif = NULL;
 	int ret;
-	u32 filter = 0;
 	u16 i, bmiss_time;
-	u8 index = 0;
 	__be32 ips[MAX_IP_ADDRS];
-
-	ret = ath6kl_get_conn_vif(ar, &vif);
-	if (ret)
-		return ret;
-
-	if (!ath6kl_cfg80211_ready(vif))
-		return -EIO;
-
-	if (!test_bit(CONNECTED, &vif->flags))
-		return -ENOTCONN;
-
-	if (wow && (wow->n_patterns > WOW_MAX_FILTERS_PER_LIST))
-		return -EINVAL;
+	u8 index = 0;
 
 	if (!test_bit(NETDEV_MCAST_ALL_ON, &vif->flags)) {
-		ret = ath6kl_wmi_mcast_filter_cmd(vif->ar->wmi,
-						vif->fw_vif_idx, false);
+		ret = ath6kl_wmi_mcast_filter_cmd(ar->wmi,
+						  vif->fw_vif_idx, false);
 		if (ret)
 			return ret;
 	}
@@ -2184,7 +2138,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	 * the user.
 	 */
 	if (wow)
-		ret = ath6kl_wow_usr(ar, vif, wow, &filter);
+		ret = ath6kl_wow_usr(ar, vif, wow, filter);
 	else if (vif->nw_type == AP_NETWORK)
 		ret = ath6kl_wow_ap(ar, vif);
 	else
@@ -2219,12 +2173,10 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 			return ret;
 	}
 
-	ar->state = ATH6KL_STATE_SUSPENDING;
-
 	/* Setup own IP addr for ARP agent. */
 	in_dev = __in_dev_get_rtnl(vif->ndev);
 	if (!in_dev)
-		goto skip_arp;
+		return 0;
 
 	ifa = in_dev->ifa_list;
 	memset(&ips, 0, sizeof(ips));
@@ -2247,43 +2199,60 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		return ret;
 	}
 
-skip_arp:
-	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
+	return ret;
+}
+
+static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
+{
+	struct ath6kl_vif *first_vif, *vif;
+	int ret = 0;
+	u32 filter = 0;
+	bool connected = false;
+
+	/* enter / leave wow suspend on first vif always */
+	first_vif = ath6kl_vif_first(ar);
+	if (WARN_ON(unlikely(!first_vif)) ||
+	    !ath6kl_cfg80211_ready(first_vif))
+		return -EIO;
+
+	if (wow && (wow->n_patterns > WOW_MAX_FILTERS_PER_LIST))
+		return -EINVAL;
+
+	/* install filters for each connected vif */
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (!test_bit(CONNECTED, &vif->flags) ||
+		    !ath6kl_cfg80211_ready(vif))
+			continue;
+		connected = true;
+
+		ret = ath6kl_wow_suspend_vif(vif, wow, &filter);
+		if (ret)
+			break;
+	}
+	spin_unlock_bh(&ar->list_lock);
+
+	if (!connected)
+		return -ENOTCONN;
+	else if (ret)
+		return ret;
+
+	ar->state = ATH6KL_STATE_SUSPENDING;
+
+	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, first_vif->fw_vif_idx,
 					  ATH6KL_WOW_MODE_ENABLE,
 					  filter,
 					  WOW_HOST_REQ_DELAY);
 	if (ret)
 		return ret;
 
-	ret = ath6kl_cfg80211_host_sleep(ar, vif);
-	if (ret)
-		return ret;
-
-	return 0;
+	return ath6kl_cfg80211_host_sleep(ar, first_vif);
 }
 
-static int ath6kl_wow_resume(struct ath6kl *ar)
+static int ath6kl_wow_resume_vif(struct ath6kl_vif *vif)
 {
-	struct ath6kl_vif *vif;
+	struct ath6kl *ar = vif->ar;
 	int ret;
-
-	ret = ath6kl_get_conn_vif(ar, &vif);
-	if (ret)
-		return ret;
-
-#ifdef CONFIG_HAS_WAKELOCK
-	wake_lock_timeout(&ar->wake_lock, 5);
-#endif
-	ar->state = ATH6KL_STATE_RESUMING;
-
-	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
-						 ATH6KL_HOST_MODE_AWAKE);
-	if (ret) {
-		ath6kl_warn("Failed to configure host sleep mode for "
-			    "wow resume: %d\n", ret);
-		ar->state = ATH6KL_STATE_WOW;
-		return ret;
-	}
 
 	if (vif->nw_type != AP_NETWORK) {
 		ret = ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
@@ -2301,12 +2270,9 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 		if (ret)
 			return ret;
 	}
-
-	ar->state = ATH6KL_STATE_ON;
-
 	if (!test_bit(NETDEV_MCAST_ALL_OFF, &vif->flags)) {
 		ret = ath6kl_wmi_mcast_filter_cmd(vif->ar->wmi,
-					vif->fw_vif_idx, true);
+						  vif->fw_vif_idx, true);
 		if (ret)
 			return ret;
 	}
@@ -2314,6 +2280,52 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 	netif_wake_queue(vif->ndev);
 
 	return 0;
+}
+
+static int ath6kl_wow_resume(struct ath6kl *ar)
+{
+	struct ath6kl_vif *vif;
+	int ret;
+
+	vif = ath6kl_vif_first(ar);
+	if (WARN_ON(unlikely(!vif)) ||
+	    !ath6kl_cfg80211_ready(vif))
+		return -EIO;
+
+#ifdef CONFIG_HAS_WAKELOCK
+	wake_lock_timeout(&ar->wake_lock, 5);
+#endif
+
+	ar->state = ATH6KL_STATE_RESUMING;
+
+	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
+						 ATH6KL_HOST_MODE_AWAKE);
+	if (ret) {
+		ath6kl_warn("Failed to configure host sleep mode for "
+			    "wow resume: %d\n", ret);
+		goto cleanup;
+	}
+
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (!test_bit(CONNECTED, &vif->flags) ||
+		    !ath6kl_cfg80211_ready(vif))
+			continue;
+		ret = ath6kl_wow_resume_vif(vif);
+		if (ret)
+			break;
+	}
+	spin_unlock_bh(&ar->list_lock);
+
+	if (ret)
+		goto cleanup;
+
+	ar->state = ATH6KL_STATE_ON;
+	return 0;
+
+cleanup:
+	ar->state = ATH6KL_STATE_WOW;
+	return ret;
 }
 
 static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
@@ -2451,13 +2463,6 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 
 		break;
 
-	case ATH6KL_CFG_SUSPEND_SCHED_SCAN:
-		/*
-		 * Nothing needed for schedule scan, firmware is already in
-		 * wow mode and sleeping most of the time.
-		 */
-		break;
-
 	default:
 		break;
 	}
@@ -2504,13 +2509,6 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 		}
 		break;
 
-	case ATH6KL_STATE_SCHED_SCAN:
-#ifdef CONFIG_HAS_WAKELOCK
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "sched scan 30s wake lock\n");
-		wake_lock_timeout(&ar->wake_lock, 30 * HZ);
-#endif
-		break;
-
 	default:
 		break;
 	}
@@ -2526,14 +2524,23 @@ static int __ath6kl_cfg80211_suspend(struct wiphy *wiphy,
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
 
+	ath6kl_recovery_suspend(ar);
+
 	return ath6kl_hif_suspend(ar, wow);
 }
 
 static int __ath6kl_cfg80211_resume(struct wiphy *wiphy)
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
+	int err;
 
-	return ath6kl_hif_resume(ar);
+	err = ath6kl_hif_resume(ar);
+	if (err)
+		return err;
+
+	ath6kl_recovery_resume(ar);
+
+	return 0;
 }
 
 /*
@@ -2558,7 +2565,7 @@ void ath6kl_check_wow_status(struct ath6kl *ar, struct sk_buff *skb,
 	if (ar->state == ATH6KL_STATE_SUSPENDING)
 		return;
 
-	if (ar->state == ATH6KL_STATE_WOW || ar->state == ATH6KL_STATE_SCHED_SCAN)
+	if (ar->state == ATH6KL_STATE_WOW)
 		ath6kl_cfg80211_resume(ar);
 	else
 		ath6kl_config_suspend_wake_lock(ar, skb, is_event_pkt);
@@ -2818,10 +2825,10 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 	memcpy(p.ssid, vif->ssid, vif->ssid_len);
 	p.dot11_auth_mode = vif->dot11_auth_mode;
 
-	if (info->auto_channel_select)
+	if (info->auto_channel_select) {
 		ar->want_ch_switch |= 1 << vif->fw_vif_idx;
-
-	if (vif->next_chan)
+		vif->next_chan = info->auto_channel_select - 1;
+	} else if (vif->next_chan)
 		p.ch = cpu_to_le16(vif->next_chan);
 
 	/*
@@ -3311,15 +3318,6 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 				  interval, interval,
 				  vif->bg_scan_period, 0, 0, 0, 3, 0, 0, 0);
 
-	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
-					  ATH6KL_WOW_MODE_ENABLE,
-					  WOW_FILTER_SSID,
-					  WOW_HOST_REQ_DELAY);
-	if (ret) {
-		ath6kl_warn("Failed to enable wow with ssid filter: %d\n", ret);
-		return ret;
-	}
-
 	/* this also clears IE in fw if it's not set */
 	ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
 				       WMI_FRAME_PROBE_REQ,
@@ -3330,17 +3328,13 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 		return ret;
 	}
 
-	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
-						 ATH6KL_HOST_MODE_ASLEEP);
-	if (ret) {
-		ath6kl_warn("Failed to enable host sleep mode for sched scan: %d\n",
-			    ret);
+	ret = ath6kl_wmi_enable_sched_scan_cmd(ar->wmi, vif->fw_vif_idx, true);
+	if (ret)
 		return ret;
-	}
 
-	ar->state = ATH6KL_STATE_SCHED_SCAN;
+	set_bit(SCHED_SCANNING, &vif->flags);
 
-	return ret;
+	return 0;
 }
 
 static int ath6kl_cfg80211_sscan_stop(struct wiphy *wiphy,
@@ -3526,6 +3520,10 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
 
+	/* Stop netdev queues, needed during recovery */
+	netif_stop_queue(vif->ndev);
+	netif_carrier_off(vif->ndev);
+
 	/* disable scanning */
 	if (ath6kl_wmi_scanparams_cmd(vif->ar->wmi, vif->fw_vif_idx, 0xFFFF,
 				      0, 0, 0, 0, 0, 0, 0, 0, 0) != 0)
@@ -3539,7 +3537,7 @@ void ath6kl_cfg80211_stop_all(struct ath6kl *ar)
 	struct ath6kl_vif *vif;
 
 	vif = ath6kl_vif_first(ar);
-	if (!vif) {
+	if (!vif && ar->state != ATH6KL_STATE_RECOVERY) {
 		/* save the current power mode before enabling power save */
 		ar->wmi->saved_pwr_mode = ar->wmi->pwr_mode;
 

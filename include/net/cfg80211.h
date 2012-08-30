@@ -416,7 +416,7 @@ struct beacon_parameters {
 	int probe_resp_len;
 	u8 *probe_resp;
 	enum nl80211_sta_capab_req_options sta_cap_req;
-	bool auto_channel_select;
+	u8 auto_channel_select;
 };
 
 /**

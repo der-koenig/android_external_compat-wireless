@@ -135,6 +135,18 @@ enum ath6kl_fw_capability {
 	/* Firmware supports TX error rate notification */
 	ATH6KL_FW_CAPABILITY_TX_ERR_NOTIFY,
 
+	/* supports WMI_SET_REGDOMAIN_CMDID command */
+	ATH6KL_FW_CAPABILITY_REGDOMAIN,
+
+	/* Firmware supports sched scan decoupled from host sleep */
+	ATH6KL_FW_CAPABILITY_SCHED_SCAN_V2,
+
+	/*
+	 * Firmware capability for hang detection through heart beat
+	 * challenge messages.
+	 */
+	ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,
+
 	/*
 	 * Firmware supports mac address based ACL with
 	 * white/black list
@@ -159,6 +171,7 @@ enum ath6kl_hw_flags {
 
 #define ATH6KL_FW_API2_FILE "fw-2.bin"
 #define ATH6KL_FW_API3_FILE "fw-3.bin"
+#define ATH6KL_FW_API4_FILE "fw-4.bin"
 
 /* AR6003 1.0 definitions */
 #define AR6003_HW_1_0_VERSION                 0x300002ba
@@ -545,7 +558,7 @@ enum ath6kl_vif_state {
 	HOST_SLEEP_MODE_CMD_PROCESSED,
 	NETDEV_MCAST_ALL_ON,
 	NETDEV_MCAST_ALL_OFF,
-	NOTIFY_HSLEEP_EVT,
+	SCHED_SCANNING,
 };
 
 struct ath6kl_vif {
@@ -630,7 +643,16 @@ enum ath6kl_state {
 	ATH6KL_STATE_DEEPSLEEP,
 	ATH6KL_STATE_CUTPOWER,
 	ATH6KL_STATE_WOW,
-	ATH6KL_STATE_SCHED_SCAN,
+	ATH6KL_STATE_RECOVERY,
+};
+
+/* Fw error recovery */
+#define ATH6KL_HB_RESP_MISS_THRES	5
+
+enum ath6kl_fw_err {
+	ATH6KL_FW_ASSERT,
+	ATH6KL_FW_HB_RESP_FAILURE,
+	ATH6KL_FW_EP_FULL,
 };
 
 struct ath6kl {
@@ -684,6 +706,7 @@ struct ath6kl {
 	struct ath6kl_req_key ap_mode_bkey;
 	struct sk_buff_head mcastpsq;
 	u32 want_ch_switch;
+	u16 last_ch;
 	spinlock_t mcastpsq_lock;
 	u8 intra_bss;
 	struct wmi_ap_mode_stat ap_stats;
@@ -761,6 +784,17 @@ struct ath6kl {
 	bool p2p;
 
 	struct ath6kl_btcoex btcoex_info;
+
+	struct ath6kl_fw_recovery {
+		bool enable;
+		struct work_struct recovery_work;
+		unsigned long err_reason;
+		unsigned long hb_poll;
+		struct timer_list hb_timer;
+		u32 seq_num;
+		bool hb_pending;
+		u8 hb_misscnt;
+	} fw_recovery;
 
 #ifdef CONFIG_ATH6KL_DEBUG
 	struct {
@@ -907,4 +941,12 @@ int ath6kl_wait_for_init_comp(void);
 void ath6kl_notify_init_done(void);
 #endif
 
+/* Fw error recovery */
+void ath6kl_init_hw_restart(struct ath6kl *ar);
+void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason);
+void ath6kl_recovery_hb_event(struct ath6kl *ar, u32 cookie);
+void ath6kl_recovery_init(struct ath6kl *ar);
+void ath6kl_recovery_cleanup(struct ath6kl *ar);
+void ath6kl_recovery_suspend(struct ath6kl *ar);
+void ath6kl_recovery_resume(struct ath6kl *ar);
 #endif /* CORE_H */

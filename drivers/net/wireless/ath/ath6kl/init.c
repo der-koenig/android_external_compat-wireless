@@ -36,6 +36,7 @@ static unsigned int wow_mode;
 static unsigned int uart_debug;
 static unsigned int ar6k_clock = 19200000;
 static unsigned short locally_administered_bit;
+static unsigned int heart_beat_poll = 2000;
 
 module_param(debug_mask, uint, 0644);
 module_param(testmode, uint, 0644);
@@ -44,6 +45,9 @@ module_param(wow_mode, uint, 0644);
 module_param(uart_debug, uint, 0644);
 module_param(ar6k_clock, uint, 0644);
 module_param(locally_administered_bit, ushort, 0644);
+module_param(heart_beat_poll, uint, 0644);
+MODULE_PARM_DESC(heart_beat_poll, "Enable fw error detection periodic" \
+		 "polling. This also specifies the polling interval in msecs");
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -629,6 +633,8 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 {
 	ath6kl_hif_power_off(ar);
 
+	ath6kl_recovery_cleanup(ar);
+
 	destroy_workqueue(ar->ath6kl_wq);
 
 	if (ar->htc_target)
@@ -1130,6 +1136,12 @@ static int ath6kl_fetch_firmwares(struct ath6kl *ar)
 	if (ret)
 		return ret;
 
+	ret = ath6kl_fetch_fw_apin(ar, ATH6KL_FW_API4_FILE);
+	if (ret == 0) {
+		ar->fw_api = 4;
+		goto out;
+	}
+
 	ret = ath6kl_fetch_fw_apin(ar, ATH6KL_FW_API3_FILE);
 	if (ret == 0) {
 		ar->fw_api = 3;
@@ -1607,7 +1619,7 @@ static const char *ath6kl_init_get_hif_name(enum ath6kl_hif_type type)
 	return NULL;
 }
 
-int ath6kl_init_hw_start(struct ath6kl *ar)
+static int __ath6kl_init_hw_start(struct ath6kl *ar)
 {
 	long timeleft;
 	int ret, i;
@@ -1704,8 +1716,6 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 			goto err_htc_stop;
 	}
 
-	ar->state = ATH6KL_STATE_ON;
-
 	return 0;
 
 err_htc_stop:
@@ -1718,7 +1728,18 @@ err_power_off:
 	return ret;
 }
 
-int ath6kl_init_hw_stop(struct ath6kl *ar)
+int ath6kl_init_hw_start(struct ath6kl *ar)
+{
+	int err;
+
+	err = __ath6kl_init_hw_start(ar);
+	if (err)
+		return err;
+	ar->state = ATH6KL_STATE_ON;
+	return 0;
+}
+
+static int __ath6kl_init_hw_stop(struct ath6kl *ar)
 {
 	int ret;
 
@@ -1734,8 +1755,17 @@ int ath6kl_init_hw_stop(struct ath6kl *ar)
 	if (ret)
 		ath6kl_warn("failed to power off hif: %d\n", ret);
 
-	ar->state = ATH6KL_STATE_OFF;
+	return 0;
+}
 
+int ath6kl_init_hw_stop(struct ath6kl *ar)
+{
+	int err;
+
+	err = __ath6kl_init_hw_stop(ar);
+	if (err)
+		return err;
+	ar->state = ATH6KL_STATE_OFF;
 	return 0;
 }
 
@@ -1866,7 +1896,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 			    WIPHY_FLAG_AP_PROBE_RESP_OFFLOAD |
 			    WIPHY_FLAG_SUPPORTS_ACS;
 
-	if (test_bit(ATH6KL_FW_CAPABILITY_SCHED_SCAN, ar->fw_capabilities))
+	if (test_bit(ATH6KL_FW_CAPABILITY_SCHED_SCAN_V2, ar->fw_capabilities))
 		ar->wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
 
 	ar->wiphy->probe_resp_offload =
@@ -1908,6 +1938,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 		goto err_rxbuf_cleanup;
 	}
 #endif
+	if (heart_beat_poll &&
+	    test_bit(ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,
+		     ar->fw_capabilities))
+		ar->fw_recovery.hb_poll = heart_beat_poll;
+
+	ath6kl_recovery_init(ar);
+
 	return ret;
 
 err_rxbuf_cleanup:
@@ -1934,6 +1971,19 @@ err_wq:
 	destroy_workqueue(ar->ath6kl_wq);
 
 	return ret;
+}
+
+void ath6kl_init_hw_restart(struct ath6kl *ar)
+{
+	ath6kl_cfg80211_stop_all(ar);
+
+	if (__ath6kl_init_hw_stop(ar))
+		return;
+
+	if (__ath6kl_init_hw_start(ar)) {
+		ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Failed to restart during fw error recovery\n");
+		return;
+	}
 }
 
 void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)

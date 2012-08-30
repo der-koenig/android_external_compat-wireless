@@ -1302,7 +1302,7 @@ static int ignore_request(struct wiphy *wiphy,
 		    !regdom_changes(pending_request->alpha2))
 			return -EALREADY;
 
-		return REG_INTERSECT;
+		return 0;
 	case NL80211_REGDOM_SET_BY_USER:
 		if (last_request->initiator == NL80211_REGDOM_SET_BY_COUNTRY_IE)
 			return REG_INTERSECT;
@@ -2051,13 +2051,6 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 		 * For a driver hint, lets copy the regulatory domain the
 		 * driver wanted to the wiphy to deal with conflicts
 		 */
-
-		/*
-		 * Userspace could have sent two replies with only
-		 * one kernel request.
-		 */
-		if (request_wiphy->regd)
-			return -EALREADY;
 
 		r = reg_copy_regd(&request_wiphy->regd, rd);
 		if (r)
