@@ -342,7 +342,6 @@ int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq,
 
 	if ((psq->max_depth != ATH6KL_PS_QUEUE_NO_DEPTH) &&
 	    (psq->depth > psq->max_depth)) {
-		/* FIXME : do something */
 		psq->enqueued_err++;
 		return -EBUSY;
 	}
@@ -389,7 +388,6 @@ int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq,
 
 	if((psq->max_depth != ATH6KL_PS_QUEUE_NO_DEPTH) &&
 	   (psq->depth > psq->max_depth)) {
-		/* FIXME : do something */
 		psq->enqueued_err++;
 		return -EBUSY;
 	}
@@ -732,6 +730,37 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 		ath6kl_err("failed to reset target\n");
 }
 
+void ath6kl_fw_crash_notify(struct ath6kl *ar)
+{
+	struct ath6kl_vif *vif = ath6kl_vif_first(ar);
+
+	BUG_ON(!vif);
+
+	ath6kl_info("notify firmware crash to user %p\n", ar);
+
+#ifdef CONFIG_ANDROID	/* Only for specific Android-JB */
+	if (1) {
+		u8 *buf;
+		int len;
+
+		len = 26;
+		buf = kzalloc(len, GFP_ATOMIC);
+		if (buf == NULL) 
+			return;
+
+		/* hint */
+		buf[24] = 34;
+		cfg80211_send_unprot_disassoc(vif->ndev, 
+						buf, 
+						len);
+
+		kfree(buf);
+	}
+#endif
+
+	return;
+}
+
 static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 {
 	u8 index;
@@ -794,14 +823,6 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 	}
 
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
-
-	/* 
-	 * NOTE : Default disable TX-AMSDU in AP/P2P-GO modes. 
-	 *        User can turn it on through the debugfs. 
-	 */
-	clear_bit(AMSDU_ENABLED, &vif->flags);
-	ath6kl_dbg(ATH6KL_DBG_INFO,
-		"Disable TX-AMSDU\n");
 
 	set_bit(CONNECTED, &vif->flags);
 	netif_carrier_on(vif->ndev);
@@ -943,7 +964,6 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	if (status != WMI_SCAN_STATUS_SUCCESS)
 		aborted = true;
 
-	/* FIXME : bad, may use call-back instead. */
 	if (ath6kl_htcoex_scan_complete_event(vif, aborted) == HTCOEX_PASS_SCAN_DONE)
 		ath6kl_cfg80211_scan_complete_event(vif, aborted);
 
@@ -1241,7 +1261,6 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 				__func__, conn->aid, conn->sta_flags, !is_data_psq_empty, !is_mgmt_psq_empty);
 
 	if (psq_empty) {
-		/* TODO: Send out a NULL data frame */
 		spin_unlock_bh(&conn->lock);
 		return;
 	}
@@ -1312,11 +1331,6 @@ void ath6kl_dtimexpiry_event(struct ath6kl_vif *vif)
 	/* set the STA flag to dtim_expired for the frame to go out */
 	set_bit(DTIM_EXPIRED, &vif->flags);
 
-	/* 
-	 * FIXME : don't know if there are a lot of multicast frames be queued 
-	           in real network but it's better to have a mechanism to 
-	           not to dequeue all frames to cause credit starvation.
-	 */
 	spin_lock_bh(&vif->psq_mcast_lock);
 	while ((ps_buf = ath6kl_ps_queue_dequeue(&vif->psq_mcast)) != NULL) {
 		spin_unlock_bh(&vif->psq_mcast_lock);
@@ -1548,7 +1562,6 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 						}
 
 						ret = 0;
-						/* FIXME : better parsing... */
 						pwr_mode = (pos[11] != '0' ? 
 								REC_POWER : MAX_PERF_POWER);
 						if (ath6kl_wmi_powermode_cmd(vif->ar->wmi, 
@@ -1598,12 +1611,6 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 						ret = -EFAULT;					
 				} else if ((pos = strstr(user_cmd, "P2P_SET_NOA ")) != NULL) {
 					/* SET::P2P_SET_NOA {count} {duration} {interval} */
-
-					/* 
-					 * NOTE : it's better to query current NoA of target and 
-					 *        rearrange it to avoid conflict with user's if
-					 *        need.
-					 */
 					if (android_cmd.used_len > 12) {
 						if (down_interruptible(&vif->ar->sem)) {
 							ath6kl_err("busy, couldn't get access\n");
@@ -1687,7 +1694,7 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev, struct ifreq *rq, int 
 	long left;
 	s32 rate = 0;
 
-	/* FIXME : only AR6004 now */
+	/* Only AR6004 now */
 	if (ar->target_type != TARGET_TYPE_AR6004)
 		return -EOPNOTSUPP;
 

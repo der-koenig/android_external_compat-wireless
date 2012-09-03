@@ -23,12 +23,6 @@ static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(struct at
 	u32 diff_ms;
 	enum ap_keepalive_adjust adjust_result = AP_KA_ADJ_ERROR;
 
-	/* NEED to be locked by conn->lock for safe. */
-
-	/* 
-	 * FIXME : No knowledge of target's time and here just using 1st query as 
-	 *         base time and correct it to host time in each updated.
-	 */	
 	if (conn->last_txrx_time_tgt) {
 		if (last_txrx_time >= conn->last_txrx_time_tgt)
 			diff_ms = (last_txrx_time - conn->last_txrx_time_tgt) << 10;
@@ -39,11 +33,6 @@ static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(struct at
 		conn->last_txrx_time_tgt = last_txrx_time;
 		conn->last_txrx_time += msecs_to_jiffies(diff_ms);
 
-		/* 
-		 * Time scale between host (1000/HZ ms.) and target (ms./1024) is different. 
-		 * It will cause that target't time may larger than host's in 1024 ms. in 
-		 * worst case. Here simply correct it to sync to host's time.
-		 */
 		if (conn->last_txrx_time > now) 
 			conn->last_txrx_time = now;
 
@@ -165,7 +154,6 @@ static void ap_keepalive_start(unsigned long arg)
 	if ((vif->nw_type == AP_NETWORK) &&
 	    test_bit(CONNECTED, &vif->flags)) {		
 	    	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
-			/* FIXME : get last_txrx_time pre N sec. and to check it in next run. */
 			ret = ap_keepalive_preload_txrx_time(vif);
 			if (ret) {
 				ath6kl_err("preload last_txrx_time fail, ret %d\n", ret);
@@ -295,11 +283,6 @@ void ath6kl_ap_keepalive_stop(struct ath6kl_vif *vif)
 	if (!ap_keepalive)
 		return;
 
-	/*
-	 * Called by .del_beacon call-back (cfg80211) if the driver is controlled 
-	 * by supplicant/hostapd, and called by .stop call-back (net_device)if the 
-	 * driver is not controlled by supplicant/hostad.
-	 */
 	ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
 		   "ap_keepalive stop (vif idx %d) flags %x\n",
 		   vif->fw_vif_idx,
@@ -326,8 +309,6 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 			"already offlad to supplicant/hostapd, bypass it.\n");
 		return 0;
 	}
-
-	/* FIXME : the better code protection by the spin-lock. */
 
 	if ((ap_ka_interval != 0) &&
 	    (ap_ka_interval < ATH6KL_AP_KA_INTERVAL_MIN))
@@ -422,7 +403,7 @@ u32 ath6kl_ap_keepalive_get_inactive_time(struct ath6kl_vif *vif, u8 *mac)
 	if (conn) {
 		inact_time = ap_keepalive_get_inactive_time(vif, conn);
 	} else {
-		inact_time = 0;		/* FIXME : return -1 ? */
+		inact_time = 0;		/* return -1 ? */
 
 		ath6kl_err("can't find sta %02x:%02x:%02x:%02x:%02x:%02x vif-idx %d\n", 
 			mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 

@@ -219,6 +219,11 @@ typedef enum {
 #define WMI_DATA_HDR_SET_PSPOLLED_BIT(h)	((h)->info3 |= (WMI_DATA_HDR_PSPOLLED_MASK << WMI_DATA_HDR_PSPOLLED_SHIFT))
 #define WMI_DATA_HDR_HAS_PSPOLLED_BIT(h)	((h)->info3 & (WMI_DATA_HDR_PSPOLLED_MASK << WMI_DATA_HDR_PSPOLLED_SHIFT))
 
+#define WMI_ROAM_LRSSI_SCAN_PERIOD			( 30 * 1000) /* secs   */
+#define WMI_ROAM_LRSSI_SCAN_THRESHOLD		25 /* rssi */
+#define WMI_ROAM_LRSSI_ROAM_THRESHOLD		18 /* rssi */
+#define WMI_ROAM_LRSSI_ROAM_FLOOR			80 /* rssi */
+
 struct wmi_data_hdr {
 	s8 rssi;
 
@@ -770,6 +775,19 @@ enum wmi_connect_ctrl_flags_bits {
 	CONNECT_DO_WPA_OFFLOAD = 0x0040,
 	CONNECT_DO_NOT_DEAUTH = 0x0080,
 	CONNECT_WPS_FLAG = 0x0100,
+	/* AP configuration flags */
+	AP_NO_DISASSOC_UPON_DEAUTH = 0x10000,
+	AP_HOSTPAL_SUPPORT = 0x20000,
+};
+
+#define WMI_CONNECT_AP_CHAN_SELECT_OFFSET  (14)
+#define WMI_CONNECT_AP_CHAN_SELECT_MASK    (0xc000)
+
+enum wmi_connect_ap_channel_type {
+	AP_CHANNEL_TYPE_NONE = 0,
+	AP_CHANNEL_TYPE_HT40PLUS,
+	AP_CHANNEL_TYPE_HT40MINUS,
+	AP_CHANNEL_TYPE_HT20
 };
 
 struct wmi_connect_cmd {
@@ -2162,7 +2180,7 @@ struct wmi_tx_complete_event {
  */
 #define AP_MAX_NUM_STA          10
 
-/* FIXME : Only for chips after McK1.2. */
+/* Only for chips after McK1.2. */
 #define NUM_DEV                 4
 #define NUM_CONN                (AP_MAX_NUM_STA + NUM_DEV)	/* Sync with target's */
 #define WMI_NUM_CONN            (AP_MAX_NUM_STA + NUM_DEV - 1) 	/* As P2P device port won't enter CONN state, so we omit 1 CONN buffer */

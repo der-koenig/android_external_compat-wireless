@@ -27,6 +27,7 @@
 #include "htc-ops.h"
 #include "hif-ops.h"
 #include <net/iw_handler.h>
+#include "../regd.h"
 
 extern unsigned int debug_mask;
 
@@ -1148,10 +1149,17 @@ static ssize_t ath6kl_driver_version_read(struct file *file,
 				      char __user *user_buf,
 				      size_t count, loff_t *ppos)
 {
-	char buf[32];
+	struct ath6kl *ar = file->private_data;
+	char buf[64];
 	unsigned int len;
 
 	len = snprintf(buf, sizeof(buf), "%s\n", DRV_VERSION);
+	len += snprintf(buf + len, sizeof(buf) - len, "%s %s\n", 
+				ar->hw.name,
+				(ar->hif_type == ATH6KL_HIF_TYPE_SDIO) ? "SDIO" : 
+				 ((ar->hif_type == ATH6KL_HIF_TYPE_USB) ? "USB" : "UNKNOW"));
+	len += snprintf(buf + len, sizeof(buf) - len, "%s\n", 
+				ar->wiphy->fw_version);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -3192,11 +3200,12 @@ static ssize_t ath6kl_ap_ps_stat_read(struct file *file,
 				conn = &vif->sta_list[j];
 
 				len += scnprintf(p + len, buf_len - len,
-					" STA - %02x:%02x:%02x:%02x:%02x:%02x aid %02d apsd %d",
+					" STA - %02x:%02x:%02x:%02x:%02x:%02x aid %02d apsd %d state %02x",
 					conn->mac[0], conn->mac[1], conn->mac[2],
 					conn->mac[3], conn->mac[4], conn->mac[5],
 					conn->aid,
-					conn->apsd_info);
+					conn->apsd_info,
+					conn->sta_flags);
 
 				ath6kl_ps_queue_stat(&conn->psq_data, &depth, &enq, &enq_err, &deq, &age);
 				len += scnprintf(p + len, buf_len - len,
@@ -3565,6 +3574,92 @@ static const struct file_operations fops_tgt_ap_stats = {
 	.llseek = default_llseek,
 };
 
+static void __chan_flag_to_string(u32 flags, u8 *string) {
+	string[0] = '\0';
+	if (flags & IEEE80211_CHAN_DISABLED)
+		strcpy(string + strlen(string), "[DISABLE]");
+
+	if (flags & IEEE80211_CHAN_PASSIVE_SCAN)
+		strcpy(string + strlen(string), "[PASSIVE_SCAN]");
+
+	if (flags & IEEE80211_CHAN_NO_IBSS)
+		strcpy(string + strlen(string), "[NO_IBSS]");
+	
+	if (flags & IEEE80211_CHAN_RADAR)
+		strcpy(string + strlen(string), "[RADER]");
+
+	if ((flags & IEEE80211_CHAN_NO_HT40PLUS) && 
+	    (flags & IEEE80211_CHAN_NO_HT40MINUS)) {
+		strcpy(string + strlen(string), "[HT40-][HT40+]");
+	} else { 
+		if (flags & IEEE80211_CHAN_NO_HT40PLUS)
+			strcpy(string + strlen(string), "[HT40-]");
+		
+		if (flags & IEEE80211_CHAN_NO_HT40MINUS)		
+			strcpy(string + strlen(string), "[HT40+]");
+	}
+
+	return;
+}
+
+static ssize_t ath6kl_chan_list_read(struct file *file, 
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct wiphy *wiphy = ar->wiphy;
+	static u8 buf[2048];
+	u8 flag_string[96];
+	u8 *p;
+	unsigned int len = 0;
+	int i, buf_len;
+	enum ieee80211_band band;
+
+	p = buf;
+	buf_len = sizeof(buf);
+
+	if (ar->current_reg_domain) {
+		len += scnprintf(p + len, buf_len - len, "\nCurrent Regulatory - %04x %04x %c%c\n",
+					ar->current_reg_domain->countryCode,
+					ar->current_reg_domain->regDmnEnum,
+					ar->current_reg_domain->isoName[0],
+					ar->current_reg_domain->isoName[1]);
+	}
+
+	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
+		if (!wiphy->bands[band])
+			continue;
+
+		len += scnprintf(p + len, buf_len - len, "\n%s\n",
+				(band == IEEE80211_BAND_2GHZ ? "2.4GHz" : "5GHz"));
+		
+		for (i = 0; i < wiphy->bands[band]->n_channels; i++) {
+			struct ieee80211_channel *chan;
+
+			chan = &wiphy->bands[band]->channels[i];
+
+			if (chan->flags & IEEE80211_CHAN_DISABLED)
+				continue;
+
+			__chan_flag_to_string(chan->flags, flag_string);
+			len += scnprintf(p + len, buf_len - len, " CH%4d - %4d %s\n",
+					chan->hw_value,
+					chan->center_freq,
+					flag_string);
+		}
+	}
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+/* debug fs for Channel List. */
+static const struct file_operations fops_chan_list = {
+	.read = ath6kl_chan_list_read,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -3715,6 +3810,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("tgt_ap_stats", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_tgt_ap_stats);
+
+	debugfs_create_file("chan_list", S_IRUSR,
+			    ar->debugfs_phy, ar, &fops_chan_list);
 
 	return 0;
 }

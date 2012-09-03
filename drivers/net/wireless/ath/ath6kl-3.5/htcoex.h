@@ -65,7 +65,6 @@ enum {
 	HTCOEX_PASS_SCAN_DONE,
 };
 
-/* FIXME : move to ieee80211.h */
 /* COEX action codes */
 enum ieee80211_coex_actioncode {
 	WLAN_COEX_ACTION_2040COEX_MGMT = 0,

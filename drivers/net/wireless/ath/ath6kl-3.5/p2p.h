@@ -22,10 +22,8 @@
 #define ATH6KL_P2P_PS_FLAGS_NOA_ENABLED			BIT(0)
 #define ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED		BIT(1)
 
-/* FIXME : move to nl80211.h */
 #define NL80211_IFTYPE_P2P_DEVICE			(0xff)
 
-/* FIXME : move to ieee80211.h */
 enum {
 	IEEE80211_P2P_ATTR_NOTICE_OF_ABSENCE = 12,
 };
@@ -73,13 +71,6 @@ struct p2p_ps_info {
 #define ATH6KL_P2P_FLOWCTRL_NULL_CONNID			(0xff)
 #define ATH6KL_P2P_FLOWCTRL_RECYCLE_LIMIT		(10)
 
-/*
- *  In current ath6kl design, connection context between host and target is different.
- *  The host is virtual device based but target is the device based. Not to sure if host
- *  need to change to the device based at least only P2P flowctrl need it now.
- *
- *  FIXME : Have some connection between ath6kl_fw_conn_list and ath6kl_sta.
- */
 struct ath6kl_fw_conn_list
 {
 	struct list_head conn_queue;

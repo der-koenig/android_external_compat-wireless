@@ -1738,10 +1738,6 @@ int ath6kl_usb_resume(struct ath6kl *ar)
 
 static void ath6kl_usb_cleanup_scatter(struct ath6kl *ar)
 {
-	/* FIXME : Non-HIF code should not use this call-back 
-	 *         if this interface don't support it. Here just 
-	 *         bypass it if happened.
-	 */
  	ath6kl_dbg(ATH6KL_DBG_USB, "Init target fail?\n");
 	return;
 }

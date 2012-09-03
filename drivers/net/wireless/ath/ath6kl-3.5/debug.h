@@ -23,7 +23,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	ATH6KL_MODULE_SUSPEND_CUTPOWER  = BIT(0), /* enable suspend cutpower */
 	AT6HKL_MODULE_LPL_ENABLE        = BIT(1), /* enable lpl */
 	ATH6KL_MODULE_MIMO_PS_ENABLE    = BIT(2), /* enable mimo ps */
-	ATH6KL_MODULE_P2P_ENABLE        = BIT(3), /* enable p2p */
+	/* hole */
 	ATH6KL_MODULE_TESTMODE_ENABLE   = BIT(4), /* enable test mode */
 	ATH6KL_MODULES_ANI_ENABLE       = BIT(5), /* anti-noise-immunity */
 	ATH6KL_MODULE_ENABLE_EPPING		= BIT(6), /* enable endpoing loopback */
@@ -39,6 +39,9 @@ enum ATH6KL_MODULE_QUIRKS {
 	ATH6KL_MODULE_DISABLE_ADD_P2P_INF = BIT(16), /* disable create dedicated p2p interface */
 	ATH6KL_MODULE_ENABLE_SCHE_SCAN  = BIT(17), /* enable sche-scan */
 	ATH6KL_MODULE_ENABLE_FWLOG_EXT  = BIT(18), /* enable extensive fwlog */
+	ATH6KL_MODULE_ENABLE_P2P_CHANMODE  = BIT(19), /* enable channel-mode select for P2P-GO */
+	ATH6KL_MODULE_DISABLE_WAIT_DEFER = BIT(20), /* not to wait init defer function completed */
+	ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY = BIT(21), /* enable fw crash notify function */
 };
 
 enum ATH6KL_MODULE_P2P {

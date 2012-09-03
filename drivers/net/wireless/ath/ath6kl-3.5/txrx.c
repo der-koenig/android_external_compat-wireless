@@ -169,7 +169,6 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 			return true;
 		}
 
-		/* FIXME : host to somewhere instead of function parameter. */
 		*sta = conn;
 
 		if (conn->sta_flags & STA_PS_SLEEP) {
@@ -324,7 +323,6 @@ bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif,
 						ath6kl_wmi_set_pvb_cmd(vif->ar->wmi, vif->fw_vif_idx, 
 									conn->aid, 1);
 				} else {
-					/* FIXME : do something like report tx status fail if need. */
 					;
 				}
 				ps_queued = true;
@@ -851,7 +849,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 	int status;
 	enum htc_endpoint_id eid;
 	bool wake_event = false;
-	bool flushing[4] = {false};	/* FIXME : larger than ar->vif_max. */
+	bool flushing[4] = {false};	/* larger than ar->vif_max. */
 	u8 if_idx;
 	struct ath6kl_vif *vif;
 
@@ -2510,12 +2508,7 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 	aggr->tx_amsdu_max_aggr_len = AGGR_TX_MAX_AGGR_SIZE - 100;
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;
 	aggr->tx_amsdu_timeout = AGGR_TX_TIMEOUT;
-
-	/* 
-	 * NOTE : Now, it will be off after AP/P2P-GO start unless the user
-	 *        want to use it.
-	 */
-	 
+ 
 	/* Always enable host-based A-MSDU. */
 	set_bit(AMSDU_ENABLED, &vif->flags);
 

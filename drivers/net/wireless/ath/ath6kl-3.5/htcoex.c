@@ -202,7 +202,7 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 		into_chan_report_ie = (struct ieee80211_intolerant_chan_report_ie *)(++bss_coex_ie);
 		into_chan_report_ie->element_id = WLAN_EID_INTOLERANT_CHAN_REPORT;
 		into_chan_report_ie->len = coex_info->num_chans + 1;
-		into_chan_report_ie->reg_class = 0; /* FIXME */
+		into_chan_report_ie->reg_class = 0;
 		for (i = 0; i < coex_info->num_chans; i++)
 			into_chan_report_ie->chan_variable[i] = coex_info->chans[i];
 
@@ -272,13 +272,6 @@ struct htcoex *ath6kl_htcoex_init(struct ath6kl_vif *vif)
 	/* Disable by default. */
 	coex->flags &= ~ATH6KL_HTCOEX_FLAGS_ENABLED;
 	coex->scan_interval = ATH6KL_HTCOEX_SCAN_PERIOD;
-
-	/*
-	 * FIXME : No rate roll-back by default. Host driver need 
-	 *         more information to decide if current AP accept 
-	 *         from HT20 to HT40 under AP current support rates 
-	 *         include HT40.
-	 */
 	coex->rate_rollback_interval = ATH6KL_HTCOEX_RATE_ROLLBACK;
 
 	/* Init. periodic scan timer. */
@@ -458,7 +451,7 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 	/* Start if BSS is 11n and 2G channel. */
 	if ((coex->flags & ATH6KL_HTCOEX_FLAGS_ENABLED) &&
 		(bss->channel->band == IEEE80211_BAND_2GHZ) &&
-		(htcoex_get_elem(WLAN_EID_HT_CAPABILITY, 		/* FIXME : other way? */
+		(htcoex_get_elem(WLAN_EID_HT_CAPABILITY,
 				 bss->information_elements,
 				 bss->len_information_elements) != NULL)){
 		if (coex->flags & ATH6KL_HTCOEX_FLAGS_START)

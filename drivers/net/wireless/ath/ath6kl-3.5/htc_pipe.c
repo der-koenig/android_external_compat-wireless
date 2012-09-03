@@ -1462,6 +1462,9 @@ static int htc_rx_completion(struct htc_target *context,
 		}
 		dev_kfree_skb(netbuf);
 		netbuf = NULL;
+
+		ath6kl_fw_crash_trap(target->dev->ar);
+
 		goto free_netbuf; 
 	} 
 #endif

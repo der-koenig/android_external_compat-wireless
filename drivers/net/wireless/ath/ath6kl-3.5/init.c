@@ -31,22 +31,14 @@
 #endif
 #include "pm.h"
 
-unsigned int debug_mask;
+unsigned int debug_mask = 0;
 unsigned int htc_bundle_recv = 0;
 unsigned int htc_bundle_send = 0;
 unsigned int htc_bundle_send_timer = 0;
 static unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
-#ifdef CONFIG_ANDROID
-#ifdef ATH6KL_MCC
-unsigned int ath6kl_p2p = 0x13;
-#else
-unsigned int ath6kl_p2p = 0x3;
-#endif
-#else
-unsigned int ath6kl_p2p;
-#endif
+unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -498,6 +490,7 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 void ath6kl_init_control_info(struct ath6kl_vif *vif)
 {
 	u8 ctr;
+	struct ath6kl *ar = vif->ar;
 
 	ath6kl_init_profile_info(vif);
 	vif->def_txkey_index = 0;
@@ -539,9 +532,17 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	memset(&vif->sc_params, 0, sizeof(vif->sc_params));
 	vif->sc_params.short_scan_ratio = 3;
-	vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
-						SCAN_CONNECTED_CTRL_FLAGS |
-						ACTIVE_SCAN_CTRL_FLAGS);
+	if (ar->hif_type == ATH6KL_HIF_TYPE_USB ||
+		(vif->wdev.iftype!= NL80211_IFTYPE_STATION)) {
+		vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
+							SCAN_CONNECTED_CTRL_FLAGS |
+							ACTIVE_SCAN_CTRL_FLAGS);
+	} else {
+		vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
+							SCAN_CONNECTED_CTRL_FLAGS |
+							ACTIVE_SCAN_CTRL_FLAGS |
+							ROAM_SCAN_CTRL_FLAGS);
+	}
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
 }
 
@@ -2194,11 +2195,6 @@ static u32 ath6kl_init_get_subtype(struct ath6kl *ar)
 	int is_2ss, is_dual_band, is_ht40;
 
 	/* 
-	 * FIXME : It's better to query the target instead of getting
-	 *         from board-data but not yet support it now.
-	 *         Here is a temporary way to fetch this information from
-	 *         board-data. 
-	 *
 	 * WARNING : Please load the correct board-data for each device to 
 	 *           avoid to harm the device.
 	 */
@@ -2225,11 +2221,11 @@ static u32 ath6kl_init_get_subtype(struct ath6kl *ar)
 		WARN_ON(1);
 	}
 	
-	ath6kl_info("target's subtype is %x, ht40 %d 2ss %d dual_band %d\n", 
+	ath6kl_info("target's subtype is 0x%x, %s %s %s\n", 
 			subtype,
-			is_ht40,
-			is_2ss,
-			is_dual_band);
+			(is_ht40 ? "HT20/40" : "HT20-only"),
+			(is_2ss ? "2SS" : "1SS"),
+			(is_dual_band ? "Dual-band" : "Single-band"));
 
 	return subtype;
 }
@@ -2292,7 +2288,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 	if (ret)
 		goto err_htc_cleanup;
 
-	/* FIXME : move to before ath6kl_init_hw_params() call in this function. */
 	ar->target_subtype = ath6kl_init_get_subtype(ar);
 
 	/* FIXME: we should free all firmwares in the error cases below */
@@ -2325,7 +2320,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 	for (i = 0; i < ar->vif_max; i++)
 		ar->avail_idx_map |= BIT(i);
 
-	/* HACK */
 	if (ar->p2p_compat)
 		ar->avail_idx_map = 0x3;
 
@@ -2373,18 +2367,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ar->conf_flags = ATH6KL_CONF_IGNORE_ERP_BARKER |
 			 ATH6KL_CONF_ENABLE_11N | ATH6KL_CONF_ENABLE_TX_BURST;
 
-	/* FIXME : handle error code */
 	ar->p2p_flowctrl_ctx = ath6kl_p2p_flowctrl_conn_list_init(ar);
-#ifdef ATH6KL_MCC
-	ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
-	ath6kl_info("ath6kl : enable P2P flowctrl \n");
-#else
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_FLOWCTRL))
 		ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
-	else {
-		ath6kl_info("ath6kl : disable P2P flowctrl \n");
-	}
-#endif
+
+	ath6kl_info("P2P flowctrl %s\n",
+			ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL ?
+			"enabled" : "disabled");
 
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_CUTPOWER))
 		ar->conf_flags |= ATH6KL_CONF_SUSPEND_CUTPOWER;
@@ -2419,8 +2408,24 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	/* Defer some tasks to worker after driver init. */
 	if (!ret) {
+		init_waitqueue_head(&ar->init_defer_wait_wq);
 		INIT_WORK(&ar->init_defer_wk, ath6kl_core_init_defer);
+
+		set_bit(INIT_DEFER_PROGRESS, &ar->flag);
 		schedule_work(&ar->init_defer_wk);
+
+		/* Wait defer function to complete. */
+		if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_WAIT_DEFER)) {
+			ath6kl_info("Wait defer tasks done...\n");
+			wait_event_interruptible_timeout(ar->init_defer_wait_wq, 
+							 !test_bit(INIT_DEFER_PROGRESS, &ar->flag),
+							 INIT_DEFER_WAIT_TIMEOUT);
+		}
+	}
+
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY)) {
+		ath6kl_info("Enable Firmware crash notiry.\n");
+		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
 	return ret;

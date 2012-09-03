@@ -204,14 +204,9 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 	u8 *buf;
 
 	WARN_ON(!p2p_ps);
-	WARN_ON(!p2p_ps->go_last_beacon_app_ie_len);
 
 	vif = p2p_ps->vif;
 
-	/* 
-	 * FIXME : No availabe NL80211 event to update to supplicant so far.
-	 *         Instead, we try to set back to target here.
-	 */
 	spin_lock(&p2p_ps->p2p_ps_lock);
 	if ((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) ||
 	    (p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED)) {
@@ -280,6 +275,13 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 			   noa_ie->len,
 			   len);
 	} else {
+		/* Ignore if FW disable NoA/OppPS but actually no NoA/OppPS currently. */
+		if (p2p_ps->go_last_beacon_app_ie_len == 0) {
+			spin_unlock(&p2p_ps->p2p_ps_lock);
+
+			return ret;
+		}
+	
 		/* Remove NoA IE. */
 		p2p_ps->go_last_noa_ie_len = 0;
 		if (p2p_ps->go_last_noa_ie) {
@@ -334,10 +336,6 @@ done:
 	return ret;
 }
 
-/* 
- * FIXME : This's too bad solution to hook user's IEs then appended it in 
- *         next ath6kl_p2p_ps_update_notif() call.
- */
 void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps, 
 	 		       u8 mgmt_frm_type,
 	 		       u8 **ie, 
@@ -375,9 +373,6 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 		memcpy(p2p_ps->go_last_beacon_app_ie, *ie, *len);
 
 		spin_unlock(&p2p_ps->p2p_ps_lock);
-
-		/* TODO : Need filter if the user's IEs include NoA or not? */
-
 	} else if (mgmt_frm_type == WMI_FRAME_PROBE_RESP) {
 		/* Assume non-zero means P2P node. */
 		if ((*len) == 0) 
@@ -430,7 +425,7 @@ int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
 {	
 	int ret = 0;
 
-	/* FIXME : nl80211.h not yet support this type. */
+	/* nl80211.h not yet support this type. */
 	if (type == NL80211_IFTYPE_P2P_DEVICE) {
 		*opmode = HI_OPTION_FW_MODE_BSS_STA;
 		*subopmode = HI_OPTION_FW_SUBMODE_P2PDEV;
@@ -474,7 +469,6 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 	long left;
 	u8 skip_vif = 1;
 
-	/* HACK */
 	if (ar->p2p_compat)
 		return 0;
 
@@ -491,13 +485,6 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 		skip_vif = 2;
 	}
 	if ((ar->vif_max > skip_vif) && fw_vif_idx) {
-		/* 
-		 * WAR : NL80211 no really have P2P_DEVICE type and current 
-		 *       wpa_supplicant use P2P_CLIENT as interface type then 
-		 *       transfer to P2P_GO/P2P_CLIENT after P2P connection done.
-		 *       Current design always treat last virtual interface as 
-		 *       dedicated P2P_DEVICE.
-		 */
 		if (ar->p2p_dedicate && (fw_vif_idx == (ar->vif_max - 1)))
 			type = NL80211_IFTYPE_P2P_DEVICE;
 
@@ -531,6 +518,26 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 								 WMI_TIMEOUT/10);
 			WARN_ON(left <= 0);
 
+			/* WAR: Revert HT CAP, only for P2P-GO case. */
+			if (subopmode == HI_OPTION_FW_SUBMODE_P2PGO) {
+#ifdef CONFIG_ATH6KL_DEBUG
+				struct ht_cap_param *htCapParam;
+
+				htCapParam = &ar->debug.ht_cap_param[IEEE80211_BAND_5GHZ];				
+				if (htCapParam->isConfig)
+					ath6kl_wmi_set_ht_cap_cmd(ar->wmi, vif->fw_vif_idx,
+						htCapParam->band, 
+						htCapParam->chan_width_40M_supported,
+						htCapParam->short_GI,
+						htCapParam->intolerance_40MHz);
+				else 
+#endif
+					ath6kl_wmi_set_ht_cap_cmd(ar->wmi, vif->fw_vif_idx,
+						A_BAND_5GHZ,
+						ATH6KL_5GHZ_HT40_DEF_WIDTH,
+						ATH6KL_5GHZ_HT40_DEF_SGI,
+						ATH6KL_5GHZ_HT40_DEF_INTOLR40);
+			}
 		} else
 			return -ENOTSUPP;
 	}
@@ -599,11 +606,6 @@ void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar)
 	int i;
 	
 	if (p2p_flowctrl) {
-		/*
-		 *  TODO : It's better to check whether any conn_queue/re_queue 
-		 *         need to reclaim.
-		 */
-
 		/* check memory leakage */
 		for (i = 0; i < NUM_CONN; i++) {
 			spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
@@ -819,12 +821,6 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 	INIT_LIST_HEAD(&container);
 
 	for (i = 0; i < NUM_CONN; i++) {
-		/* TODO : It's better to check whether this fw_conn already be used or not 
-		 *        to bypass it to reduce CPU time.
-		 *
-		 *        Now, just push this checking to ath6kl_p2p_flowctrl_tx_schedule()
-		 *        to avoid previous_can_send not to be updated.
-		 */
 		spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
 		if (!_check_can_send(fw_conn) && fw_conn->previous_can_send) {	
@@ -889,10 +885,7 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	for (i = 0; i < numConn; i++) {
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];		
-		fw_conn->connect_status = ac_map[i];
-
-		/* TODO : ac_queue_depth? */
-		
+		fw_conn->connect_status = ac_map[i];		
 	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
@@ -939,8 +932,6 @@ void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif,
 
 	WARN_ON(!p2p_flowctrl);
 
-	/* FIXME : Call this API w/ NULL mac address if DISCONNECT event. */
-
 	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	fw_conn = &p2p_flowctrl->fw_conn_list[connId];
 	if (mac_addr) {
@@ -972,8 +963,6 @@ void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif,
 			fw_conn->parent_connId = fw_conn->connId;
 		}
 	} else {
-		/* FIXME : Recycle the conn_queue/re_queue here. */
-
 		fw_conn->connId = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
 		fw_conn->parent_connId = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
 		fw_conn->connect_status = 0;
@@ -1014,7 +1003,6 @@ u8 ath6kl_p2p_flowctrl_get_conn_id(struct ath6kl_vif *vif,
 		return connId;
 
 	ethhdr = (struct ethhdr *)(skb->data + sizeof(struct wmi_data_hdr));
-
 
 	if (vif->nw_type != AP_NETWORK)
 		hint = ethhdr->h_source;

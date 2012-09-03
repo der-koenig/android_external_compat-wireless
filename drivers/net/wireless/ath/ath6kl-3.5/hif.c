@@ -144,6 +144,8 @@ static int ath6kl_hif_proc_dbg_intr(struct ath6kl_device *dev)
 
 	ath6kl_hif_dump_fw_crash(dev->ar);
 
+	ath6kl_fw_crash_trap(dev->ar);
+
 	return ret;
 }
 

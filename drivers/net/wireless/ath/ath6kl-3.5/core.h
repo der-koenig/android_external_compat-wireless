@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.107
+#define __BUILD_VERSION_ 3.5.0.116
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -54,6 +54,35 @@
 #define ATH6KL_DIAGNOSTIC 1
 #ifdef ATH6KL_DIAGNOSTIC
 #include "diagnose.h"
+#endif
+
+/* TODO : move to BSP, only for Android-JB now. */
+#ifdef CONFIG_ANDROID
+#ifdef ATH6KL_MCC
+#define ATH6KL_MODULEP2P_DEF_MODE (ATH6KL_MODULEP2P_P2P_ENABLE |			\
+				   ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
+				   ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
+
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS (ATH6KL_MODULE_P2P_FLOWCTRL |			\
+					/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
+					/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
+					0)
+#else
+#define ATH6KL_MODULEP2P_DEF_MODE (ATH6KL_MODULEP2P_P2P_ENABLE |			\
+				   ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
+
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS (/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
+					/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
+					0)
+#endif
+#endif
+
+#ifndef ATH6KL_MODULEP2P_DEF_MODE
+#define ATH6KL_MODULEP2P_DEF_MODE 	(0)
+#endif
+
+#ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(0)
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -110,6 +139,9 @@
 #define ATH6KL_24GHZ_HT40_DEF_WIDTH		(1)	/* HT40 enabled */
 #define ATH6KL_24GHZ_HT40_DEF_SGI		(1)	/* SGI enabled */
 #define ATH6KL_24GHZ_HT40_DEF_INTOLR40		(0)	/* disabled */
+#define ATH6KL_5GHZ_HT40_DEF_WIDTH		(1)	/* HT40 enabled */
+#define ATH6KL_5GHZ_HT40_DEF_SGI		(1)	/* SGI enabled */
+#define ATH6KL_5GHZ_HT40_DEF_INTOLR40		(0)	/* disabled */
 
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
@@ -164,7 +196,6 @@ struct ath6kl_traffic_activity_change {
     u32    active;     /* active (1) or inactive (0) */
 };
 
-/* FIXME : to support variable options. */
 struct ath6kl_ioctl_cmd {
 	u32 subcmd;
 	u32 options;
@@ -261,7 +292,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_3_SOFTMAC_FILE            "ath6k/AR6004/hw1.3/softmac.bin"
 
 /* AR6004 1.6 definitions */
-#define AR6004_HW_1_6_VERSION                 0x31c80954
+#define AR6004_HW_1_6_VERSION                 0x31c80958
 #define AR6004_HW_1_6_FW_DIR			"ath6k/AR6004/hw1.6"
 #define AR6004_HW_1_6_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_6_FIRMWARE_FILE           "fw.ram.bin"
@@ -275,7 +306,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
 
 /* AR6006 1.0 definitions */
-#define AR6006_HW_1_0_VERSION                 0x31c80960
+#define AR6006_HW_1_0_VERSION                 0x31c8097a
 #define AR6006_HW_1_0_FW_DIR			"ath6k/AR6006/hw1.0"
 #define AR6006_HW_1_0_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_0_FIRMWARE_FILE           "fw.ram.bin"
@@ -347,7 +378,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define ATH6KL_PS_QUEUE_MAX_AGE		(5)			/* 5 cycles */
 #define ATH6KL_PS_QUEUE_NO_AGE		(0)			/* no aging */
 
-#define ATH6KL_PS_QUEUE_MAX_DEPTH	(65535)			/* TODO */
+#define ATH6KL_PS_QUEUE_MAX_DEPTH	(65535)
 #define ATH6KL_PS_QUEUE_NO_DEPTH	(0)			/* unlimit */
 
 enum ps_queue_type {
@@ -541,7 +572,6 @@ struct ath6kl_ps_buf_head {
 	enum ps_queue_type queue_type;
 	int depth;
 
-	/* TODO : change by debugfs? */
 	u32 age_cycle;
 	u32 max_depth;
 
@@ -714,6 +744,13 @@ enum ath6kl_hif_type {
 	ATH6KL_HIF_TYPE_USB,
 };
 
+enum ath6kl_chan_type {
+	ATH6KL_CHAN_TYPE_NONE,		/* by target */
+	ATH6KL_CHAN_TYPE_HT40PLUS,
+	ATH6KL_CHAN_TYPE_HT40MINUS,
+	ATH6KL_CHAN_TYPE_HT20,
+};
+
 /*
  * Driver's maximum limit, note that some firmwares support only one vif
  * and the runtime (current) limit must be checked from ar->vif_max.
@@ -791,6 +828,7 @@ struct ath6kl_vif {
 	u32 send_action_id;
 	bool probe_req_report;
 	u16 next_chan;
+	enum ath6kl_chan_type next_chan_type;
 	u16 assoc_bss_beacon_int;
 	u8 assoc_bss_dtim_period;
 	struct net_device_stats net_stats;
@@ -825,6 +863,7 @@ enum ath6kl_dev_state {
 	ROAM_TBL_PEND,
 	FIRST_BOOT,
 	USB_REMOTE_WKUP,
+	INIT_DEFER_PROGRESS,
 };
 
 enum ath6kl_state {
@@ -1044,9 +1083,15 @@ struct ath6kl {
 	int wlan_hb_enable;
 #endif
 
+#define INIT_DEFER_WAIT_TIMEOUT		(5 * HZ)
 	struct work_struct init_defer_wk;
+	wait_queue_head_t init_defer_wait_wq;
 
 	u32 tx_on_vif; 
+
+	struct country_code_to_enum_rd *current_reg_domain;
+
+	void (*fw_crash_notify)(struct ath6kl *ar);
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1077,6 +1122,13 @@ static inline u32 ath6kl_ps_queue_get_age(struct ath6kl_ps_buf_desc *ps_buf)
 static inline void ath6kl_ps_queue_set_age(struct ath6kl_ps_buf_desc *ps_buf, u32 age)
 {
 	ps_buf->age = age;
+}
+
+static inline void ath6kl_fw_crash_trap(struct ath6kl *ar)
+{
+	/* Notify to usr */
+	if (ar->fw_crash_notify)
+		ar->fw_crash_notify(ar);
 }
 
 int ath6kl_configure_target(struct ath6kl *ar);
@@ -1214,5 +1266,7 @@ void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn);
 void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
 #endif
+
+void ath6kl_fw_crash_notify(struct ath6kl *ar);
 
 #endif /* CORE_H */

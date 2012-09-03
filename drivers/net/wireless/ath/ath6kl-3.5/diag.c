@@ -839,7 +839,7 @@ wifi_diag_mac_rx_frame_event(struct ath6kl_vif *vif, struct ath_pktlog_rx *rx_lo
 	u32 rx_mcs = 0, rx_buf_len = 0;
 
 	if (!diag_local_test) {
-		if(!(vif->diag.cfg_mask & WIFI_DIAG_MAC_RX_FRAME_EVENTID) || diag_evt_callback == NULL)
+		if(!(vif->diag.cfg_mask & WIFI_DIAG_MAC_RX_FRAME_EVENTENABLE) || diag_evt_callback == NULL)
 			return;    
 	}
     
@@ -930,7 +930,7 @@ wifi_diag_send_pwrsave_event(struct ath6kl_vif *vif, wifi_diag_pwrsave_t pwrsave
 	u32 size;
 
 	if (!diag_local_test) {
-		if(!(vif->diag.cfg_mask & WIFI_DIAG_PWR_SAVE_EVENTID) || diag_evt_callback == NULL)
+		if(!(vif->diag.cfg_mask & WIFI_DIAG_PWR_SAVE_EVENTENABLE) || diag_evt_callback == NULL)
 		return;
 	}
 
@@ -1090,7 +1090,7 @@ ath6kl_wmi_rxtime_event(struct ath6kl_vif *vif, struct wmi *wmi, u8 *datap, int 
 	printk("ath6kl_wmi_rxtime_event\n");
  
 	if (!diag_local_test) {   
-		if(!(vif->diag.cfg_mask & WIFI_DIAG_RX_TIME_EVENTID) || diag_evt_callback == NULL)
+		if(!(vif->diag.cfg_mask & WIFI_DIAG_RX_TIME_EVENTENABLE) || diag_evt_callback == NULL)
 			return -1;
 	}
 

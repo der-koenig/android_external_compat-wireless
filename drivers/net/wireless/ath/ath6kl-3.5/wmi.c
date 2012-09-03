@@ -794,10 +794,6 @@ static int ath6kl_wmi_flowctrl_ind_event_rx(u8 *datap, int len, struct ath6kl_vi
 	struct ath6kl *ar = vif->ar;
 	struct wmi_flowctrl_ind_event *ev;
 
-	/* 
-	 * FIXME : Bypass this event if only one interface be used to 
-	 *         avoid uncessary code processing if STA enter PS mode. 
-	 */
 	if ((!(ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL)) ||
 	    (ar->vif_max == 1))
 		return 0;
@@ -1143,6 +1139,9 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 		ath6kl_dbg(ATH6KL_DBG_WMI, "Country alpha2 being used: %c%c\n",
 				alpha2[0], alpha2[1]);
 	}
+
+	wmi->parent_dev->current_reg_domain = country;
+
 }
 
 static int ath6kl_wmi_disconnect_event_rx(struct wmi *wmi, u8 *datap, int len,
