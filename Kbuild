@@ -44,6 +44,7 @@ wlan-y += drivers/net/wireless/ath/ath6kl/softmac.o
 
 wlan-y +=  drivers/net/wireless/ath/ath6kl/testmode.o
 wlan-y += drivers/net/wireless/ath/ath6kl/wmiconfig.o
+wlan-y += drivers/net/wireless/ath/ath6kl/fw_err_recovery.o
 endif
 
 ifeq ($(HAVE_CFG80211), 1)
