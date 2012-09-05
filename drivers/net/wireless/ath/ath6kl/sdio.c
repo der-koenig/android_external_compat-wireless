@@ -69,6 +69,8 @@ struct ath6kl_sdio {
 #define CMD53_ARG_FIXED_ADDRESS 0
 #define CMD53_ARG_INCR_ADDRESS  1
 
+extern wait_queue_head_t init_wq;
+
 static inline struct ath6kl_sdio *ath6kl_sdio_priv(struct ath6kl *ar)
 {
 	return ar->hif_priv;
@@ -1410,6 +1412,8 @@ static int __init ath6kl_sdio_init(void)
 	int ret;
 
 	ath6kl_sdio_init_platform();
+
+	init_waitqueue_head(&init_wq);
 
 	ret = sdio_register_driver(&ath6kl_sdio_driver);
 	if (ret) {

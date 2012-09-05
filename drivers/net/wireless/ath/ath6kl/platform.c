@@ -28,7 +28,7 @@
 
 #define ATH6KL_INIT_TIMEOUT	(3 * HZ)
 
-static wait_queue_head_t init_wq;
+wait_queue_head_t init_wq;
 static atomic_t init_done = ATOMIC_INIT(0);
 
 #endif
@@ -189,8 +189,6 @@ int ath6kl_wait_for_init_comp(void)
 
 	if (atomic_read(&init_done) == 1)
 		return 0;
-
-	init_waitqueue_head(&init_wq);
 
 	left = wait_event_interruptible_timeout(init_wq,
 						atomic_read(&init_done) == 1,

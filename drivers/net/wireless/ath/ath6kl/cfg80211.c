@@ -2828,8 +2828,9 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 	if (info->auto_channel_select) {
 		ar->want_ch_switch |= 1 << vif->fw_vif_idx;
 		vif->next_chan = info->auto_channel_select - 1;
-	} else if (vif->next_chan)
-		p.ch = cpu_to_le16(vif->next_chan);
+	}
+
+	p.ch = cpu_to_le16(vif->next_chan);
 
 	/*
 	 * Get the PTKSA replay counter in the RSN IE. Supplicant
