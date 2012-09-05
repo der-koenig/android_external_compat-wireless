@@ -3432,6 +3432,10 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 	vif->sme_state = SME_DISCONNECTED;
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
+	if (test_bit(FW_ERR_RECOVERY_IN_PROGRESS, &vif->ar->flag)) {
+		netif_stop_queue(vif->ndev);
+		netif_carrier_off(vif->ndev);
+	}
 
 	/* disable scanning */
 	if (ath6kl_wmi_scanparams_cmd(vif->ar->wmi, vif->fw_vif_idx, 0xFFFF,
@@ -3446,7 +3450,7 @@ void ath6kl_cfg80211_stop_all(struct ath6kl *ar)
 	struct ath6kl_vif *vif;
 
 	vif = ath6kl_vif_first(ar);
-	if (!vif) {
+	if (!vif && !test_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag)) {
 		/* save the current power mode before enabling power save */
 		ar->wmi->saved_pwr_mode = ar->wmi->pwr_mode;
 

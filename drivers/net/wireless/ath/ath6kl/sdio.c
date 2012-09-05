@@ -69,6 +69,8 @@ struct ath6kl_sdio {
 #define CMD53_ARG_FIXED_ADDRESS 0
 #define CMD53_ARG_INCR_ADDRESS  1
 
+extern wait_queue_head_t init_wq;
+
 static inline struct ath6kl_sdio *ath6kl_sdio_priv(struct ath6kl *ar)
 {
 	return ar->hif_priv;
@@ -855,6 +857,19 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		return 0;
 	}
 
+	/*
+	 * Wait for sometime for recovery work to get
+	 * scheduled on any detected firmware error.
+	 */
+	if (ar->fw_recovery.err_reason)
+		usleep_range(5000, 10000);
+
+	ar->fw_recovery.enable = false;
+
+	cancel_work_sync(&ar->fw_recovery.recovery_work);
+
+	ar->fw_recovery.err_reason = 0;
+
 	if (ar->suspend_mode == WLAN_POWER_STATE_WOW ||
 	    (!ar->suspend_mode && wow)) {
 
@@ -947,6 +962,8 @@ static int ath6kl_sdio_resume(struct ath6kl *ar)
 	}
 
 	ath6kl_cfg80211_resume(ar);
+
+	ar->fw_recovery.enable = true;
 
 	return 0;
 }
@@ -1424,6 +1441,8 @@ static int __init ath6kl_sdio_init(void)
 	int ret;
 
 	ath6kl_sdio_init_platform();
+
+	init_waitqueue_head(&init_wq);
 
 	ret = sdio_register_driver(&ath6kl_sdio_driver);
 	if (ret) {

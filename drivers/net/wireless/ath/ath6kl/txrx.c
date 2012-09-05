@@ -287,7 +287,8 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	int status = 0;
 	struct ath6kl_cookie *cookie = NULL;
 
-	if (WARN_ON_ONCE(ar->state == ATH6KL_STATE_WOW)) {
+	if (WARN_ON_ONCE(ar->state == ATH6KL_STATE_WOW) ||
+	    test_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag)) {
 		dev_kfree_skb(skb);
 		return -EACCES;
 	}
@@ -362,7 +363,8 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		   skb, skb->data, skb->len);
 
 	/* If target is not associated */
-	if (!test_bit(CONNECTED, &vif->flags)) {
+	if (!test_bit(CONNECTED, &vif->flags) ||
+	    test_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag)) {
 		dev_kfree_skb(skb);
 		return 0;
 	}
@@ -594,6 +596,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 */
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
+		ath6kl_fw_err_notify(ar, ATH6KL_FW_EP_FULL);
 		return action;
 	}
 

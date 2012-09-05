@@ -1897,6 +1897,8 @@ int ath6kl_core_init(struct ath6kl *ar)
 		goto err_rxbuf_cleanup;
 	}
 #endif
+	ath6kl_fw_err_recovery_init(ar);
+
 	return ret;
 
 err_rxbuf_cleanup:

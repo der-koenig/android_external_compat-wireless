@@ -609,6 +609,7 @@ enum ath6kl_dev_state {
 	SKIP_SCAN,
 	ROAM_TBL_PEND,
 	FIRST_BOOT,
+	FW_ERR_RECOVERY_IN_PROGRESS,
 };
 
 enum ath6kl_state {
@@ -620,6 +621,18 @@ enum ath6kl_state {
 	ATH6KL_STATE_CUTPOWER,
 	ATH6KL_STATE_WOW,
 	ATH6KL_STATE_SCHED_SCAN,
+};
+
+/* Fw error recovery */
+enum ath6kl_fw_err {
+	ATH6KL_FW_ASSERT,
+	ATH6KL_FW_EP_FULL,
+};
+
+struct ath6kl_fw_recovery {
+	bool enable;
+	struct work_struct recovery_work;
+	unsigned long err_reason;
 };
 
 struct ath6kl {
@@ -750,6 +763,8 @@ struct ath6kl {
 	bool p2p;
 
 	struct ath6kl_btcoex btcoex_info;
+
+	struct ath6kl_fw_recovery fw_recovery;
 
 #ifdef CONFIG_ATH6KL_DEBUG
 	struct {
@@ -894,4 +909,7 @@ void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit);
 int ath6kl_wait_for_init_comp(void);
 void ath6kl_notify_init_done(void);
 
+/* Fw error recovery */
+void ath6kl_fw_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason);
+void ath6kl_fw_err_recovery_init(struct ath6kl *ar);
 #endif /* CORE_H */
