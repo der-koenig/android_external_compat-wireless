@@ -21,18 +21,18 @@
 #include "target.h"
 #include "debug.h"
 
-static int _string_to_mac(char *string, int len, u8 *macaddr)
+int _string_to_mac(char *string, int len, u8 *macaddr)
 {
 	int i, k;
 	char temp[3] = {0};
 
 	/* assume string is "00:11:22:33:44:55". */
-	if ( !string && (len < 17) ){
+	if (!string || (len < 17))
 		return -1;
-	}
+
 
 	i = k = 0;
-	while (i < len){
+	while (i < len) {
 		memcpy(temp, string + i, 2);
 		macaddr[k++] = (u8)simple_strtoul(temp, NULL, 16);
 		i += 3;
@@ -80,8 +80,9 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 	return conn;
 }
 
-static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid, u8 *wpaie,
-			u8 ielen, u8 keymgmt, u8 ucipher, u8 auth, u8 apsd_info)
+static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
+				u8 *wpaie, u8 ielen, u8 keymgmt, u8 ucipher,
+				u8 auth, u8 apsd_info)
 {
 	struct ath6kl_sta *sta;
 	u8 free_slot;
@@ -180,7 +181,7 @@ void ath6kl_ps_queue_init(struct ath6kl_ps_buf_head *psq,
 	psq->queue_type = queue_type;
 	psq->age_cycle = age_cycle;
 	psq->max_depth = max_depth;
-	
+
 	psq->depth = 0;
 	psq->enqueued = 0;
 	psq->enqueued_err = 0;
@@ -188,8 +189,8 @@ void ath6kl_ps_queue_init(struct ath6kl_ps_buf_head *psq,
 	psq->aged = 0;
 	spin_lock_init(&psq->lock);
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
-			"ps: init psq %p age_cycle %d \n",
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
+			"ps: init psq %p age_cycle %d\n",
 			psq,
 			psq->age_cycle);
 
@@ -201,7 +202,7 @@ void ath6kl_ps_queue_purge(struct ath6kl_ps_buf_head *psq)
 	unsigned long flags;
 	struct ath6kl_ps_buf_desc *ps_buf, *ps_buf_n;
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: purge psq %p depth %d\n",
 			psq,
 			psq->depth);
@@ -265,10 +266,10 @@ int ath6kl_ps_queue_depth(struct ath6kl_ps_buf_head *psq)
 	return depth;
 }
 
-void ath6kl_ps_queue_stat(struct ath6kl_ps_buf_head *psq, 
-			 int *depth, 
-			 u32 *enqueued, 
-			 u32 *enqueued_err, 
+void ath6kl_ps_queue_stat(struct ath6kl_ps_buf_head *psq,
+			 int *depth,
+			 u32 *enqueued,
+			 u32 *enqueued_err,
 			 u32 *dequeued,
 			 u32 *aged)
 {
@@ -282,7 +283,7 @@ void ath6kl_ps_queue_stat(struct ath6kl_ps_buf_head *psq,
 	*aged = psq->aged;
 	spin_unlock_irqrestore(&psq->lock, flags);
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: stat psq %p depth %d enqueued %d enqueued_err %d dequeued %d aged %d\n",
 			psq,
 			*depth,
@@ -290,16 +291,17 @@ void ath6kl_ps_queue_stat(struct ath6kl_ps_buf_head *psq,
 			*enqueued_err,
 			*dequeued,
 			*aged);
-	
+
 	return;
 }
-			 
-struct ath6kl_ps_buf_desc* ath6kl_ps_queue_dequeue(struct ath6kl_ps_buf_head *psq)
+
+struct ath6kl_ps_buf_desc *ath6kl_ps_queue_dequeue(
+	struct ath6kl_ps_buf_head *psq)
 {
 	unsigned long flags;
 	struct ath6kl_ps_buf_desc *ps_buf;
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: dequeue psq %p depth %d\n",
 			psq,
 			psq->depth);
@@ -321,20 +323,20 @@ struct ath6kl_ps_buf_desc* ath6kl_ps_queue_dequeue(struct ath6kl_ps_buf_head *ps
 	return ps_buf;
 }
 
-int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq, 
-				const u8 *buf, 
-				u16 len, 
-				u32 id, 
-				u32 freq, 
-				u32 wait, 
-				bool no_cck, 
+int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq,
+				const u8 *buf,
+				u16 len,
+				u32 id,
+				u32 freq,
+				u32 wait,
+				bool no_cck,
 				bool dont_wait_for_ack)
 {
 	unsigned long flags;
 	struct ath6kl_ps_buf_desc *ps_buf;
 	int mgmt_buf_size;
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: enqueue_mgmt psq %p depth %d buf %p\n",
 			psq,
 			psq->depth,
@@ -350,9 +352,9 @@ int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq,
 	ps_buf = kmalloc(mgmt_buf_size, GFP_ATOMIC);
 	if (!ps_buf) {
 		psq->enqueued_err++;
-		return -ENOMEM;	
+		return -ENOMEM;
 	}
-	
+
 	INIT_LIST_HEAD(&ps_buf->list);
 	ps_buf->id = id;
 	ps_buf->freq = freq;
@@ -363,7 +365,7 @@ int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq,
 	ps_buf->age = 0;
 	ps_buf->skb = NULL;
 	memcpy(ps_buf->buf, buf, len);
-	
+
 	spin_lock_irqsave(&psq->lock, flags);
 	list_add_tail(&ps_buf->list, &psq->list);
 	psq->depth++;
@@ -373,20 +375,20 @@ int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq,
 	return 0;
 }
 
-int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq, 
+int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq,
 				struct sk_buff *skb)
 {
 	unsigned long flags;
 	struct ath6kl_ps_buf_desc *ps_buf;
 	int data_buf_size;
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: enqueue_data psq %p depth %d skb %p\n",
 			psq,
 			psq->depth,
 			skb);
 
-	if((psq->max_depth != ATH6KL_PS_QUEUE_NO_DEPTH) &&
+	if ((psq->max_depth != ATH6KL_PS_QUEUE_NO_DEPTH) &&
 	   (psq->depth > psq->max_depth)) {
 		psq->enqueued_err++;
 		return -EBUSY;
@@ -396,7 +398,7 @@ int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq,
 	ps_buf = kmalloc(data_buf_size, GFP_ATOMIC);
 	if (!ps_buf) {
 		psq->enqueued_err++;
-		return -ENOMEM;	
+		return -ENOMEM;
 	}
 	INIT_LIST_HEAD(&ps_buf->list);
 	ps_buf->age = 0;
@@ -414,9 +416,9 @@ int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq,
 
 static int ath6kl_ps_queue_aging(struct ath6kl_ps_buf_head *psq)
 {
-	struct ath6kl_ps_buf_desc* ps_buf, *ps_buf_n;
+	struct ath6kl_ps_buf_desc *ps_buf, *ps_buf_n;
 	unsigned long flags;
-	u32 age;	
+	u32 age;
 	int is_empty = 1;
 
 	spin_lock_irqsave(&psq->lock, flags);
@@ -443,7 +445,7 @@ static int ath6kl_ps_queue_aging(struct ath6kl_ps_buf_head *psq)
 	is_empty = (psq->depth == 0);
 	spin_unlock_irqrestore(&psq->lock, flags);
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: aging psq %p depth %d aged %d\n",
 			psq,
 			psq->depth,
@@ -454,35 +456,38 @@ static int ath6kl_ps_queue_aging(struct ath6kl_ps_buf_head *psq)
 
 void ath6kl_ps_queue_age_handler(unsigned long ptr)
 {
-	struct ath6kl_sta *conn = (struct ath6kl_sta*)ptr;
+	struct ath6kl_sta *conn = (struct ath6kl_sta *)ptr;
 	struct ath6kl_vif *vif = conn->vif;
-		
+
 	spin_lock_bh(&conn->lock);
 	if (ath6kl_ps_queue_aging(&conn->psq_data) &&
 	    ath6kl_ps_queue_aging(&conn->psq_mgmt))
-		ath6kl_wmi_set_pvb_cmd(vif->ar->wmi, vif->fw_vif_idx, conn->aid, 0);
+		ath6kl_wmi_set_pvb_cmd(vif->ar->wmi,
+			vif->fw_vif_idx, conn->aid, 0);
 	spin_unlock_bh(&conn->lock);
 
-	mod_timer(&conn->psq_age_timer, jiffies + msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
+	mod_timer(&conn->psq_age_timer, jiffies +
+		msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
 
 	return;
 }
 
 void ath6kl_ps_queue_age_start(struct ath6kl_sta *conn)
 {
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: aging_timer_start conn %p aid %d\n",
 			conn,
 			conn->aid);
 
-	mod_timer(&conn->psq_age_timer, jiffies + msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
+	mod_timer(&conn->psq_age_timer, jiffies +
+		msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
 
 	return;
 }
 
 void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn)
 {
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			"ps: aging_timer_stop conn %p aid %d\n",
 			conn,
 			conn->aid);
@@ -671,7 +676,8 @@ int ath6kl_read_fwlogs(struct ath6kl *ar)
 
 		address = TARG_VTOP(ar->target_type,
 				    le32_to_cpu(debug_buf.next));
-		ret = ath6kl_diag_read(ar, address, &debug_buf, sizeof(debug_buf));
+		ret = ath6kl_diag_read(ar, address, &debug_buf,
+			sizeof(debug_buf));
 		if (ret)
 			goto out;
 
@@ -745,13 +751,13 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 
 		len = 26;
 		buf = kzalloc(len, GFP_ATOMIC);
-		if (buf == NULL) 
+		if (buf == NULL)
 			return;
 
 		/* hint */
 		buf[24] = 34;
-		cfg80211_send_unprot_disassoc(vif->ndev, 
-						buf, 
+		cfg80211_send_unprot_disassoc(vif->ndev,
+						buf,
 						len);
 
 		kfree(buf);
@@ -915,7 +921,7 @@ void disconnect_timer_handler(unsigned long ptr)
 int ath6kl_disconnect(struct ath6kl_vif *vif)
 {
 	int ret = 0;
-	
+
 	if (test_bit(CONNECTED, &vif->flags) ||
 	    test_bit(CONNECT_PEND, &vif->flags)) {
 		ret = ath6kl_wmi_disconnect_cmd(vif->ar->wmi, vif->fw_vif_idx);
@@ -964,7 +970,8 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	if (status != WMI_SCAN_STATUS_SUCCESS)
 		aborted = true;
 
-	if (ath6kl_htcoex_scan_complete_event(vif, aborted) == HTCOEX_PASS_SCAN_DONE)
+	if (ath6kl_htcoex_scan_complete_event(vif, aborted) ==
+		HTCOEX_PASS_SCAN_DONE)
 		ath6kl_cfg80211_scan_complete_event(vif, aborted);
 
 	if (!vif->usr_bss_filter) {
@@ -995,7 +1002,7 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 
 	if ((vif->nw_type == INFRA_NETWORK)) {
 		ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
-		   	 		   ATH6KL_DISCONNECT_TIMEOUT);
+					   ATH6KL_DISCONNECT_TIMEOUT);
 		ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
 					      ar->listen_intvl_t,
 					      ar->listen_intvl_b);
@@ -1092,14 +1099,15 @@ static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 	stats->tx_rts_fail_cnt +=
 		le32_to_cpu(tgt_stats->stats.tx.rts_fail_cnt);
 	if (ar->target_type == TARGET_TYPE_AR6004) {
-        stats->tx_ucast_rate =
-            ath6kl_wmi_get_rate_ar6004(
-                    a_sle32_to_cpu(tgt_stats->stats.tx.ucast_rate));
-            stats->tx_rate_index = tgt_stats->stats.tx.ucast_rate;
-    } else {
-        stats->tx_ucast_rate =
-        ath6kl_wmi_get_rate(a_sle32_to_cpu(tgt_stats->stats.tx.ucast_rate));
-    }
+		stats->tx_ucast_rate =
+			ath6kl_wmi_get_rate_ar6004(
+			a_sle32_to_cpu(tgt_stats->stats.tx.ucast_rate));
+		stats->tx_rate_index = tgt_stats->stats.tx.ucast_rate;
+	} else {
+		stats->tx_ucast_rate =
+		ath6kl_wmi_get_rate(
+		    a_sle32_to_cpu(tgt_stats->stats.tx.ucast_rate));
+	}
 
 	stats->rx_pkt += le32_to_cpu(tgt_stats->stats.rx.pkt);
 	stats->rx_byte += le32_to_cpu(tgt_stats->stats.rx.byte);
@@ -1184,29 +1192,39 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 				st_ap = &ap->sta[ac];
 				st_p = &p->sta[ac];
 
-				/* 
-				 * Target may insert garbage data and only update the 
-				 * associated stations. 
+				/*
+				 * Target may insert garbage data and only
+				 * update the associated stations.
 				 */
 				if ((st_p->aid == 0) ||
-				    (st_p->aid > AP_MAX_NUM_STA))
-				    continue;
+					(st_p->aid > AP_MAX_NUM_STA))
+					continue;
 
 				slot = (1 << (st_p->aid - 1));
 				if ((vif->sta_list_index & slot) &&
 				    (!(updated & slot))) {
-				    	updated |= slot;
-					ath6kl_add_le32(&st_ap->tx_bytes, st_p->tx_bytes);
-					ath6kl_add_le32(&st_ap->tx_pkts, st_p->tx_pkts);
-					ath6kl_add_le32(&st_ap->tx_error, st_p->tx_error);
-					ath6kl_add_le32(&st_ap->tx_discard, st_p->tx_discard);
-					ath6kl_add_le32(&st_ap->rx_bytes, st_p->rx_bytes);
-					ath6kl_add_le32(&st_ap->rx_pkts, st_p->rx_pkts);
-					ath6kl_add_le32(&st_ap->rx_error, st_p->rx_error);
-					ath6kl_add_le32(&st_ap->rx_discard, st_p->rx_discard);
+					updated |= slot;
+					ath6kl_add_le32(&st_ap->tx_bytes,
+							st_p->tx_bytes);
+					ath6kl_add_le32(&st_ap->tx_pkts,
+							st_p->tx_pkts);
+					ath6kl_add_le32(&st_ap->tx_error,
+							st_p->tx_error);
+					ath6kl_add_le32(&st_ap->tx_discard,
+							st_p->tx_discard);
+					ath6kl_add_le32(&st_ap->rx_bytes,
+							st_p->rx_bytes);
+					ath6kl_add_le32(&st_ap->rx_pkts,
+							st_p->rx_pkts);
+					ath6kl_add_le32(&st_ap->rx_error,
+							st_p->rx_error);
+					ath6kl_add_le32(&st_ap->rx_discard,
+							st_p->rx_discard);
 					st_ap->aid = st_p->aid;
-					st_ap->tx_ucast_rate = st_p->tx_ucast_rate;
-					st_ap->last_txrx_time = le16_to_cpu(st_p->last_txrx_time);
+					st_ap->tx_ucast_rate =
+							st_p->tx_ucast_rate;
+					st_ap->last_txrx_time =
+					le16_to_cpu(st_p->last_txrx_time);
 				}
 			}
 		}
@@ -1256,9 +1274,10 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 	is_mgmt_psq_empty = ath6kl_ps_queue_empty(&conn->psq_mgmt);
 	psq_empty  = is_data_psq_empty && is_mgmt_psq_empty;
 
-	ath6kl_dbg(ATH6KL_DBG_POWERSAVE, 
-				"%s: aid %d sta_flags %x psq_data %d psq_mgmt %d\n",
-				__func__, conn->aid, conn->sta_flags, !is_data_psq_empty, !is_mgmt_psq_empty);
+	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
+		"%s: aid %d sta_flags %x psq_data %d psq_mgmt %d\n",
+		__func__, conn->aid, conn->sta_flags, !is_data_psq_empty,
+		!is_mgmt_psq_empty);
 
 	if (psq_empty) {
 		spin_unlock_bh(&conn->lock);
@@ -1266,18 +1285,31 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 	}
 
 	if (!is_mgmt_psq_empty) {
+		struct ieee80211_mgmt *mgmt;
+
 		ps_buf = ath6kl_ps_queue_dequeue(&conn->psq_mgmt);
 		spin_unlock_bh(&conn->lock);
 
-		WARN_ON(!ps_buf);    
+		WARN_ON(!ps_buf);
 		conn->sta_flags |= STA_PS_POLLED;
-		ath6kl_wmi_send_action_cmd(ar->wmi, 
-					vif->fw_vif_idx,
-					ps_buf->id, 
-					ps_buf->freq, 
-					ps_buf->wait, 
-					ps_buf->buf,
-					ps_buf->len);
+
+		mgmt = (struct ieee80211_mgmt *) ps_buf->buf;
+		if (ps_buf->buf + ps_buf->len >= mgmt->u.probe_resp.variable &&
+		    ieee80211_is_probe_resp(mgmt->frame_control))
+			ath6kl_wmi_send_go_probe_response_cmd(ar->wmi,
+							vif,
+							ps_buf->buf,
+							ps_buf->len,
+							ps_buf->freq);
+		else
+			ath6kl_wmi_send_action_cmd(ar->wmi,
+						vif->fw_vif_idx,
+						ps_buf->id,
+						ps_buf->freq,
+						ps_buf->wait,
+						ps_buf->buf,
+						ps_buf->len);
+
 		conn->sta_flags &= ~STA_PS_POLLED;
 		kfree(ps_buf);
 	} else {
@@ -1288,7 +1320,7 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 			WARN_ON(!ps_buf->skb);
 			if (ps_buf->skb) {
 				conn->sta_flags |= STA_PS_POLLED;
-				ath6kl_data_tx(ps_buf->skb, vif->ndev);
+				ath6kl_data_tx(ps_buf->skb, vif->ndev, true);
 				conn->sta_flags &= ~STA_PS_POLLED;
 			}
 			kfree(ps_buf);
@@ -1296,7 +1328,7 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 	}
 
 	spin_lock_bh(&conn->lock);
-	psq_empty = ath6kl_ps_queue_empty(&conn->psq_data)&& 
+	psq_empty = ath6kl_ps_queue_empty(&conn->psq_data) &&
 			ath6kl_ps_queue_empty(&conn->psq_mgmt);
 	spin_unlock_bh(&conn->lock);
 
@@ -1334,8 +1366,7 @@ void ath6kl_dtimexpiry_event(struct ath6kl_vif *vif)
 	spin_lock_bh(&vif->psq_mcast_lock);
 	while ((ps_buf = ath6kl_ps_queue_dequeue(&vif->psq_mcast)) != NULL) {
 		spin_unlock_bh(&vif->psq_mcast_lock);
-
-		ath6kl_data_tx(ps_buf->skb, vif->ndev);
+		ath6kl_data_tx(ps_buf->skb, vif->ndev, true);
 		kfree(ps_buf);
 
 		spin_lock_bh(&vif->psq_mcast_lock);
@@ -1380,14 +1411,14 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		return;
 	} else if (vif->nw_type == INFRA_NETWORK) {
 		ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
-		   	 		   ATH6KL_DISCONNECT_TIMEOUT);
+					   ATH6KL_DISCONNECT_TIMEOUT);
 
 		/* Support to triger supplicant to have another try. */
 		if (!is_valid_ether_addr(bssid) &&
 		    is_valid_ether_addr(vif->req_bssid))
 			bssid = vif->req_bssid;
 	}
-	
+
 	ath6kl_cfg80211_disconnect_event(vif, reason, bssid,
 				       assoc_resp_len, assoc_info,
 				       prot_reason_status);
@@ -1526,21 +1557,121 @@ static struct net_device_stats *ath6kl_get_stats(struct net_device *dev)
 	return &vif->net_stats;
 }
 
-static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int cmd)
+static int ath6kl_ioctl_p2p_set_ps(struct ath6kl_vif *vif,
+				char *user_cmd,
+				int len)
 {
-	struct ath6kl_vif *p2p_vif, *vif = netdev_priv(dev);
+	int ret = 0;
+	u8 pwr_mode;
+
+	/* SET::P2P_SET_PS {legacy_ps} {opp_ps} {ctwindow} */
+	if (len > 1) {
+		if (down_interruptible(&vif->ar->sem)) {
+			ath6kl_err("busy, couldn't get access\n");
+			return -EIO;
+		}
+
+		ret = 0;
+		pwr_mode = (user_cmd[0] != '0' ?
+				REC_POWER : MAX_PERF_POWER);
+
+		if (ath6kl_wmi_powermode_cmd(vif->ar->wmi,
+					     vif->fw_vif_idx,
+					     pwr_mode))
+			ret = -EIO;
+
+		up(&vif->ar->sem);
+	} else
+		ret = -EFAULT;
+
+	return ret;
+}
+
+static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
+				char *user_cmd,
+				int len)
+{
+	int ret = 0;
+	u8 not_allow_ch, scanband_type;
+
+	/* SET::SETBAND {band} */
+	if (len > 1) {
+		ret = 0;
+		scanband_type = user_cmd[0] - '0';
+
+		if (scanband_type == ANDROID_SETBAND_ALL)
+			vif->scanband_type = SCANBAND_TYPE_ALL;
+		else if (scanband_type == ANDROID_SETBAND_5G)
+			vif->scanband_type = SCANBAND_TYPE_5G;
+		else if (scanband_type == ANDROID_SETBAND_2G)
+			vif->scanband_type = SCANBAND_TYPE_2G;
+		else
+			ret = -ENOTSUPP;
+
+		/* Disconnect if AP is in not allowed band. */
+		not_allow_ch = 0;
+		if ((vif->bss_ch) &&
+		    (vif->scanband_type != SCANBAND_TYPE_ALL) &&
+		    (((vif->scanband_type == SCANBAND_TYPE_5G) &&
+			(vif->bss_ch < 2484)) ||
+		     ((vif->scanband_type == SCANBAND_TYPE_2G) &&
+			(vif->bss_ch > 2484))))
+			not_allow_ch = 1;
+
+		if ((!ret) &&
+		    (vif->nw_type == INFRA_NETWORK) &&
+		    (not_allow_ch) &&
+		    (test_bit(CONNECTED, &vif->flags))) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"Disconnect because of band changed!");
+			vif->reconnect_flag = 0;
+			ret = ath6kl_disconnect(vif);
+			memset(vif->ssid, 0, sizeof(vif->ssid));
+			vif->ssid_len = 0;
+		}
+	} else
+		ret = -EFAULT;
+
+	return ret;
+}
+
+static int ath6kl_ioctl_p2p_dev_addr(struct ath6kl_vif *vif,
+				char *user_cmd,
+				u8 *buf)
+{
+	int ret = 0;
+	struct ath6kl_vif *p2p_vif;
+
+	/* GET::P2P_DEV_ADDR */
+	/* In current design, the last vif is always be P2P-device. */
+	p2p_vif = ath6kl_get_vif_by_index(vif->ar, (vif->ar->vif_max - 1));
+	if (p2p_vif) {
+		if (copy_to_user(buf, p2p_vif->ndev->dev_addr, ETH_ALEN))
+			ret = -EFAULT;
+		else
+			ret = 0;
+	} else
+		ret = -EFAULT;
+
+	return ret;
+}
+
+static int ath6kl_ioctl_standard(struct net_device *dev,
+				struct ifreq *rq, int cmd)
+{
+	struct ath6kl_vif *vif = netdev_priv(dev);
 	void *data = (void *)(rq->ifr_data);
 	int ret = 0;
-	int count, start, duration;
 
-	switch(cmd) {
+	switch (cmd) {
 	case ATH6KL_IOCTL_STANDARD01:
 	{
 		struct ath6kl_android_wifi_priv_cmd android_cmd;
-		char *user_cmd, *pos;
-		u8 pwr_mode, scanband_type, not_allow_ch;
+		char *user_cmd;
 
-		if(copy_from_user(&android_cmd, data, sizeof(struct ath6kl_android_wifi_priv_cmd)))
+		if (copy_from_user(&android_cmd,
+				data,
+				sizeof(struct ath6kl_android_wifi_priv_cmd)))
 			ret = -EIO;
 		else {
 			user_cmd = kzalloc(android_cmd.total_len, GFP_KERNEL);
@@ -1549,104 +1680,28 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 				break;
 			}
 
-			if(copy_from_user(user_cmd, android_cmd.buf, android_cmd.used_len)) 
+			if (copy_from_user(user_cmd,
+					android_cmd.buf,
+					android_cmd.used_len))
 				ret = -EIO;
 			else {
-				if ((pos = strstr(user_cmd, "P2P_SET_PS ")) != NULL) {
-					/* SET::P2P_SET_PS {legacy_ps} {opp_ps} {ctwindow} */
-					if (android_cmd.used_len > 12) {
-						if (down_interruptible(&vif->ar->sem)) {
-							ath6kl_err("busy, couldn't get access\n");
-							ret = -EIO;
-							break;
-						}
+				if (strstr(user_cmd, "P2P_SET_PS "))
+					ret = ath6kl_ioctl_p2p_set_ps(vif,
+						(user_cmd + 11),
+						(android_cmd.used_len - 11));
+				else if (strstr(user_cmd, "SETBAND "))
+					ret = ath6kl_ioctl_setband(vif,
+						(user_cmd + 8),
+						(android_cmd.used_len - 8));
+				else if (strstr(user_cmd, "P2P_DEV_ADDR"))
+					ret = ath6kl_ioctl_p2p_dev_addr(vif,
+							user_cmd,
+							android_cmd.buf);
+				else {
+					ath6kl_dbg(ATH6KL_DBG_TRC,
+						"not yet support \"%s\"\n",
+						user_cmd);
 
-						ret = 0;
-						pwr_mode = (pos[11] != '0' ? 
-								REC_POWER : MAX_PERF_POWER);
-						if (ath6kl_wmi_powermode_cmd(vif->ar->wmi, 
-									     vif->fw_vif_idx,
-									     pwr_mode))
-							ret = -EIO;
-
-						up(&vif->ar->sem);
-					} else
-						ret = -EFAULT;
-				} else if ((pos = strstr(user_cmd, "SETBAND ")) != NULL) {
-					/* SET::SETBAND {band} */
-					if (android_cmd.used_len > 10) {
-						ret = 0;
-						scanband_type = pos[8] - '0';
-						if (scanband_type == ANDROID_SETBAND_ALL)
-							vif->scanband_type = SCANBAND_TYPE_ALL;
-						else if (scanband_type == ANDROID_SETBAND_5G)
-							vif->scanband_type = SCANBAND_TYPE_5G;
-						else if (scanband_type == ANDROID_SETBAND_2G)
-							vif->scanband_type = SCANBAND_TYPE_2G;
-						else
-							ret = -ENOTSUPP;
-
-						/* Disconnect if AP is in not allowed band. */
-						not_allow_ch = 0;
-						if ((vif->bss_ch) &&
-						    (vif->scanband_type != SCANBAND_TYPE_ALL) &&
-						    (((vif->scanband_type == SCANBAND_TYPE_5G) && 
-						    	(vif->bss_ch < 2484)) ||
-						     ((vif->scanband_type == SCANBAND_TYPE_2G) && 
-						     	(vif->bss_ch > 2484))))
-						     not_allow_ch = 1;
-
-						if ((!ret) && 
-						    (vif->nw_type == INFRA_NETWORK) && 
-						    (not_allow_ch) &&
-						    (test_bit(CONNECTED, &vif->flags))) {
-							ath6kl_dbg(ATH6KL_DBG_INFO,
-								"Disconnect because of band changed!");
-							vif->reconnect_flag = 0;
-							ret = ath6kl_disconnect(vif);
-							memset(vif->ssid, 0, sizeof(vif->ssid));
-							vif->ssid_len = 0;
-						}
-					} else
-						ret = -EFAULT;					
-				} else if ((pos = strstr(user_cmd, "P2P_SET_NOA ")) != NULL) {
-					/* SET::P2P_SET_NOA {count} {duration} {interval} */
-					if (android_cmd.used_len > 12) {
-						if (down_interruptible(&vif->ar->sem)) {
-							ath6kl_err("busy, couldn't get access\n");
-							ret = -EIO;
-							break;
-						}
-
-						ret = 0;
-						sscanf(pos + 12, "%d %d %d", &count, &start, &duration);
-						if (ath6kl_wmi_set_noa_cmd(vif->ar->wmi, 
-									     vif->fw_vif_idx,
-									     (u8)count,
-									     (u32)start,
-									     (u32)duration,
-									     0))
-							ret = -EIO;
-
-						up(&vif->ar->sem);
-					} else
-						ret = -EFAULT;
-				} else if ((pos = strstr(user_cmd, "P2P_DEV_ADDR")) != NULL) {
-					/* GET::P2P_DEV_ADDR */
-					/* In current design, the last vif is always be P2P-device. */
-					p2p_vif = ath6kl_get_vif_by_index(vif->ar, (vif->ar->vif_max - 1));
-					if (p2p_vif) {
-						memcpy(user_cmd, p2p_vif->ndev->dev_addr, ETH_ALEN);
-						if(copy_to_user(android_cmd.buf, user_cmd, ETH_ALEN))
-							ret = -EFAULT;	
-						else
-							ret = 0;
-					} else
-						ret = -EFAULT;						
-				} else {
-					ath6kl_dbg(ATH6KL_DBG_TRC, "%s : not yet support \"%s\"\n",
-									__func__, 
-									user_cmd);
 					ret = -EOPNOTSUPP;
 				}
 			}
@@ -1659,12 +1714,16 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 	{
 		struct ath6kl_ioctl_cmd ioctl_cmd;
 
-		if(copy_from_user(&ioctl_cmd, data, sizeof(struct ath6kl_ioctl_cmd)))
+		if (copy_from_user(&ioctl_cmd,
+				data,
+				sizeof(struct ath6kl_ioctl_cmd)))
 			ret = -EIO;
 		else {
-			switch(ioctl_cmd.subcmd){
+			switch (ioctl_cmd.subcmd) {
 			case ATH6KL_IOCTL_AP_APSD:
-				ath6kl_wmi_ap_set_apsd(vif->ar->wmi, vif->fw_vif_idx, ioctl_cmd.options);
+				ath6kl_wmi_ap_set_apsd(vif->ar->wmi,
+							vif->fw_vif_idx,
+							ioctl_cmd.options);
 				break;
 			case ATH6KL_IOCTL_AP_INTRABSS:
 				vif->intra_bss = ioctl_cmd.options;
@@ -1680,11 +1739,13 @@ static int ath6kl_ioctl_standard(struct net_device *dev, struct ifreq *rq, int c
 		ret = -EOPNOTSUPP;
 		break;
 	}
-	
+
 	return ret;
 }
 
-static int ath6kl_ioctl_linkspeed(struct net_device *dev, struct ifreq *rq, int cmd)
+static int ath6kl_ioctl_linkspeed(struct net_device *dev,
+				struct ifreq *rq,
+				int cmd)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
@@ -1702,7 +1763,9 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev, struct ifreq *rq, int 
 		return -EFAULT;
 
 	memset(user_cmd, 0, 32);
-	if (copy_from_user(user_cmd, req->u.data.pointer, req->u.data.length))
+	if (copy_from_user(user_cmd,
+			req->u.data.pointer,
+			req->u.data.length))
 		return -EFAULT;
 
 	if (_string_to_mac(user_cmd, req->u.data.length, macaddr))
@@ -1736,10 +1799,11 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev, struct ifreq *rq, int 
 		struct ath6kl_sta *conn;
 
 		conn = ath6kl_find_sta(vif, macaddr);
-		if (conn){	
+		if (conn) {
 			for (left = 0; left < AP_MAX_NUM_STA; left++) {
 				if (conn->aid == ap->sta[left].aid) {
-					rate = ath6kl_wmi_get_rate_ar6004(ap->sta[left].tx_ucast_rate);
+					rate = ath6kl_wmi_get_rate_ar6004(
+						ap->sta[left].tx_ucast_rate);
 					break;
 				}
 			}
@@ -1753,8 +1817,9 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev, struct ifreq *rq, int 
 	req->u.data.length = strlen(user_cmd);
 	user_cmd[req->u.data.length] = '\0';
 
-	return (copy_to_user(req->u.data.pointer, user_cmd, req->u.data.length + 1) 
-			? -EFAULT : 0);
+	return copy_to_user(req->u.data.pointer,
+			user_cmd,
+			req->u.data.length + 1)	? -EFAULT : 0;
 }
 
 int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
@@ -1764,36 +1829,41 @@ int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	s8 *userdata;
 
 	/*
-	* ioctl operations may have to wait for the Target, so we cannot hold rtnl.
-	* Prevent the device from disappearing under us and release the lock during
-	* the ioctl operation.
+	* ioctl operations may have to wait for the Target, so we cannot
+	* hold rtnl. Prevent the device from disappearing under us and
+	* release the lock during the ioctl operation.
 	*/
 	dev_hold(dev);
 	rtnl_unlock();
 
-	switch(cmd) {
-	case ATH6KL_IOCTL_STANDARD01: 	/* Android privacy command */
-	case ATH6KL_IOCTL_STANDARD02:	/* supplicant escape purpose to support WiFi-Direct Cert. */
-	case ATH6KL_IOCTL_STANDARD12: 	/* hole, please reserved */
-	case ATH6KL_IOCTL_STANDARD13: 	/* TX99 */
-	case ATH6KL_IOCTL_STANDARD15: 	/* hole, please reserved */
+	switch (cmd) {
+	case ATH6KL_IOCTL_STANDARD01:	/* Android privacy command */
+	case ATH6KL_IOCTL_STANDARD02:	/* supplicant escape purpose to
+					   support WiFi-Direct Cert. */
+	case ATH6KL_IOCTL_STANDARD12:	/* hole, please reserved */
+	case ATH6KL_IOCTL_STANDARD13:	/* TX99 */
+	case ATH6KL_IOCTL_STANDARD15:	/* hole, please reserved */
 		ret = ath6kl_ioctl_standard(dev, rq, cmd);
 		break;
 	case ATH6KL_IOCTL_WEXT_PRIV26:	/* endpoint loopback purpose */
 		get_user(cmd, (int *)rq->ifr_data);
 		userdata = (char *)(((unsigned int *)rq->ifr_data)+1);
 
-		switch(cmd) {
+		switch (cmd) {
 		case ATH6KL_XIOCTL_TRAFFIC_ACTIVITY_CHANGE:
-			if (ar->htc_target!= NULL) {
+			if (ar->htc_target != NULL) {
 				struct ath6kl_traffic_activity_change data;
-				if (copy_from_user(&data, userdata, sizeof(data))) {
+				if (copy_from_user(&data,
+						userdata,
+						sizeof(data))) {
 					ret = -EFAULT;
 					goto ioctl_done;
 				}
-				ath6kl_htc_indicate_activity_change(ar->htc_target,
-		                                            (u8)data.stream_id,
-		                                            data.active ? true : false);
+				ath6kl_htc_indicate_activity_change(
+							ar->htc_target,
+							(u8)data.stream_id,
+							data.active ?
+								true : false);
 			}
 			break;
 		}
@@ -1808,16 +1878,16 @@ int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	}
 
 ioctl_done:
-    rtnl_lock(); /* restore rtnl state */
-    dev_put(dev);
+	rtnl_lock(); /* restore rtnl state */
+	dev_put(dev);
 
-    return ret;
+	return ret;
 }
 
 static struct net_device_ops ath6kl_netdev_ops = {
 	.ndo_open               = ath6kl_open,
 	.ndo_stop               = ath6kl_close,
-	.ndo_start_xmit         = ath6kl_data_tx,
+	.ndo_start_xmit         = ath6kl_start_tx,
 	.ndo_get_stats          = ath6kl_get_stats,
 	.ndo_do_ioctl           = ath6kl_ioctl,
 };

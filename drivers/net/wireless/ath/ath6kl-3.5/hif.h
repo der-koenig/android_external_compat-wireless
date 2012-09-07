@@ -36,7 +36,7 @@
 
 #define MANUFACTURER_ID_AR6003_BASE        0x300
 #define MANUFACTURER_ID_AR6004_BASE        0x400
-//#define MANUFACTURER_ID_AR6006_BASE        0x600
+/*#define MANUFACTURER_ID_AR6006_BASE        0x600*/
 #define MANUFACTURER_ID_AR6006_BASE        0xD00
     /* SDIO manufacturer ID and Codes */
 #define MANUFACTURER_ID_ATH6KL_BASE_MASK     0xFF00
@@ -275,11 +275,12 @@ struct ath6kl_hif_ops {
 	int (*pipe_map_service)(struct ath6kl *ar, u16 service_id, u8 *pipe_ul,
 		u8 *pipe_dl);
 	u16 (*pipe_get_free_queue_number)(struct ath6kl *ar, u8 pipe);
-	int (*pipe_send_bundle)(struct ath6kl *ar, u8 pid, 
+	int (*pipe_send_bundle)(struct ath6kl *ar, u8 pid,
 		struct sk_buff **msg_bundle, int num_msgs);
 	u16 (*pipe_get_max_queue_number)(struct ath6kl *ar, u8 pipe);
-	int (*pipe_set_max_sche)(struct ath6kl *ar, u32 max_sche_tx, u32 max_sche_rx);
-#ifdef CONFIG_HAS_EARLYSUSPEND	
+	int (*pipe_set_max_sche)(struct ath6kl *ar, u32 max_sche_tx,
+		u32 max_sche_rx);
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	void (*early_suspend)(struct ath6kl *ar);
 	void (*late_resume)(struct ath6kl *ar);
 #endif

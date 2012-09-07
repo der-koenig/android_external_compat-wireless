@@ -29,7 +29,6 @@
 #include <net/iw_handler.h>
 #include "../regd.h"
 
-extern unsigned int debug_mask;
 
 struct ath6kl_fwlog_slot {
 	__le32 timestamp;
@@ -42,9 +41,9 @@ struct ath6kl_fwlog_slot {
 #define ATH6KL_FWLOG_MAX_ENTRIES 20
 #define ATH6KL_FWLOG_VALID_MASK 0x1ffff
 
-#define ATH6KL_FWLOG_NUM_ARGS_OFFSET             30
-#define ATH6KL_FWLOG_NUM_ARGS_MASK               0xC0000000 /* Bit 30-31 */
-#define AT6HKL_FWLOG_NUM_ARGS_MAX                2 /* Upper limit is width of mask */
+#define ATH6KL_FWLOG_NUM_ARGS_OFFSET    30
+#define ATH6KL_FWLOG_NUM_ARGS_MASK      0xC0000000 /* Bit 30-31 */
+#define AT6HKL_FWLOG_NUM_ARGS_MAX	2 /* Upper limit is width of mask */
 
 #define ATH6KL_FWGLOG_GET_NUMARGS(arg) \
 	((arg & ATH6KL_FWLOG_NUM_ARGS_MASK) >> ATH6KL_FWLOG_NUM_ARGS_OFFSET)
@@ -60,7 +59,7 @@ int ath6kl_printk(const char *level, const char *fmt, ...)
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
-	rtn = printk("%sath6kl: %pV", level, &vaf);
+	rtn = printk(KERN_INFO "%sath6kl: %pV", level, &vaf);
 
 	va_end(args);
 
@@ -194,10 +193,12 @@ void ath6kl_dump_registers(struct ath6kl_device *dev,
 				irq_proc_reg->gmbox_rx_avail);
 			ath6kl_dbg(ATH6KL_DBG_ANY,
 				"GMBOX lookahead alias 0:   0x%x\n",
-				le32_to_cpu(irq_proc_reg->rx_gmbox_lkahd_alias[0]));
+				le32_to_cpu(
+				irq_proc_reg->rx_gmbox_lkahd_alias[0]));
 			ath6kl_dbg(ATH6KL_DBG_ANY,
 				"GMBOX lookahead alias 1:   0x%x\n",
-				le32_to_cpu(irq_proc_reg->rx_gmbox_lkahd_alias[1]));
+				le32_to_cpu(
+				irq_proc_reg->rx_gmbox_lkahd_alias[1]));
 		}
 
 	}
@@ -260,7 +261,7 @@ void dump_cred_dist_stats(struct htc_target *target)
 
 static int ath6kl_debugfs_open(struct inode *inode, struct file *file)
 {
-         file->private_data = inode->i_private;
+	file->private_data = inode->i_private;
 	return 0;
 }
 
@@ -358,8 +359,8 @@ ath6kl_debug_fwlog_event_send(struct ath6kl *ar, const u8 *buffer, u32 length)
 	send = ath6kl_fwlog_fragment(&buffer[sent], length - sent,
 			MAX_WIRELESS_EVENT_SIZE);
 	while (send) {
-		ath6kl_send_event_to_app(dev, WMIX_DBGLOG_EVENTID, 
-			(u8*)&buffer[sent], send);
+		ath6kl_send_event_to_app(dev, WMIX_DBGLOG_EVENTID,
+			(u8 *)&buffer[sent], send);
 		sent += send;
 		send = ath6kl_fwlog_fragment(&buffer[sent], length - sent,
 				MAX_WIRELESS_EVENT_SIZE);
@@ -376,16 +377,16 @@ void ath6kl_debug_fwlog_event(struct ath6kl *ar, const void *buf, size_t len)
 	if (WARN_ON(len > ATH6KL_FWLOG_PAYLOAD_SIZE))
 		return;
 
-	if(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FWLOG_EXT))
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FWLOG_EXT))
 		ath6kl_debug_fwlog_event_send(ar, buf, len);
 
-       slot_len = sizeof(*slot) + ATH6KL_FWLOG_PAYLOAD_SIZE;
+	slot_len = sizeof(*slot) + ATH6KL_FWLOG_PAYLOAD_SIZE;
 
-       skb = alloc_skb(slot_len, GFP_KERNEL);
-       if (!skb)
-               return;
+	skb = alloc_skb(slot_len, GFP_KERNEL);
+	if (!skb)
+		return;
 
-       slot = (struct ath6kl_fwlog_slot *) skb_put(skb, slot_len);
+	slot = (struct ath6kl_fwlog_slot *) skb_put(skb, slot_len);
 
 	slot->timestamp = cpu_to_le32(jiffies);
 	slot->length = cpu_to_le32(len);
@@ -394,41 +395,42 @@ void ath6kl_debug_fwlog_event(struct ath6kl *ar, const void *buf, size_t len)
 	/* Need to pad each record to fixed length ATH6KL_FWLOG_PAYLOAD_SIZE */
 	memset(slot->payload + len, 0, ATH6KL_FWLOG_PAYLOAD_SIZE - len);
 
-       spin_lock(&ar->debug.fwlog_queue.lock);
+	spin_lock(&ar->debug.fwlog_queue.lock);
 
 	__skb_queue_tail(&ar->debug.fwlog_queue, skb);
 	complete(&ar->debug.fwlog_completion);
 
        /* drop oldest entries */
-       while (skb_queue_len(&ar->debug.fwlog_queue) >
-              ATH6KL_FWLOG_MAX_ENTRIES) {
-               skb = __skb_dequeue(&ar->debug.fwlog_queue);
-               kfree_skb(skb);
-       }
+	while (skb_queue_len(&ar->debug.fwlog_queue) >
+		ATH6KL_FWLOG_MAX_ENTRIES) {
+		skb = __skb_dequeue(&ar->debug.fwlog_queue);
+		kfree_skb(skb);
+	}
 
 	spin_unlock(&ar->debug.fwlog_queue.lock);
 
 }
 
-static int ath6kl_fwlog_open(struct inode *inode, struct file *file) {
-       struct ath6kl *ar = inode->i_private;
+static int ath6kl_fwlog_open(struct inode *inode, struct file *file)
+{
+	struct ath6kl *ar = inode->i_private;
 
-       if (ar->debug.fwlog_open)
-               return -EBUSY;
+	if (ar->debug.fwlog_open)
+		return -EBUSY;
 
-       ar->debug.fwlog_open = true;
+	ar->debug.fwlog_open = true;
 
-       file->private_data = inode->i_private;
-       return 0;
+	file->private_data = inode->i_private;
+	return 0;
 }
 
 static int ath6kl_fwlog_release(struct inode *inode, struct file *file)
 {
-       struct ath6kl *ar = inode->i_private;
+	struct ath6kl *ar = inode->i_private;
 
-       ar->debug.fwlog_open = false;
+	ar->debug.fwlog_open = false;
 
-       return 0;
+	return 0;
 }
 
 
@@ -550,11 +552,11 @@ out:
 }
 
 static const struct file_operations fops_fwlog_block = {
-       .open = ath6kl_fwlog_open,
-       .release = ath6kl_fwlog_release,
-       .read = ath6kl_fwlog_block_read,
-       .owner = THIS_MODULE,
-       .llseek = default_llseek,
+	.open = ath6kl_fwlog_open,
+	.release = ath6kl_fwlog_release,
+	.read = ath6kl_fwlog_block_read,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
 };
 
 
@@ -616,7 +618,7 @@ static ssize_t read_file_tgt_stats(struct file *file, char __user *user_buf,
 
 	tgt_stats = &vif->target_stats;
 
-	buf = (char *)kzalloc(buf_len, GFP_KERNEL);
+	buf = kzalloc(buf_len, GFP_KERNEL);
 	if (!buf) {
 		kfree(buf);
 		return -ENOMEM;
@@ -745,9 +747,9 @@ static ssize_t read_file_tgt_stats(struct file *file, char __user *user_buf,
 	len += scnprintf(buf + len, buf_len - len, "%20s %10u\n",
 			 "Wow evt discarded", tgt_stats->wow_evt_discarded);
 	len += scnprintf(buf + len, buf_len - len, "%20s %10u\n",
-			 "Wow host pkt wakeup", tgt_stats->wow_host_pkt_wakeups);
+		 "Wow host pkt wakeup", tgt_stats->wow_host_pkt_wakeups);
 	len += scnprintf(buf + len, buf_len - len, "%20s %10u\n",
-			 "Wow host evt wakeups", tgt_stats->wow_host_evt_wakeups);
+		 "Wow host evt wakeups", tgt_stats->wow_host_evt_wakeups);
 
 	if (len > buf_len)
 		len = buf_len;
@@ -992,7 +994,7 @@ static ssize_t ath6kl_regread_write(struct file *file,
 
 	buf[len] = '\0';
 
-	if (strict_strtoul(buf, 0, &reg_addr))
+	if (kstrtoul(buf, 0, &reg_addr))
 		return -EINVAL;
 
 	if ((reg_addr % 4) != 0)
@@ -1114,7 +1116,7 @@ static ssize_t ath6kl_lrssi_roam_write(struct file *file,
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &lrssi_roam_threshold))
+	if (kstrtoul(buf, 0, &lrssi_roam_threshold))
 		return -EINVAL;
 
 	ar->lrssi_roam_threshold = lrssi_roam_threshold;
@@ -1154,11 +1156,13 @@ static ssize_t ath6kl_driver_version_read(struct file *file,
 	unsigned int len;
 
 	len = snprintf(buf, sizeof(buf), "%s\n", DRV_VERSION);
-	len += snprintf(buf + len, sizeof(buf) - len, "%s %s\n", 
+	len += snprintf(buf + len, sizeof(buf) - len, "%s %s\n",
 				ar->hw.name,
-				(ar->hif_type == ATH6KL_HIF_TYPE_SDIO) ? "SDIO" : 
-				 ((ar->hif_type == ATH6KL_HIF_TYPE_USB) ? "USB" : "UNKNOW"));
-	len += snprintf(buf + len, sizeof(buf) - len, "%s\n", 
+				(ar->hif_type == ATH6KL_HIF_TYPE_SDIO) ?
+				"SDIO" :
+				 ((ar->hif_type == ATH6KL_HIF_TYPE_USB) ?
+				 "USB" : "UNKNOW"));
+	len += snprintf(buf + len, sizeof(buf) - len, "%s\n",
 				ar->wiphy->fw_version);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
@@ -1376,27 +1380,27 @@ static const struct file_operations fops_force_roam = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_roam_mode_read(struct file *file, 
-            char __user *user_buf, size_t count, loff_t *ppos)
+static ssize_t ath6kl_roam_mode_read(struct file *file,
+	char __user *user_buf, size_t count, loff_t *ppos)
 {
-    struct ath6kl *ar = file->private_data;
-    u8 buf[32];
-    unsigned int len = 0;
-    char *str;
+	struct ath6kl *ar = file->private_data;
+	u8 buf[32];
+	unsigned int len = 0;
+	char *str;
 
-    if (ar->debug.roam_mode == WMI_DEFAULT_ROAM_MODE)
-        str = "default";
-    else if (ar->debug.roam_mode == WMI_HOST_BIAS_ROAM_MODE)
-        str = "bssbias";
-    else if (ar->debug.roam_mode == WMI_LOCK_BSS_MODE)
-        str = "lock";
-    else
-        str = "NONE";
+	if (ar->debug.roam_mode == WMI_DEFAULT_ROAM_MODE)
+		str = "default";
+	else if (ar->debug.roam_mode == WMI_HOST_BIAS_ROAM_MODE)
+		str = "bssbias";
+	else if (ar->debug.roam_mode == WMI_LOCK_BSS_MODE)
+		str = "lock";
+	else
+		str = "NONE";
 
-    len = scnprintf(buf, sizeof(buf), "roam mode: %s\n",
-                str);
-                            
-    return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	len = scnprintf(buf, sizeof(buf), "roam mode: %s\n",
+		str);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 static ssize_t ath6kl_roam_mode_write(struct file *file,
@@ -1425,7 +1429,7 @@ static ssize_t ath6kl_roam_mode_write(struct file *file,
 	else
 		return -EINVAL;
 
-    ar->debug.roam_mode = mode;
+	ar->debug.roam_mode = mode;
 
 	ret = ath6kl_wmi_set_roam_mode_cmd(ar->wmi, mode);
 	if (ret)
@@ -1435,7 +1439,7 @@ static ssize_t ath6kl_roam_mode_write(struct file *file,
 }
 
 static const struct file_operations fops_roam_mode = {
-    .read = ath6kl_roam_mode_read,
+	.read = ath6kl_roam_mode_read,
 	.write = ath6kl_roam_mode_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
@@ -1758,16 +1762,16 @@ static const struct file_operations fops_delete_qos = {
 };
 
 static ssize_t ath6kl_bgscan_int_read(struct file *file,
-        char __user *user_buf, size_t count, loff_t *ppos)
+	char __user *user_buf, size_t count, loff_t *ppos)
 {
-    struct ath6kl *ar = file->private_data;
-    u8 buf[128];
-    unsigned int len = 0;
+	struct ath6kl *ar = file->private_data;
+	u8 buf[128];
+	unsigned int len = 0;
 
-    len = scnprintf(buf, sizeof(buf), "bgscan interval: %d\n",
-            ar->debug.bgscan_int);
+	len = scnprintf(buf, sizeof(buf), "bgscan interval: %d\n",
+		ar->debug.bgscan_int);
 
-    return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 static ssize_t ath6kl_bgscan_int_write(struct file *file,
@@ -1943,14 +1947,14 @@ static ssize_t ath6kl_power_params_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_power_params_read(struct file *file, 
-                      char __user *user_buf,
-                                            size_t count, loff_t *ppos)
+static ssize_t ath6kl_power_params_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
 {
 	struct ath6kl *ar = file->private_data;
 	u8 buf[256];
 	unsigned int len = 0;
-	                
+
 	len = scnprintf(buf, sizeof(buf),
 			"idle_period: %d, ps_poll_num: %d, dtim: %d, tx_wakeup:%d , num_tx: %d\n",
 			ar->debug.power_params.idle_period,
@@ -1971,14 +1975,15 @@ static const struct file_operations fops_power_params = {
 };
 
 #define SKIP_SPACE                         \
-    while (*p == ' ' && *p != '\0')        \
-        p++;
+	while (*p == ' ' && *p != '\0')        \
+		p++;
 
 #define SEEK_SPACE                         \
-    while (*p != ' ' && *p != '\0')        \
-        p++;
+	while (*p != ' ' && *p != '\0')        \
+		p++;
 
-static int ath6kl_parse_lpl_force_enable_params(const char __user *user_buf, size_t count,
+static int ath6kl_parse_lpl_force_enable_params(const char __user *user_buf,
+				size_t count,
 				struct lpl_force_enable_param *param)
 {
 	char buf[64];
@@ -1992,7 +1997,7 @@ static int ath6kl_parse_lpl_force_enable_params(const char __user *user_buf, siz
 
 	p = buf;
 
-        SKIP_SPACE
+	SKIP_SPACE;
 
 	sscanf(p, "%d", &value);
 	param->lpl_policy = value;
@@ -2026,13 +2031,14 @@ static ssize_t ath6kl_lpl_force_enable_write(struct file *file,
 		return ret;
 
 	if (ath6kl_wmi_lpl_enable_cmd(ar->wmi,
-			(struct wmi_lpl_force_enable_cmd *)&ar->debug.lpl_force_enable_params))
+			(struct wmi_lpl_force_enable_cmd *)
+			&ar->debug.lpl_force_enable_params))
 		return -EIO;
 
 	return count;
 }
 
-static ssize_t ath6kl_lpl_force_enable_read(struct file *file, 
+static ssize_t ath6kl_lpl_force_enable_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
@@ -2040,10 +2046,11 @@ static ssize_t ath6kl_lpl_force_enable_read(struct file *file,
 	u8 buf[128];
 	unsigned int len = 0;
 
-	len = scnprintf(buf, sizeof(buf), "lplPolicy: %d, noBlockerDetect: %d, noRfbDetect: %d\n",
-				ar->debug.lpl_force_enable_params.lpl_policy,
-				ar->debug.lpl_force_enable_params.no_blocker_detect,
-				ar->debug.lpl_force_enable_params.no_rfb_detect);
+	len = scnprintf(buf, sizeof(buf),
+			"lplPolicy: %d, noBlockerDetect: %d, noRfbDetect: %d\n",
+			ar->debug.lpl_force_enable_params.lpl_policy,
+			ar->debug.lpl_force_enable_params.no_blocker_detect,
+			ar->debug.lpl_force_enable_params.no_rfb_detect);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -2070,23 +2077,24 @@ static ssize_t ath6kl_mimo_ps_enable_write(struct file *file,
 		return ret;
 
 	if (ath6kl_wmi_smps_enable(ar->wmi,
-			(struct wmi_config_enable_cmd*)&ar->debug.mimo_ps_enable))
+		(struct wmi_config_enable_cmd *)&ar->debug.mimo_ps_enable))
 		return -EIO;
 
 	return count;
 }
 
-static ssize_t ath6kl_mimo_ps_enable_read(struct file *file, 
+static ssize_t ath6kl_mimo_ps_enable_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-    struct ath6kl *ar = file->private_data;
-    u8 buf[32];
-    unsigned int len = 0;
-    
-    len = scnprintf(buf, sizeof(buf), "MIMO Power Saving: %d\n", ar->debug.mimo_ps_enable);
+	struct ath6kl *ar = file->private_data;
+	u8 buf[32];
+	unsigned int len = 0;
 
-    return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	len = scnprintf(buf, sizeof(buf), "MIMO Power Saving: %d\n",
+			ar->debug.mimo_ps_enable);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 /* debug fs for mimo power saving */
@@ -2098,7 +2106,8 @@ static const struct file_operations fops_mimo_ps_enable = {
 	.llseek = default_llseek,
 };
 
-static int ath6kl_parse_mimo_ps_params(const char __user *user_buf, size_t count,
+static int ath6kl_parse_mimo_ps_params(const char __user *user_buf,
+				size_t count,
 				struct smps_param *param)
 {
 	char buf[64];
@@ -2116,15 +2125,12 @@ static int ath6kl_parse_mimo_ps_params(const char __user *user_buf, size_t count
 
 	sscanf(p, "%d", &value);
 
-	if (value == 1) {
+	if (value == 1)
 		param->mode = WMI_SMPS_MODE_STATIC;
-	}
-	else if (value == 2) {
+	else if (value == 2)
 		param->mode = WMI_SMPS_MODE_DYNAMIC;
-	}
-	else {
+	else
 		return -EINVAL;
-	}
 
 	param->flags = WMI_SMPS_OPTION_MODE;
 
@@ -2168,7 +2174,8 @@ static ssize_t ath6kl_mimo_ps_params_write(struct file *file,
 	struct ath6kl *ar = file->private_data;
 	int ret;
 
-	ret = ath6kl_parse_mimo_ps_params(user_buf, count, &ar->debug.smps_params);
+	ret = ath6kl_parse_mimo_ps_params(user_buf,
+			count, &ar->debug.smps_params);
 	if (ret)
 		return ret;
 
@@ -2187,9 +2194,12 @@ static ssize_t ath6kl_mimo_ps_params_read(struct file *file,
 	u8 buf[128];
 	unsigned int len = 0;
 
-	len = scnprintf(buf, sizeof(buf), "flags: %d, mode: %d, automatic: %d, dataThresh: %d, rssiThresh: %d\n",
-			ar->debug.smps_params.flags, ar->debug.smps_params.mode,
-			ar->debug.smps_params.automatic, ar->debug.smps_params.data_thresh,
+	len = scnprintf(buf, sizeof(buf),
+			"flags: %d, mode: %d, automatic: %d, dataThresh: %d, rssiThresh: %d\n",
+			ar->debug.smps_params.flags,
+			ar->debug.smps_params.mode,
+			ar->debug.smps_params.automatic,
+			ar->debug.smps_params.data_thresh,
 			ar->debug.smps_params.rssi_thresh);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
@@ -2220,24 +2230,24 @@ static ssize_t ath6kl_green_tx_write(struct file *file,
 		return ret;
 
 	if (ath6kl_wmi_set_green_tx_params(ar->wmi,
-			(struct wmi_green_tx_params *) &ar->debug.green_tx_params))
+		(struct wmi_green_tx_params *) &ar->debug.green_tx_params))
 		return -EIO;
 
 	return count;
 }
 
-static ssize_t ath6kl_green_tx_read(struct file *file, 
+static ssize_t ath6kl_green_tx_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-    struct ath6kl *ar = file->private_data;
-    u8 buf[32];
-    unsigned int len = 0;
-    
-    len = scnprintf(buf, sizeof(buf), "Green Tx: %d\n",
+	struct ath6kl *ar = file->private_data;
+	u8 buf[32];
+	unsigned int len = 0;
+
+	len = scnprintf(buf, sizeof(buf), "Green Tx: %d\n",
 			ar->debug.green_tx_params.green_tx_enable);
 
-    return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 /* debug fs for green tx */
@@ -2249,7 +2259,8 @@ static const struct file_operations fops_green_tx = {
 	.llseek = default_llseek,
 };
 
-static int ath6kl_parse_green_tx_params(const char __user *user_buf, size_t count,
+static int ath6kl_parse_green_tx_params(const char __user *user_buf,
+				size_t count,
 				struct green_tx_param *param)
 {
 	char buf[64];
@@ -2296,19 +2307,20 @@ static ssize_t ath6kl_green_tx_params_write(struct file *file,
 	struct ath6kl *ar = file->private_data;
 	int ret;
 
-	ret = ath6kl_parse_green_tx_params(user_buf, count, &ar->debug.green_tx_params);
+	ret = ath6kl_parse_green_tx_params(user_buf,
+			count, &ar->debug.green_tx_params);
 
 	if (ret)
 		return ret;
 
 	if (ath6kl_wmi_set_green_tx_params(ar->wmi,
-			(struct wmi_green_tx_params *) &ar->debug.green_tx_params))
+		(struct wmi_green_tx_params *) &ar->debug.green_tx_params))
 		return -EIO;
 
 	return count;
 }
 
-static ssize_t ath6kl_green_tx_params_read(struct file *file, 
+static ssize_t ath6kl_green_tx_params_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
@@ -2316,9 +2328,12 @@ static ssize_t ath6kl_green_tx_params_read(struct file *file,
 	u8 buf[128];
 	unsigned int len = 0;
 
-	len = scnprintf(buf, sizeof(buf), "nextProbeCount: %d, maxBackOff: %d, minGtxRssi: %d, forceBackOff: %d\n",
-			ar->debug.green_tx_params.next_probe_count, ar->debug.green_tx_params.max_backoff,
-			ar->debug.green_tx_params.min_gtx_rssi, ar->debug.green_tx_params.force_backoff);
+	len = scnprintf(buf, sizeof(buf),
+			"nextProbeCount: %d, maxBackOff: %d, minGtxRssi: %d, forceBackOff: %d\n",
+			ar->debug.green_tx_params.next_probe_count,
+			ar->debug.green_tx_params.max_backoff,
+			ar->debug.green_tx_params.min_gtx_rssi,
+			ar->debug.green_tx_params.force_backoff);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -2389,7 +2404,7 @@ static ssize_t ath6kl_ht_cap_params_write(struct file *file,
 
 	for (i = 0; i < ar->vif_max; i++) {
 		if (ath6kl_wmi_set_ht_cap_cmd(ar->wmi, i,
-			tempHtCap.band, 
+			tempHtCap.band,
 			tempHtCap.chan_width_40M_supported,
 			tempHtCap.short_GI,
 			tempHtCap.intolerance_40MHz))
@@ -2397,30 +2412,44 @@ static ssize_t ath6kl_ht_cap_params_write(struct file *file,
 	}
 
 	tempHtCap.isConfig = 1;
-	memcpy(&ar->debug.ht_cap_param[tempHtCap.band], &tempHtCap, sizeof(struct ht_cap_param));
+	memcpy(&ar->debug.ht_cap_param[tempHtCap.band],
+		&tempHtCap, sizeof(struct ht_cap_param));
 
 	return count;
 }
 
-static ssize_t ath6kl_ht_cap_params_read(struct file *file, 
+static ssize_t ath6kl_ht_cap_params_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(128)
 	struct ath6kl *ar = file->private_data;
-	u8 buf[128];
+	u8 *buf;
 	unsigned int len = 0;
 	int band;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	for (band = 0; band < A_NUM_BANDS; band++) {
 		if (ar->debug.ht_cap_param[band].isConfig)
-			len += scnprintf(buf + len, sizeof(buf) - len, "%s chan_width_40M_supported: %d, short_GI: %d, intolerance_40MHz: %d\n",
-					(ar->debug.ht_cap_param[band].band == A_BAND_24GHZ ? "24GHZ" : "5GHZ"),
-					ar->debug.ht_cap_param[band].chan_width_40M_supported,
-					ar->debug.ht_cap_param[band].short_GI,
-					ar->debug.ht_cap_param[band].intolerance_40MHz);
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+			"%s chan_width_40M_supported: %d, short_GI: %d, intolerance_40MHz: %d\n",
+			(ar->debug.ht_cap_param[band].band == A_BAND_24GHZ ?
+			"24GHZ" : "5GHZ"),
+			ar->debug.ht_cap_param[band].chan_width_40M_supported,
+			ar->debug.ht_cap_param[band].short_GI,
+			ar->debug.ht_cap_param[band].intolerance_40MHz);
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for HT Cap */
@@ -2446,7 +2475,7 @@ static ssize_t ath6kl_debug_mask_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_debug_mask_read(struct file *file, 
+static ssize_t ath6kl_debug_mask_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
@@ -2484,7 +2513,7 @@ static ssize_t ath6kl_ht_coex_params_write(struct file *file,
 		return -EFAULT;
 
 	p = buf;
-	
+
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &scan_interval);
@@ -2493,11 +2522,11 @@ static ssize_t ath6kl_ht_coex_params_write(struct file *file,
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &rate_interval);
-	
+
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if (vif)
-			ath6kl_htcoex_config(vif, 
+			ath6kl_htcoex_config(vif,
 					     (u32)scan_interval,
 					     (u8)rate_interval);
 	}
@@ -2505,21 +2534,27 @@ static ssize_t ath6kl_ht_coex_params_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_ht_coex_params_read(struct file *file, 
+static ssize_t ath6kl_ht_coex_params_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(128)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	u8 buf[128];
+	u8 *buf;
 	unsigned int len = 0;
 	int i;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) &&
 			(vif->htcoex_ctx))
-			len += scnprintf(buf + len, sizeof(buf) - len, 
+			len += scnprintf(buf + len, _BUF_SIZE - len,
 					"int-%d flags %x, scan %d ms, num_scan %d, rate %d, t_cnt %d\n",
 					i,
 					vif->htcoex_ctx->flags,
@@ -2529,7 +2564,12 @@ static ssize_t ath6kl_ht_coex_params_read(struct file *file,
 					vif->htcoex_ctx->tolerant40_cnt);
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for HT Coex */
@@ -2541,7 +2581,8 @@ static const struct file_operations fops_ht_coex_params = {
 	.llseek = default_llseek,
 };
 
-static int ath6kl_parse_tx_amsdu_params(const char __user *user_buf, size_t count,
+static int ath6kl_parse_tx_amsdu_params(const char __user *user_buf,
+				size_t count,
 				struct ath6kl_vif *vif)
 {
 	char buf[64];
@@ -2551,7 +2592,7 @@ static int ath6kl_parse_tx_amsdu_params(const char __user *user_buf, size_t coun
 	u8 tx_amsdu_max_aggr_num;
 	u16 tx_amsdu_max_pdu_len, tx_amsdu_timeout;
 	bool tx_amsdu_seq_pkt;
-	
+
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
@@ -2563,7 +2604,7 @@ static int ath6kl_parse_tx_amsdu_params(const char __user *user_buf, size_t coun
 
 	sscanf(p, "%d", &value);
 	tx_amsdu_max_aggr_num = value;
-				
+
 	SEEK_SPACE;
 	SKIP_SPACE;
 
@@ -2580,7 +2621,7 @@ static int ath6kl_parse_tx_amsdu_params(const char __user *user_buf, size_t coun
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &value);
-	if (value) 
+	if (value)
 		tx_amsdu_seq_pkt = true;
 	else
 		tx_amsdu_seq_pkt = false;
@@ -2607,7 +2648,8 @@ static ssize_t ath6kl_tx_amsdu_params_write(struct file *file,
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) &&
 			(vif->aggr_cntxt)) {
-			ret = ath6kl_parse_tx_amsdu_params(user_buf, count, vif);
+			ret = ath6kl_parse_tx_amsdu_params(user_buf,
+							count, vif);
 
 			if (ret)
 				return ret;
@@ -2617,41 +2659,59 @@ static ssize_t ath6kl_tx_amsdu_params_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_tx_amsdu_params_read(struct file *file, 
+static ssize_t ath6kl_tx_amsdu_params_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(8192)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
 	struct ath6kl_sta *conn;
 	struct txtid *txtid;
-	static u8 buf[2048];
+	u8 *buf;
 	unsigned int len = 0;
 	int i, j, k, num_sta;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) &&
 			(vif->aggr_cntxt)) {
-			len += scnprintf(buf + len, sizeof(buf) - len, "DEV-%d %s max_aggr_len: %d max_aggr_num: %d, max_pdu_len: %d, timeout = %d ms, seq_pkt %s\n",
-					i,
-					(vif->aggr_cntxt->tx_amsdu_enable == true ? "Enable" : "Disable"),
-					vif->aggr_cntxt->tx_amsdu_max_aggr_len,
-					vif->aggr_cntxt->tx_amsdu_max_aggr_num,
-					vif->aggr_cntxt->tx_amsdu_max_pdu_len,
-					vif->aggr_cntxt->tx_amsdu_timeout,
-					(vif->aggr_cntxt->tx_amsdu_seq_pkt == true ? "Yes" : "No"));
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				"DEV-%d %s max_aggr_len: %d max_aggr_num: %d, max_pdu_len: %d, timeout = %d ms, seq_pkt %s\n",
+				i,
+				(vif->aggr_cntxt->tx_amsdu_enable == true ?
+							"Enable" : "Disable"),
+				vif->aggr_cntxt->tx_amsdu_max_aggr_len,
+				vif->aggr_cntxt->tx_amsdu_max_aggr_num,
+				vif->aggr_cntxt->tx_amsdu_max_pdu_len,
+				vif->aggr_cntxt->tx_amsdu_timeout,
+				(vif->aggr_cntxt->tx_amsdu_seq_pkt == true ?
+							"Yes" : "No"));
 
-			num_sta = (vif->nw_type == INFRA_NETWORK) ? 1 : AP_MAX_NUM_STA;
+			num_sta = (vif->nw_type == INFRA_NETWORK) ?
+					1 : AP_MAX_NUM_STA;
 			for (j = 0; j < num_sta; j++) {
 				conn = &vif->sta_list[j];
-				len += scnprintf(buf + len, sizeof(buf) - len, " [%02x:%02x:%02x:%02x:%02x:%02x] \n",
-						conn->mac[0],conn->mac[1],conn->mac[2],conn->mac[3],conn->mac[4],conn->mac[5]);
+				len += scnprintf(buf + len, _BUF_SIZE - len,
+						" [%02x:%02x:%02x:%02x:%02x:%02x]\n",
+						conn->mac[0], conn->mac[1],
+						conn->mac[2], conn->mac[3],
+						conn->mac[4], conn->mac[5]);
 				for (k = 0; k < NUM_OF_TIDS; k++) {
-					txtid = AGGR_GET_TXTID(conn->aggr_conn_cntxt, k);
-					len += scnprintf(buf + len, sizeof(buf) - len, "   %d-%d AMSDU: %d PDU: %d TIMEOUT/FLUSH/NULL/OVERFLOW: %d/%d/%d/%d \n",
+					txtid = AGGR_GET_TXTID(
+						conn->aggr_conn_cntxt, k);
+					len += scnprintf(buf + len,
+							_BUF_SIZE - len,
+							"   %d-%d-%s AMSDU: %d PDU: %d TIMEOUT/FLUSH/NULL/OVERFLOW: %d/%d/%d/%d\n",
 							txtid->tid,
 							txtid->aid,
+							(txtid->max_aggr_sz ?
+							"ON " : "OFF"),
 							txtid->num_amsdu,
 							txtid->num_pdu,
 							txtid->num_timeout,
@@ -2663,7 +2723,12 @@ static ssize_t ath6kl_tx_amsdu_params_read(struct file *file,
 		}
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for TX A-MSDU Params */
@@ -2692,7 +2757,7 @@ static int ath6kl_parse_tx_amsdu(const char __user *user_buf, size_t count,
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &value);
-	if (value) 
+	if (value)
 		set_bit(AMSDU_ENABLED, &vif->flags);
 	else
 		clear_bit(AMSDU_ENABLED, &vif->flags);
@@ -2723,26 +2788,39 @@ static ssize_t ath6kl_tx_amsdu_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_tx_amsdu_read(struct file *file, 
+static ssize_t ath6kl_tx_amsdu_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(128)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	u8 buf[128];
+	u8 *buf;
 	unsigned int len = 0;
 	int i;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) &&
 			(vif->aggr_cntxt))
-			len += scnprintf(buf + len, sizeof(buf) - len, "DEV-%d %s \n",
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+					"DEV-%d %s\n",
 					i,
-					(test_bit(AMSDU_ENABLED, &vif->flags) ? "ON" : "OFF"));
+					(test_bit(AMSDU_ENABLED, &vif->flags)
+					? "ON" : "OFF"));
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for TX A-MSDU */
@@ -2754,17 +2832,28 @@ static const struct file_operations fops_tx_amsdu = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_htc_stat_read(struct file *file, 
+static ssize_t ath6kl_htc_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(4096)
 	struct ath6kl *ar = file->private_data;
-	static u8 buf[2048];
+	u8 *buf;
 	unsigned int len;
+	ssize_t ret_cnt;
 
-	len = ath6kl_htc_stat(ar->htc_target, buf, 2048);
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	len = ath6kl_htc_stat(ar->htc_target, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 
@@ -2776,17 +2865,28 @@ static const struct file_operations fops_htc_stat = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_hif_stat_read(struct file *file, 
+static ssize_t ath6kl_hif_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(4096)
 	struct ath6kl *ar = file->private_data;
-	static u8 buf[2048];
+	u8 *buf;
 	unsigned int len;
+	ssize_t ret_cnt;
 
-	len = ath6kl_hif_stat(ar, buf, 2048);
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	len = ath6kl_hif_stat(ar, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 
@@ -2809,7 +2909,7 @@ static ssize_t ath6kl_hif_pipe_max_sche_write(struct file *file,
 	unsigned int len;
 	u32 max_sche_tx, max_sche_rx;
 
-	if (ar->hif_type |= ATH6KL_HIF_TYPE_USB)
+	if (ar->hif_type != ATH6KL_HIF_TYPE_USB)
 		return -EIO;
 
 	len = min(count, sizeof(buf) - 1);
@@ -2845,21 +2945,33 @@ static ssize_t ath6kl_ap_apsd_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(128)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	static u8 buf[128];
+	u8 *buf;
 	unsigned int len = 0;
 	int i;
-	
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) && (vif->nw_type == AP_NETWORK)) {
-			len += scnprintf(buf, sizeof(buf), "VAP(%d), apsd: %d\n", i,
+			len += scnprintf(buf, _BUF_SIZE,
+				"VAP(%d), apsd: %d\n", i,
 				vif->ap_apsd);
 		}
 	}
-	
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 static ssize_t ath6kl_ap_apsd_write(struct file *file,
@@ -2886,7 +2998,8 @@ static ssize_t ath6kl_ap_apsd_write(struct file *file,
 		if ((vif) &&
 			(vif->nw_type == AP_NETWORK)) {
 			ath6kl_wmi_ap_set_apsd(vif->ar->wmi, vif->fw_vif_idx,
-						ap_apsd ? WMI_AP_APSD_ENABLED : WMI_AP_APSD_DISABLED);
+				ap_apsd ?
+				WMI_AP_APSD_ENABLED : WMI_AP_APSD_DISABLED);
 			vif->ap_apsd = ap_apsd;
 		}
 	}
@@ -2908,21 +3021,33 @@ static ssize_t ath6kl_ap_intrabss_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(256)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	u8 buf[256];
+	u8 *buf;
 	unsigned int len = 0;
 	int i;
-	
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) && (vif->nw_type == AP_NETWORK)) {
-			len += scnprintf(buf, sizeof(buf), "VAP(%d), ap_intrabss: %d\n", i,
+			len += scnprintf(buf, _BUF_SIZE,
+				"VAP(%d), ap_intrabss: %d\n", i,
 				vif->intra_bss);
 		}
 	}
-	
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 static ssize_t ath6kl_ap_intrabss_write(struct file *file,
@@ -2964,21 +3089,22 @@ static const struct file_operations fops_ap_intrabss = {
 };
 
 static ssize_t ath6kl_get_force_passcan(struct file *file,
-                                char __user *user_buf,
-                                size_t count, loff_t *ppos)
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
 {
 	struct ath6kl *ar = file->private_data;
 	u8 buf[128];
 	unsigned int len = 0;
 
-	len = scnprintf(buf, sizeof(buf), "force passive: %d\n", ar->debug.force_passive);
+	len = scnprintf(buf, sizeof(buf),
+		"force passive: %d\n", ar->debug.force_passive);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 static ssize_t ath6kl_set_force_passcan(struct file *file,
-                                const char __user *user_buf,
-                                size_t count, loff_t *ppos)
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
 {
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
@@ -3000,7 +3126,7 @@ static ssize_t ath6kl_set_force_passcan(struct file *file,
 
 	if (force_passcan == 1)
 		vif->sc_params.scan_ctrl_flags &= ~ACTIVE_SCAN_CTRL_FLAGS;
-	else	
+	else
 		vif->sc_params.scan_ctrl_flags |= ACTIVE_SCAN_CTRL_FLAGS;
 
 	ar->debug.force_passive = force_passcan;
@@ -3029,8 +3155,8 @@ static const struct file_operations fops_force_passcan = {
 };
 
 static ssize_t ath6kl_get_pmkid_list(struct file *file,
-                                char __user *user_buf,
-                                size_t count, loff_t *ppos)
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
 {
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
@@ -3045,7 +3171,7 @@ static ssize_t ath6kl_get_pmkid_list(struct file *file,
 		return -EIO;
 
 	if (down_interruptible(&ar->sem))
-                return -EBUSY;
+		return -EBUSY;
 
 	set_bit(PMKLIST_GET_PEND, &vif->flags);
 
@@ -3069,22 +3195,27 @@ static ssize_t ath6kl_get_pmkid_list(struct file *file,
 
 	len += scnprintf(p + len, buf_len - len, "PMKID List\n");
 
-	if (reply->num_pmkid != 0 && reply->num_pmkid <= WMI_MAX_PMKID_CACHE)
-	{
+	if (reply->num_pmkid != 0 && reply->num_pmkid <= WMI_MAX_PMKID_CACHE) {
 		int i;
 		char *bssid = (char *)reply->bssid_list;
 		char *pmkid = (char *)reply->pmkid_list;
 
 		for (i = 0; i < reply->num_pmkid; i++) {
-			len += scnprintf(p + len, buf_len - len, "bssid: %02x:%02x:%02x:%02x:%02x:%02x\n",
-					(bssid[0] & 0xff), (bssid[1] & 0xff), (bssid[2] & 0xff),
-					(bssid[3] & 0xff), (bssid[4] & 0xff), (bssid[5] & 0xff));
+			len += scnprintf(p + len, buf_len - len,
+					"bssid: %02x:%02x:%02x:%02x:%02x:%02x\n",
+					(bssid[0] & 0xff), (bssid[1] & 0xff),
+					(bssid[2] & 0xff), (bssid[3] & 0xff),
+					(bssid[4] & 0xff), (bssid[5] & 0xff));
 			len += scnprintf(p + len, buf_len - len,
 				"pmkid: %02x:%02x:%02x:%02x:%02x:%02x%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
-				(pmkid[0] & 0xff), (pmkid[1] & 0xff), (pmkid[2] & 0xff), (pmkid[3] & 0xff),
-				(pmkid[4] & 0xff), (pmkid[5] & 0xff), (pmkid[6] & 0xff), (pmkid[7] & 0xff),
-				(pmkid[8] & 0xff), (pmkid[9] & 0xff), (pmkid[10] & 0xff), (pmkid[11] & 0xff),
-				(pmkid[12] & 0xff), (pmkid[13] & 0xff), (pmkid[14] & 0xff), (pmkid[15] & 0xff));
+				(pmkid[0] & 0xff), (pmkid[1] & 0xff),
+				(pmkid[2] & 0xff), (pmkid[3] & 0xff),
+				(pmkid[4] & 0xff), (pmkid[5] & 0xff),
+				(pmkid[6] & 0xff), (pmkid[7] & 0xff),
+				(pmkid[8] & 0xff), (pmkid[9] & 0xff),
+				(pmkid[10] & 0xff), (pmkid[11] & 0xff),
+				(pmkid[12] & 0xff), (pmkid[13] & 0xff),
+				(pmkid[14] & 0xff), (pmkid[15] & 0xff));
 
 			bssid += (sizeof(struct wmi_pmkid) + ETH_ALEN);
 			pmkid += (sizeof(struct wmi_pmkid) + ETH_ALEN);
@@ -3121,24 +3252,24 @@ static ssize_t ath6kl_txseries_write(struct file *file,
 	ar->debug.set_tx_series = tx_series;
 
 	if (ath6kl_wmi_set_tx_select_rates_on_all_mode(ar->wmi, vif->fw_vif_idx,
-                                                    tx_series))
+							tx_series))
 		return -EIO;
 
 	return count;
 }
 
-static ssize_t ath6kl_txseries_read(struct file *file, 
-                      char __user *user_buf,
-                      size_t count, loff_t *ppos)
+static ssize_t ath6kl_txseries_read(struct file *file,
+			char __user *user_buf,
+			size_t count, loff_t *ppos)
 {
-    struct ath6kl *ar = file->private_data;
-    u8 buf[32];
-    unsigned int len = 0;
-    
-    len = scnprintf(buf, sizeof(buf), "Txratemask is 0x%llx\n",
-            ar->debug.set_tx_series);
-    
-    return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	struct ath6kl *ar = file->private_data;
+	u8 buf[32];
+	unsigned int len = 0;
+
+	len = scnprintf(buf, sizeof(buf), "Txratemask is 0x%llx\n",
+		ar->debug.set_tx_series);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 static const struct file_operations fops_txseries_write = {
@@ -3149,19 +3280,29 @@ static const struct file_operations fops_txseries_write = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_p2p_flowctrl_stat_read(struct file *file, 
+static ssize_t ath6kl_p2p_flowctrl_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(4096)
 	struct ath6kl *ar = file->private_data;
-	static u8 buf[2048];
+	u8 *buf;
 	unsigned int len;
+	ssize_t ret_cnt;
 
-	len = ath6kl_p2p_flowctrl_stat(ar, buf, 2048);
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	len = ath6kl_p2p_flowctrl_stat(ar, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
-
 
 /* debug fs for P2P Flowctrl Stats. */
 static const struct file_operations fops_p2p_flowctrl_stat = {
@@ -3171,56 +3312,73 @@ static const struct file_operations fops_p2p_flowctrl_stat = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_ap_ps_stat_read(struct file *file, 
+static ssize_t ath6kl_ap_ps_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(2048)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
 	struct ath6kl_sta *conn;
-	static u8 buf[1024];
-	u8 *p;
+	u8 *buf, *p;
 	unsigned int len = 0;
 	int i, j, buf_len, depth;
 	u32 enq, enq_err, deq, age;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	p = buf;
-	buf_len = sizeof(buf);
+	buf_len = _BUF_SIZE;
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) &&
 			(vif->nw_type == AP_NETWORK)) {
 
-			ath6kl_ps_queue_stat(&vif->psq_mcast, &depth, &enq, &enq_err, &deq, &age);
-			len += scnprintf(p + len, buf_len - len, "VIF[%d] = psq_mcast %d/%d/%d/%d/%d\n",
+			ath6kl_ps_queue_stat(&vif->psq_mcast,
+					&depth, &enq, &enq_err, &deq, &age);
+			len += scnprintf(p + len, buf_len - len,
+					"VIF[%d] = psq_mcast %d/%d/%d/%d/%d\n",
 					vif->fw_vif_idx,
 					depth, enq, enq_err, deq, age);
 
-			for (j = 0; j < AP_MAX_NUM_STA; j ++) {
+			for (j = 0; j < AP_MAX_NUM_STA; j++) {
 				conn = &vif->sta_list[j];
 
 				len += scnprintf(p + len, buf_len - len,
 					" STA - %02x:%02x:%02x:%02x:%02x:%02x aid %02d apsd %d state %02x",
-					conn->mac[0], conn->mac[1], conn->mac[2],
-					conn->mac[3], conn->mac[4], conn->mac[5],
+					conn->mac[0], conn->mac[1],
+					conn->mac[2], conn->mac[3],
+					conn->mac[4], conn->mac[5],
 					conn->aid,
 					conn->apsd_info,
 					conn->sta_flags);
 
-				ath6kl_ps_queue_stat(&conn->psq_data, &depth, &enq, &enq_err, &deq, &age);
+				ath6kl_ps_queue_stat(&conn->psq_data,
+						&depth, &enq, &enq_err,
+						&deq, &age);
 				len += scnprintf(p + len, buf_len - len,
 					" psq_data %d/%d/%d/%d/%d",
 					depth, enq, enq_err, deq, age);
 
-				ath6kl_ps_queue_stat(&conn->psq_mgmt, &depth, &enq, &enq_err, &deq, &age);
+				ath6kl_ps_queue_stat(&conn->psq_mgmt,
+						&depth, &enq, &enq_err,
+						&deq, &age);
 				len += scnprintf(p + len, buf_len - len,
-					" psq_mgmt %d/%d/%d/%d/%d \n",
+					" psq_mgmt %d/%d/%d/%d/%d\n",
 					depth, enq, enq_err, deq, age);
 			}
 		}
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for AP-PS Stats. */
@@ -3231,7 +3389,8 @@ static const struct file_operations fops_ap_ps_stat = {
 	.llseek = default_llseek,
 };
 
-static int ath6kl_parse_rx_aggr_params(const char __user *user_buf, size_t count,
+static int ath6kl_parse_rx_aggr_params(const char __user *user_buf,
+				size_t count,
 				struct ath6kl_vif *vif)
 {
 	char buf[64];
@@ -3239,7 +3398,7 @@ static int ath6kl_parse_rx_aggr_params(const char __user *user_buf, size_t count
 	unsigned int len;
 	int value;
 	u16 rx_aggr_timeout;
-	
+
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
@@ -3251,7 +3410,7 @@ static int ath6kl_parse_rx_aggr_params(const char __user *user_buf, size_t count
 
 	sscanf(p, "%d", &value);
 	rx_aggr_timeout = value;
-				
+
 	aggr_config(vif, rx_aggr_timeout);
 
 	return 0;
@@ -3280,27 +3439,39 @@ static ssize_t ath6kl_rx_aggr_params_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_rx_aggr_params_read(struct file *file, 
+static ssize_t ath6kl_rx_aggr_params_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(512)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	static u8 buf[512];
+	u8 *buf;
 	unsigned int len = 0;
 	int i;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) &&
 			(vif->aggr_cntxt)) {
-			len += scnprintf(buf + len, sizeof(buf) - len, "DEV-%d rx_aggr_timeout = %d ms\n",
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+					"DEV-%d rx_aggr_timeout = %d ms\n",
 					i,
 					vif->aggr_cntxt->rx_aggr_timeout);
 		}
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for RX Aggr. Params */
@@ -3314,8 +3485,8 @@ static const struct file_operations fops_rx_aggr_params = {
 
 /* File operation functions for SCAN Params */
 static int ath6kl_parse_scan_params(const char __user *user_buf, size_t count,
-					int *maxact_chdwell_time, 
-					int *pas_chdwell_time, 
+					int *maxact_chdwell_time,
+					int *pas_chdwell_time,
 					int *maxact_scan_per_ssid)
 {
 	char buf[16];
@@ -3343,21 +3514,21 @@ static int ath6kl_parse_scan_params(const char __user *user_buf, size_t count,
 	if (value < ATH6KL_SCAN_PAS_DEWELL_TIME)
 		value = ATH6KL_SCAN_PAS_DEWELL_TIME;
 	*pas_chdwell_time = value;
-	
+
 	SEEK_SPACE;
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &value);
 	if (value <= ATH6KL_SCAN_PROBE_PER_SSID)
 		value = 1;
-	*maxact_scan_per_ssid = value;	
+	*maxact_scan_per_ssid = value;
 
 	return 0;
 }
 
 static ssize_t ath6kl_scan_params_write(struct file *file,
-                                const char __user *user_buf,
-                                size_t count, loff_t *ppos)
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
 {
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
@@ -3367,15 +3538,18 @@ static ssize_t ath6kl_scan_params_write(struct file *file,
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if (vif) {
-			ret = ath6kl_parse_scan_params(user_buf, count, 
-							&maxact_chdwell_time, 
-							&pas_chdwell_time, 
+			ret = ath6kl_parse_scan_params(user_buf, count,
+							&maxact_chdwell_time,
+							&pas_chdwell_time,
 							&maxact_scan_per_ssid);
 			if (!ret) {
-				vif->sc_params.maxact_chdwell_time = maxact_chdwell_time;
-				vif->sc_params.pas_chdwell_time = pas_chdwell_time;
-				vif->sc_params.maxact_scan_per_ssid = maxact_scan_per_ssid;
-			} else 
+				vif->sc_params.maxact_chdwell_time =
+							maxact_chdwell_time;
+				vif->sc_params.pas_chdwell_time =
+							pas_chdwell_time;
+				vif->sc_params.maxact_scan_per_ssid =
+							maxact_scan_per_ssid;
+			} else
 				return ret;
 		}
 	}
@@ -3383,33 +3557,47 @@ static ssize_t ath6kl_scan_params_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_scan_params_read(struct file *file, 
+static ssize_t ath6kl_scan_params_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(512)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	static u8 buf[512];
+	u8 *buf;
 	unsigned int len = 0;
 	int i;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
-		if (vif){
-			len += scnprintf(buf + len, sizeof(buf) - len, 
-				"DEV-%d Flags = 0x%x ActDwellTime = %d PasDwellTime = %d ScanPerSsid = %d \n",
-					i,
-					vif->sc_params.scan_ctrl_flags,
-					(vif->sc_params.maxact_chdwell_time == 0 ? 
-						ATH6KL_SCAN_ACT_DEWELL_TIME : vif->sc_params.maxact_chdwell_time),
-					(vif->sc_params.pas_chdwell_time == 0 ? 
-						ATH6KL_SCAN_PAS_DEWELL_TIME : vif->sc_params.pas_chdwell_time),
-					(vif->sc_params.maxact_scan_per_ssid == 0 ? 
-						ATH6KL_SCAN_PROBE_PER_SSID : vif->sc_params.maxact_scan_per_ssid));
+		if (vif) {
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				"DEV-%d Flags = 0x%x ActDwellTime = %d PasDwellTime = %d ScanPerSsid = %d\n",
+				i,
+				vif->sc_params.scan_ctrl_flags,
+				(vif->sc_params.maxact_chdwell_time == 0 ?
+					ATH6KL_SCAN_ACT_DEWELL_TIME :
+					vif->sc_params.maxact_chdwell_time),
+				(vif->sc_params.pas_chdwell_time == 0 ?
+					ATH6KL_SCAN_PAS_DEWELL_TIME :
+					vif->sc_params.pas_chdwell_time),
+				(vif->sc_params.maxact_scan_per_ssid == 0 ?
+					ATH6KL_SCAN_PROBE_PER_SSID :
+					vif->sc_params.maxact_scan_per_ssid));
 		}
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for SCAN Params */
@@ -3439,7 +3627,7 @@ static ssize_t ath6kl_ap_keepalive_params_write(struct file *file,
 		return -EFAULT;
 
 	p = buf;
-	
+
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &internal);
@@ -3448,11 +3636,11 @@ static ssize_t ath6kl_ap_keepalive_params_write(struct file *file,
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &cycle);
-	
+
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if (vif)
-			ath6kl_ap_keepalive_config(vif, 
+			ath6kl_ap_keepalive_config(vif,
 						   (u32)internal,
 						   (u32)cycle);
 	}
@@ -3460,35 +3648,47 @@ static ssize_t ath6kl_ap_keepalive_params_write(struct file *file,
 	return count;
 }
 
-static ssize_t ath6kl_ap_keepalive_params_read(struct file *file, 
+static ssize_t ath6kl_ap_keepalive_params_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(256)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	u8 buf[128];
+	u8 *buf;
 	unsigned int len = 0;
 	int i;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if ((vif) &&
 		    (vif->ap_keepalive_ctx)) {
-		    	if (vif->ap_keepalive_ctx->flags & ATH6KL_AP_KA_FLAGS_BY_SUPP)
-				len += scnprintf(buf + len, sizeof(buf) - len, 
+			if (vif->ap_keepalive_ctx->flags &
+				ATH6KL_AP_KA_FLAGS_BY_SUPP)
+				len += scnprintf(buf + len, _BUF_SIZE - len,
 					"int-%d offload to supplicant/hostapd\n",
 					i);
 			else
-				len += scnprintf(buf + len, sizeof(buf) - len, 
-						"int-%d flags %x, interval %d ms., cycle %d\n",
-						i,
-						vif->ap_keepalive_ctx->flags,
-						vif->ap_keepalive_ctx->ap_ka_interval,
-						vif->ap_keepalive_ctx->ap_ka_reclaim_cycle);
+				len += scnprintf(buf + len, _BUF_SIZE - len,
+				"int-%d flags %x, interval %d ms., cycle %d\n",
+				i,
+				vif->ap_keepalive_ctx->flags,
+				vif->ap_keepalive_ctx->ap_ka_interval,
+				vif->ap_keepalive_ctx->ap_ka_reclaim_cycle);
 		}
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for AP Keep-alive */
@@ -3500,51 +3700,59 @@ static const struct file_operations fops_ap_keepalive_params = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_tgt_ap_stat_read(struct file *file, 
+static ssize_t ath6kl_tgt_ap_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(2048)
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
-	static u8 buf[2048];
+	u8 *buf;
 	u8 *p;
 	unsigned int len = 0;
 	int i, j, buf_len;
 	long left;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	p = buf;
-	buf_len = sizeof(buf);
+	buf_len = _BUF_SIZE;
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 
 		if ((vif) &&
 		    (vif->nw_type == AP_NETWORK)) {
 			struct wmi_ap_mode_stat *ap_stats;
-			
+
 			if (down_interruptible(&ar->sem))
 				return -EBUSY;
 
 			set_bit(STATS_UPDATE_PEND, &vif->flags);
 
-			if (ath6kl_wmi_get_stats_cmd(ar->wmi, vif->fw_vif_idx)) {
+			if (ath6kl_wmi_get_stats_cmd(ar->wmi,
+						vif->fw_vif_idx)) {
 				up(&ar->sem);
 				return -EIO;
 			}
 
 			left = wait_event_interruptible_timeout(ar->event_wq,
-								!test_bit(STATS_UPDATE_PEND,
-								&vif->flags), WMI_TIMEOUT);
+						!test_bit(STATS_UPDATE_PEND,
+						&vif->flags), WMI_TIMEOUT);
 			up(&ar->sem);
 
 			if (left <= 0)
 				return -ETIMEDOUT;
 
-			len += scnprintf(p + len, buf_len - len, "VIF[%d] \n",
+			len += scnprintf(p + len, buf_len - len, "VIF[%d]\n",
 					vif->fw_vif_idx);
 
 			ap_stats = &vif->ap_stats;
-			for (j = 0; j < AP_MAX_NUM_STA; j ++) {
-				struct wmi_per_sta_stat *per_sta_stat = &ap_stats->sta[j];
+			for (j = 0; j < AP_MAX_NUM_STA; j++) {
+				struct wmi_per_sta_stat *per_sta_stat =
+							&ap_stats->sta[j];
 
 				if (per_sta_stat->aid) {
 					len += scnprintf(p + len, buf_len - len,
@@ -3563,7 +3771,12 @@ static ssize_t ath6kl_tgt_ap_stat_read(struct file *file,
 		}
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for AP Stats. */
@@ -3574,7 +3787,8 @@ static const struct file_operations fops_tgt_ap_stats = {
 	.llseek = default_llseek,
 };
 
-static void __chan_flag_to_string(u32 flags, u8 *string) {
+static void __chan_flag_to_string(u32 flags, u8 *string)
+{
 	string[0] = '\0';
 	if (flags & IEEE80211_CHAN_DISABLED)
 		strcpy(string + strlen(string), "[DISABLE]");
@@ -3584,42 +3798,47 @@ static void __chan_flag_to_string(u32 flags, u8 *string) {
 
 	if (flags & IEEE80211_CHAN_NO_IBSS)
 		strcpy(string + strlen(string), "[NO_IBSS]");
-	
+
 	if (flags & IEEE80211_CHAN_RADAR)
 		strcpy(string + strlen(string), "[RADER]");
 
-	if ((flags & IEEE80211_CHAN_NO_HT40PLUS) && 
+	if ((flags & IEEE80211_CHAN_NO_HT40PLUS) &&
 	    (flags & IEEE80211_CHAN_NO_HT40MINUS)) {
 		strcpy(string + strlen(string), "[HT40-][HT40+]");
-	} else { 
+	} else {
 		if (flags & IEEE80211_CHAN_NO_HT40PLUS)
 			strcpy(string + strlen(string), "[HT40-]");
-		
-		if (flags & IEEE80211_CHAN_NO_HT40MINUS)		
+
+		if (flags & IEEE80211_CHAN_NO_HT40MINUS)
 			strcpy(string + strlen(string), "[HT40+]");
 	}
 
 	return;
 }
 
-static ssize_t ath6kl_chan_list_read(struct file *file, 
+static ssize_t ath6kl_chan_list_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(2048)
 	struct ath6kl *ar = file->private_data;
 	struct wiphy *wiphy = ar->wiphy;
-	static u8 buf[2048];
+	u8 *buf, *p;
 	u8 flag_string[96];
-	u8 *p;
 	unsigned int len = 0;
 	int i, buf_len;
 	enum ieee80211_band band;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
 	p = buf;
-	buf_len = sizeof(buf);
-
+	buf_len = _BUF_SIZE;
 	if (ar->current_reg_domain) {
-		len += scnprintf(p + len, buf_len - len, "\nCurrent Regulatory - %04x %04x %c%c\n",
+		len += scnprintf(p + len, buf_len - len,
+					"\nCurrent Regulatory - %04x %04x %c%c\n",
 					ar->current_reg_domain->countryCode,
 					ar->current_reg_domain->regDmnEnum,
 					ar->current_reg_domain->isoName[0],
@@ -3631,8 +3850,9 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 			continue;
 
 		len += scnprintf(p + len, buf_len - len, "\n%s\n",
-				(band == IEEE80211_BAND_2GHZ ? "2.4GHz" : "5GHz"));
-		
+				(band == IEEE80211_BAND_2GHZ ?
+				"2.4GHz" : "5GHz"));
+
 		for (i = 0; i < wiphy->bands[band]->n_channels; i++) {
 			struct ieee80211_channel *chan;
 
@@ -3642,14 +3862,20 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 				continue;
 
 			__chan_flag_to_string(chan->flags, flag_string);
-			len += scnprintf(p + len, buf_len - len, " CH%4d - %4d %s\n",
+			len += scnprintf(p + len, buf_len - len,
+					" CH%4d - %4d %s\n",
 					chan->hw_value,
 					chan->center_freq,
 					flag_string);
 		}
 	}
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
 /* debug fs for Channel List. */
@@ -3688,8 +3914,8 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("fwlog", S_IRUSR, ar->debugfs_phy, ar,
 			    &fops_fwlog);
 
-       debugfs_create_file("fwlog_block", S_IRUSR, ar->debugfs_phy, ar,
-                           &fops_fwlog_block);
+	debugfs_create_file("fwlog_block", S_IRUSR, ar->debugfs_phy, ar,
+			    &fops_fwlog_block);
 
 	debugfs_create_file("fwlog_mask", S_IRUSR | S_IWUSR, ar->debugfs_phy,
 			    ar, &fops_fwlog_mask);
@@ -3738,8 +3964,8 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("power_params", S_IWUSR, ar->debugfs_phy, ar,
 				&fops_power_params);
-	
-        debugfs_create_file("lpl_force_enable", S_IRUSR | S_IWUSR,
+
+	debugfs_create_file("lpl_force_enable", S_IRUSR | S_IWUSR,
 				ar->debugfs_phy, ar, &fops_lpl_force_enable);
 
 	debugfs_create_file("mimo_ps_enable", S_IRUSR | S_IWUSR,

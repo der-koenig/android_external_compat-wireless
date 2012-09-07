@@ -20,13 +20,13 @@
 
 int rttm_init(void *);
 
-int rttm_getbuf(void **buf,u32 *len);
+int rttm_getbuf(void **buf, u32 *len);
 
-int rttm_recv(void *buf,u32 len);
+int rttm_recv(void *buf, u32 len);
 
 void rttm_free(void);
 
-int rttm_issue_request(void *buf,u32 len);
+int rttm_issue_request(void *buf, u32 len);
 
 
 #endif /* _HOST_PKTLOG_API_H_ */

@@ -20,27 +20,26 @@
 #include "rttapi.h"
 #define MAX_NSPMRESP_CIR 10
 
-typedef struct _rtt_priv_hdr
-{
-  u8 done;
-}S_RTT_PRIV_HDR;
+struct rtt_priv_hdr {
+	u8 done;
+};
 
 #define MAX_RTT_CIRRESP_RECORDS 100
-#define RTTM_CIR_BUF_SIZE (MAX_RTT_CIRRESP_RECORDS *(sizeof(S_RTT_PRIV_HDR) + MRES_LEN + CIR_RES_LEN))
+#define RTTM_CIR_BUF_SIZE (MAX_RTT_CIRRESP_RECORDS *		\
+			   (sizeof(struct rtt_priv_hdr) +	\
+			   MRES_LEN + CIR_RES_LEN))
 
+struct rttm_context {
+	u32 ts1;
+	u32 ts2;
+	struct ath6kl *ar;
+	struct nsp_header mresphdr ;
+	struct nsp_rttd2h2_clkoffset rttd2h2_clk;
+	u8  rttdhclkcal_active;
+	u8  dhclkcal_index;
+};
 
-typedef  struct _RTTM_CONTEXT
-{
-   u32 ts1;
-   u32 ts2;
-   struct ath6kl *ar;
-   struct nsp_header mresphdr ;
-   struct nsp_rttd2h2_clkoffset rttd2h2_clk;
-   u8  rttdhclkcal_active;
-   u8  dhclkcal_index;
-}S_RTTM_CONTEXT;
-
-extern S_RTTM_CONTEXT *g_pRttmContext;
+extern struct rttm_context *g_pRttmContext;
 #define DEV_GETRTT_HDL() g_pRttmContext
-#define DEV_SETRTT_HDL(rtt) g_pRttmContext=rtt
+#define DEV_SETRTT_HDL(rtt) (g_pRttmContext = rtt)
 #endif

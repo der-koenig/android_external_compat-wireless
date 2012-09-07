@@ -32,9 +32,12 @@
 #define WMI_A2DP_CONFIG_FLAG_DIS_SCANCONN_STOMP    (1 << 5)
 
 #define BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB 24
-#define BTCOEX_A2DP_EDR_MAX_BLUETOOTH_TIME     (40 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
-#define BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME     (70 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
+#define BTCOEX_A2DP_EDR_MAX_BLUETOOTH_TIME     \
+	(40 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
+#define BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME     \
+	(70 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
+#define BTCOEX_A2DP_WLAN_MAX_DUR			   25
 
 static inline struct sk_buff *ath6kl_wmi_btcoex_get_new_buf(u32 size)
 {
@@ -130,22 +133,23 @@ static int ath6kl_get_wmi_cmd(int nl_cmd)
 void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 			int wmi_cmd, u8 *buf)
 {
-	switch(wmi_cmd) {
-
+	switch (wmi_cmd) {
 	case WMI_SET_BTCOEX_FE_ANT_CMDID:
 	{
-		struct wmi_set_btcoex_fe_antenna_cmd *cmd = 
+		struct wmi_set_btcoex_fe_antenna_cmd *cmd =
 			(struct wmi_set_btcoex_fe_antenna_cmd *)buf;
-		/* fill in correct antenna configuration from board data if valid */
+		/* fill in correct antenna configuration from
+		   board data if valid */
 		if (ar->fw_board[BDATA_ANTCONF_OFFSET])
-			cmd->fe_antenna_type = ar->fw_board[BDATA_ANTCONF_OFFSET];
+			cmd->fe_antenna_type =
+				ar->fw_board[BDATA_ANTCONF_OFFSET];
 	}
 	break;
 	case WMI_SET_BTCOEX_COLOCATED_BT_DEV_CMDID:
 	{
-		struct wmi_set_btcoex_colocated_bt_dev_cmd *cmd = 
+		struct wmi_set_btcoex_colocated_bt_dev_cmd *cmd =
 			(struct wmi_set_btcoex_colocated_bt_dev_cmd *)buf;
-		/* Regardless of setting, force to use 
+		/* Regardless of setting, force to use
 		 * qcom-colocated BT. It's the current working mode.
 		 */
 		ar->btcoex_info.bt_vendor = BT_DEVICE_TYPE_QCOM;
@@ -154,28 +158,36 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 	break;
 	case WMI_SET_BTCOEX_A2DP_CONFIG_CMDID:
 	{
-		struct wmi_set_btcoex_a2dp_config_cmd *cmd = 
+		struct wmi_set_btcoex_a2dp_config_cmd *cmd =
 			(struct wmi_set_btcoex_a2dp_config_cmd *)buf;
 		struct btcoex_a2dp_config *a2dp_config = &cmd->a2dp_config;
-		struct btcoex_pspoll_a2dp_config *pspoll_config = &cmd->pspoll_config;
+		struct btcoex_pspoll_a2dp_config *pspoll_config =
+							&cmd->pspoll_config;
 
 		if (ar->btcoex_info.bt_vendor == BT_DEVICE_TYPE_QCOM) {
-			a2dp_config->a2dp_flags |= cpu_to_le32(WMI_A2DP_CONFIG_FLAG_ALLOW_OPTIMIZATION);  
-		}
-		else {
-			a2dp_config->a2dp_flags |= cpu_to_le32(WMI_A2DP_CONFIG_FLAG_IS_A2DP_HIGH_PRI);
+			a2dp_config->a2dp_flags |= cpu_to_le32(
+				WMI_A2DP_CONFIG_FLAG_ALLOW_OPTIMIZATION);
+		} else {
+			a2dp_config->a2dp_flags |= cpu_to_le32(
+				WMI_A2DP_CONFIG_FLAG_IS_A2DP_HIGH_PRI);
 		}
 
-		if (a2dp_config->a2dp_flags & WMI_A2DP_CONFIG_FLAG_IS_EDR_CAPABLE) {
-			a2dp_config->a2dp_flags |= cpu_to_le32(BTCOEX_A2DP_EDR_MAX_BLUETOOTH_TIME);
+		if (a2dp_config->a2dp_flags &
+			WMI_A2DP_CONFIG_FLAG_IS_EDR_CAPABLE) {
+			a2dp_config->a2dp_flags |= cpu_to_le32(
+				BTCOEX_A2DP_EDR_MAX_BLUETOOTH_TIME);
 
 			/* disable stomping BT during WLAN scan or connection */
-			a2dp_config->a2dp_flags |= cpu_to_le32(WMI_A2DP_CONFIG_FLAG_DIS_SCANCONN_STOMP);
+			a2dp_config->a2dp_flags |= cpu_to_le32(
+				WMI_A2DP_CONFIG_FLAG_DIS_SCANCONN_STOMP);
+		} else {
+			a2dp_config->a2dp_flags |= cpu_to_le32(
+				BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
+			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
+				BTCOEX_A2DP_BDR_MIN_BURST_CNT);
 		}
-		else {
-			a2dp_config->a2dp_flags |= cpu_to_le32(BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
-			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(BTCOEX_A2DP_BDR_MIN_BURST_CNT);
-		}
+
+		pspoll_config->a2dp_wlan_max_dur = BTCOEX_A2DP_WLAN_MAX_DUR;
 	}
 	break;
 

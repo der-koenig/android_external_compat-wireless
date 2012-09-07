@@ -25,7 +25,7 @@ static u8 *htcoex_get_elem(int elem_id, u8 *start, u16 len)
 
 	if ((start == NULL) || (len == 0))
 		return NULL;
-		
+
 	while (left >= 2) {
 		u8 id, elen;
 
@@ -51,7 +51,7 @@ static u8 *htcoex_get_elem(int elem_id, u8 *start, u16 len)
 static void htcoex_flush_bss_info(struct htcoex *coex)
 {
 	struct htcoex_bss_info *coex_bss, *tmp;
-	
+
 	spin_lock(&coex->bss_info_lock);
 
 	list_for_each_entry_safe(coex_bss, tmp, &coex->bss_info_list, list) {
@@ -74,19 +74,20 @@ static void htcoex_get_coexinfo(struct htcoex_bss_info *coex_bss,
 	int chan_id = 0;
 
 	frame = (struct ieee80211_mgmt *)(coex_bss->raw_frame);
-	chan_id = ieee80211_frequency_to_channel((int)(coex_bss->channel->center_freq));
-	htcap = (struct ieee80211_ht_cap *)htcoex_get_elem(WLAN_EID_HT_CAPABILITY, 
-							frame->u.beacon.variable,
-							coex_bss->frame_len - (24 + 12));
+	chan_id = ieee80211_frequency_to_channel(
+			(int)(coex_bss->channel->center_freq));
+	htcap = (struct ieee80211_ht_cap *)htcoex_get_elem(
+			WLAN_EID_HT_CAPABILITY, frame->u.beacon.variable,
+			coex_bss->frame_len - (24 + 12));
 
 	if (htcap) {
 		cap_info = le16_to_cpu(htcap->cap_info);
 
-		ath6kl_dbg(ATH6KL_DBG_HTCOEX,
-				   "htcoex BSSID %02x:%02x:%02x:%02x:%02x:%02x htcap %04x\n",
-					frame->bssid[0],frame->bssid[1],frame->bssid[2],
-					frame->bssid[3],frame->bssid[4],frame->bssid[5],
-					cap_info);
+		ath6kl_dbg(ATH6KL_DBG_HTCOEX, "htcoex BSSID "
+			"%02x:%02x:%02x:%02x:%02x:%02x htcap %04x\n",
+			frame->bssid[0], frame->bssid[1], frame->bssid[2],
+			frame->bssid[3], frame->bssid[4], frame->bssid[5],
+			cap_info);
 
 		if (cap_info & IEEE80211_HT_CAP_40MHZ_INTOLERANT)
 			coex_info->intolerant40++;
@@ -130,9 +131,9 @@ static void htcoex_scan_start(unsigned long arg)
 	if (!vif->usr_bss_filter) {
 		clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
 		ret = ath6kl_wmi_bssfilter_cmd(
-						ar->wmi, 
+						ar->wmi,
 						vif->fw_vif_idx,
-						ALL_BUT_BSS_FILTER, 
+						ALL_BUT_BSS_FILTER,
 						0);
 		if (ret) {
 			ath6kl_err("couldn't set bss filtering\n");
@@ -162,7 +163,7 @@ resche:
 	return;
 }
 
-static void htcoex_send_action(struct ath6kl_vif *vif, 
+static void htcoex_send_action(struct ath6kl_vif *vif,
 			       struct htcoex_coex_info *coex_info)
 {
 	struct ath6kl *ar = vif->ar;
@@ -184,39 +185,46 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 		int i;
 
 		/* Build action frame. */
-		action_frame->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_ACTION);
+		action_frame->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+							IEEE80211_STYPE_ACTION);
 		memcpy(action_frame->da, vif->bssid, ETH_ALEN);
 		memcpy(action_frame->sa, vif->ndev->dev_addr, ETH_ALEN);
 		memcpy(action_frame->bssid, vif->bssid, ETH_ALEN);
 
-		action_public = (struct ieee80211_action_public *)(&action_frame->u.action);
+		action_public = (struct ieee80211_action_public *)
+			(&action_frame->u.action);
 		action_public->category = WLAN_CATEGORY_PUBLIC;
 		action_public->action_code = WLAN_COEX_ACTION_2040COEX_MGMT;
-		
-		bss_coex_ie = (struct ieee80211_bss_coex_ie *)(action_public->variable);
+
+		bss_coex_ie = (struct ieee80211_bss_coex_ie *)
+			(action_public->variable);
 		bss_coex_ie->element_id = WLAN_EID_BSS_COEX_2040;
 		bss_coex_ie->len = 1;
 		if (coex_info->intolerant40)
 			bss_coex_ie->value |= IEEE80211_COEX_IE_20_WIDTH_REQ;
-		
-		into_chan_report_ie = (struct ieee80211_intolerant_chan_report_ie *)(++bss_coex_ie);
-		into_chan_report_ie->element_id = WLAN_EID_INTOLERANT_CHAN_REPORT;
+
+		into_chan_report_ie =
+			(struct ieee80211_intolerant_chan_report_ie *)
+				(++bss_coex_ie);
+		into_chan_report_ie->element_id =
+			WLAN_EID_INTOLERANT_CHAN_REPORT;
 		into_chan_report_ie->len = coex_info->num_chans + 1;
 		into_chan_report_ie->reg_class = 0;
 		for (i = 0; i < coex_info->num_chans; i++)
-			into_chan_report_ie->chan_variable[i] = coex_info->chans[i];
+			into_chan_report_ie->chan_variable[i] =
+				coex_info->chans[i];
 
-		len = 24 + 
+		len = 24 +
 			sizeof(struct ieee80211_action_public) +
-		 	sizeof(struct ieee80211_bss_coex_ie) +
-		 	sizeof(struct ieee80211_intolerant_chan_report_ie) +
-		 	coex_info->num_chans;
+			sizeof(struct ieee80211_bss_coex_ie) +
+			sizeof(struct ieee80211_intolerant_chan_report_ie) +
+			coex_info->num_chans;
 
 		ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "tx-htcoex ",
 						(u8 *)action_frame, len);
 
 		BUG_ON(vif->bss_ch == 0);
-		ath6kl_wmi_send_action_cmd(ar->wmi, vif->fw_vif_idx, 
+		ath6kl_wmi_send_action_cmd(ar->wmi, vif->fw_vif_idx,
 					   vif->send_action_id++,
 					   vif->bss_ch, 0,
 					   (u8 *)action_frame, len);
@@ -229,9 +237,9 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 
 }
 
-static void htcoex_ht40_rateset(struct ath6kl_vif *vif, 
-			        struct htcoex *coex,
-			        bool enabled)
+static void htcoex_ht40_rateset(struct ath6kl_vif *vif,
+				struct htcoex *coex,
+				bool enabled)
 {
 	struct ath6kl *ar = vif->ar;
 	u64 ratemask;
@@ -249,7 +257,7 @@ static void htcoex_ht40_rateset(struct ath6kl_vif *vif,
 		   ratemask);
 
 	if (coex->current_ratemask != ratemask)
-		ath6kl_wmi_set_fix_rates(ar->wmi, vif->fw_vif_idx, 
+		ath6kl_wmi_set_fix_rates(ar->wmi, vif->fw_vif_idx,
 					 ratemask);
 
 	coex->current_ratemask = ratemask;
@@ -289,7 +297,7 @@ struct htcoex *ath6kl_htcoex_init(struct ath6kl_vif *vif)
 		   "htcoex init (vif %p interval %d)\n",
 		   vif,
 		   coex->scan_interval);
-		
+
 	return coex;
 }
 
@@ -315,8 +323,8 @@ void ath6kl_htcoex_deinit(struct ath6kl_vif *vif)
 	return;
 }
 
-void ath6kl_htcoex_bss_info(struct ath6kl_vif *vif, 
-			    struct ieee80211_mgmt *mgmt, 
+void ath6kl_htcoex_bss_info(struct ath6kl_vif *vif,
+			    struct ieee80211_mgmt *mgmt,
 			    int len,
 			    struct ieee80211_channel *channel)
 {
@@ -331,14 +339,17 @@ void ath6kl_htcoex_bss_info(struct ath6kl_vif *vif,
 		return;
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
-		   "htcoex bssinfo (vif %p) BSSID %02x:%02x:%02x:%02x:%02x:%02x \n",
-		   vif, 
+		   "htcoex bssinfo (vif %p) BSSID "
+		   "%02x:%02x:%02x:%02x:%02x:%02x\n",
+		   vif,
 		   mgmt->bssid[0], mgmt->bssid[1], mgmt->bssid[2],
 		   mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5]);
 
 	if (!list_empty(&coex->bss_info_list)) {
-		list_for_each_entry_safe(coex_bss, tmp, &coex->bss_info_list, list) {
-			if (memcmp(coex_bss->bssid, mgmt->bssid, ETH_ALEN) == 0) {
+		list_for_each_entry_safe(coex_bss, tmp,
+			&coex->bss_info_list, list) {
+			if (memcmp(coex_bss->bssid,
+				mgmt->bssid, ETH_ALEN) == 0) {
 				match = 1;
 				break;
 			}
@@ -395,13 +406,12 @@ int ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	memset(&coex_info, 0, sizeof(struct htcoex_coex_info));
 
 	/* Parse all Beacon/ProbeResp's IEs to find 20/40 coex. information. */
-	list_for_each_entry_safe(coex_bss, tmp, &coex->bss_info_list, list) {		
+	list_for_each_entry_safe(coex_bss, tmp, &coex->bss_info_list, list) {
 		htcoex_get_coexinfo(coex_bss, &coex_info);
 	}
 
 	/* Send action frame to AP. */
-	if (coex_info.intolerant40 ||
-  	    coex_info.num_chans)
+	if (coex_info.intolerant40 || coex_info.num_chans)
 		htcoex_send_action(vif, &coex_info);
 
 	/* Disable HT40 rates. */
@@ -436,13 +446,13 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 	if (vif->nw_type != INFRA_NETWORK)
 		return;
 
-	bss = cfg80211_get_bss(vif->wdev.wiphy, 
-						NULL,
-						vif->bssid,
-						vif->ssid,
-						vif->ssid_len,
-						WLAN_CAPABILITY_ESS,
-						WLAN_CAPABILITY_ESS);
+	bss = cfg80211_get_bss(vif->wdev.wiphy,
+				NULL,
+				vif->bssid,
+				vif->ssid,
+				vif->ssid_len,
+				WLAN_CAPABILITY_ESS,
+				WLAN_CAPABILITY_ESS);
 	if (!bss) {
 		WARN_ON(1);
 		return;
@@ -460,7 +470,8 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 		if (coex->scan_interval < ATH6KL_HTCOEX_SCAN_PERIOD)
 			coex->scan_interval = ATH6KL_HTCOEX_SCAN_PERIOD;
 
-		mod_timer(&coex->scan_timer, jiffies + msecs_to_jiffies(coex->scan_interval));		
+		mod_timer(&coex->scan_timer, jiffies +
+			msecs_to_jiffies(coex->scan_interval));
 		coex->flags |= ATH6KL_HTCOEX_FLAGS_START;
 	} else
 		coex->flags &= ~ATH6KL_HTCOEX_FLAGS_START;
@@ -493,13 +504,13 @@ void ath6kl_htcoex_disconnect_event(struct ath6kl_vif *vif)
 		   "htcoex disconnect (vif %p) flags %x\n",
 		   vif,
 		   coex->flags);
-	
+
 	if (coex->flags & ATH6KL_HTCOEX_FLAGS_START) {
 		del_timer(&coex->scan_timer);
 		coex->flags &= ~ATH6KL_HTCOEX_FLAGS_START;
 
 		/* Back to full rates */
-		ath6kl_wmi_set_fix_rates(vif->ar->wmi, vif->fw_vif_idx, 
+		ath6kl_wmi_set_fix_rates(vif->ar->wmi, vif->fw_vif_idx,
 					 ATH6KL_HTCOEX_RATEMASK_FULL);
 	}
 
@@ -527,10 +538,11 @@ int ath6kl_htcoex_config(struct ath6kl_vif *vif, u32 interval, u8 rate_rollback)
 		if (coex->scan_interval < ATH6KL_HTCOEX_SCAN_PERIOD)
 			coex->scan_interval = ATH6KL_HTCOEX_SCAN_PERIOD;
 
-		coex->flags |= ATH6KL_HTCOEX_FLAGS_ENABLED;	
+		coex->flags |= ATH6KL_HTCOEX_FLAGS_ENABLED;
 
 		if (restart) {
-			mod_timer(&coex->scan_timer, jiffies + msecs_to_jiffies(coex->scan_interval));				
+			mod_timer(&coex->scan_timer, jiffies +
+				msecs_to_jiffies(coex->scan_interval));
 			coex->flags |= ATH6KL_HTCOEX_FLAGS_START;
 		}
 

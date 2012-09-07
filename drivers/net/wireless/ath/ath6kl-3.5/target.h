@@ -321,14 +321,15 @@ struct host_interest {
 
 #define HI_OPTION_DISABLE_DBGLOG       0x40
 
-/* hi_option_flag2 options */
-#define HI_OPTION_DISABLE_MAC_OTP       0x40 /* Disable MAC address overwrite via OTP Feature */
+/* hi_option_flag2 options: Disable MAC address overwrite via OTP Feature */
+#define HI_OPTION_DISABLE_MAC_OTP       0x40
 
 #define HI_OPTION_NUM_DEV_SHIFT   0x9
 
 #define HI_OPTION_FW_BRIDGE_SHIFT 0x04
 
-#define HI_OPTION_DISABLE_P2P_DEDICATE          0x100 /* Disable p2p dedicate device */
+/* Disable p2p dedicate device */
+#define HI_OPTION_DISABLE_P2P_DEDICATE          0x100
 
 /* Fw Mode/SubMode Mask
 |------------------------------------------------------------------------------|
@@ -344,7 +345,7 @@ struct host_interest {
 #define HI_OPTION_FW_SUBMODE_SHIFT     0x14
 
 /*power save flag bit definitions*/
-#define HI_PWR_SAVE_LPL_ENABLED        0x1 
+#define HI_PWR_SAVE_LPL_ENABLED        0x1
 
 /* power save mode - reduced power listen */
 #define HI_PWR_SAVE_LPL_MODE_RPL	2

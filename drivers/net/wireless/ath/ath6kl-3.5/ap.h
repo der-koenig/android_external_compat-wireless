@@ -20,20 +20,34 @@
 /* Time defines */
 #define ATH6KL_AP_KA_INTERVAL_DEFAULT		(15 * 1000)	/* in ms. */
 #define ATH6KL_AP_KA_INTERVAL_MIN		(5 * 1000)	/* in ms. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT	(4)		/* Reclaim STA after 60 sec. */
-#define ATH6KL_AP_KA_RECLAIM_TIME_MAX		((15 * 60) * 1000) /* in ms., means (ap_ka_interval * ap_ka_reclaim_cycle) */
 
-#define ATH6KL_AP_KA_PRELOAD_STAT_TIME		(2 * 1000)	/* in ms., equal to WMI_TIMEOUT */ 
+/* ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT: Reclaim STA after 60 sec. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT	(4)
+
+/* ATH6KL_AP_KA_RECLAIM_TIME_MAX: in ms., means
+   (ap_ka_interval * ap_ka_reclaim_cycle) */
+#define ATH6KL_AP_KA_RECLAIM_TIME_MAX		((15 * 60) * 1000)
+
+/* ATH6KL_AP_KA_PRELOAD_STAT_TIME: in ms., equal to WMI_TIMEOUT */
+#define ATH6KL_AP_KA_PRELOAD_STAT_TIME		(2 * 1000)
 
 /* For P2P case, use the lower values for Android platform. */
 #define ATH6KL_AP_KA_INTERVAL_DEFAULT_P2P	(10 * 1000)	/* in ms. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P	(2)		/* Reclaim STA after 20 sec. */
+
+/* ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P: Reclaim STA after 20 sec.*/
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P	(2)
 
 /* flags */
 #define ATH6KL_AP_KA_FLAGS_ENABLED		BIT(0)
-#define ATH6KL_AP_KA_FLAGS_BY_SUPP		BIT(1)		/* Offload to supplicant/hostapd, decided when loading module. */
+
+/* ATH6KL_AP_KA_FLAGS_BY_SUPP: Offload to supplicant/hostapd,
+   decided when loading module. */
+#define ATH6KL_AP_KA_FLAGS_BY_SUPP		BIT(1)
 #define ATH6KL_AP_KA_FLAGS_START		BIT(2)
-#define ATH6KL_AP_KA_FLAGS_PRELOAD_STAT		BIT(3)		/* means this fired timer is for preload stat purpose. */
+
+/* ATH6KL_AP_KA_FLAGS_PRELOAD_STAT: means this fired timer is for
+   preload stat purpose. */
+#define ATH6KL_AP_KA_FLAGS_PRELOAD_STAT		BIT(3)
 
 /* Next action */
 #define AP_KA_ACTION_NONE			(0)
@@ -58,18 +72,23 @@ struct ap_keepalive_info {
 	u32 flags;
 
 	struct timer_list ap_ka_timer;
-	u32 ap_ka_interval;		/* In ms., run checking per ap_ka_interval */
-	u32 ap_ka_reclaim_cycle;	/* Reclaim STA after N checking fails */
-	u32 ap_ka_remove_time;		/* Remove this station after (ap_ka_interval * ap_ka_reclaim_cycle) */
+	/* In ms., run checking per ap_ka_interval */
+	u32 ap_ka_interval;
+
+	/* Reclaim STA after N checking fails */
+	u32 ap_ka_reclaim_cycle;
+
+	/* Remove this station after (ap_ka_interval * ap_ka_reclaim_cycle) */
+	u32 ap_ka_remove_time;
 };
 
-struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif, 
+struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 						   enum ap_keepalive_mode mode);
 void ath6kl_ap_keepalive_deinit(struct ath6kl_vif *vif);
 int ath6kl_ap_keepalive_start(struct ath6kl_vif *vif);
 void ath6kl_ap_keepalive_stop(struct ath6kl_vif *vif);
-int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif, 
-			       u32 ap_ka_interval, 
+int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
+			       u32 ap_ka_interval,
 			       u32 ap_ka_reclaim_cycle);
 u32 ath6kl_ap_keepalive_get_inactive_time(struct ath6kl_vif *vif, u8 *mac);
 bool ath6kl_ap_keepalive_by_supp(struct ath6kl_vif *vif);

@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.116
+#define __BUILD_VERSION_ 3.5.0.125
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -59,30 +59,36 @@
 /* TODO : move to BSP, only for Android-JB now. */
 #ifdef CONFIG_ANDROID
 #ifdef ATH6KL_MCC
-#define ATH6KL_MODULEP2P_DEF_MODE (ATH6KL_MODULEP2P_P2P_ENABLE |			\
-				   ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
-				   ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
+#define ATH6KL_MODULEP2P_DEF_MODE			\
+	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
+	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
+	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
 
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS (ATH6KL_MODULE_P2P_FLOWCTRL |			\
-					/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
-					/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-					0)
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
+	(ATH6KL_MODULE_P2P_FLOWCTRL |			\
+	 /* ATH6KL_MODULE_ENABLE_KEEPALIVE | */		\
+	 /* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
+	 /* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
+	 0)
 #else
-#define ATH6KL_MODULEP2P_DEF_MODE (ATH6KL_MODULEP2P_P2P_ENABLE |			\
-				   ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
+#define ATH6KL_MODULEP2P_DEF_MODE			\
+	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
+	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
 
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS (/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
-					/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-					0)
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
+	(ATH6KL_MODULE_ENABLE_KEEPALIVE |		\
+	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
+	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
+	0)
 #endif
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
-#define ATH6KL_MODULEP2P_DEF_MODE 	(0)
+#define ATH6KL_MODULEP2P_DEF_MODE	(0)
 #endif
 
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(0)
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -118,7 +124,7 @@
 #define A_DEFAULT_LISTEN_INTERVAL         100
 #define A_MAX_WOW_LISTEN_INTERVAL         1000
 
-#define ATH6KL_DISCONNECT_TIMEOUT 	  3
+#define ATH6KL_DISCONNECT_TIMEOUT	  3
 
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL           100 /* in msec */
@@ -171,29 +177,43 @@ struct ath6kl_fw_ie {
 	u8 data[0];
 };
 
-#define ATH6KL_IOCTL_STANDARD01		(SIOCDEVPRIVATE+1)		/* Android privacy command */
-#define ATH6KL_IOCTL_STANDARD02		(SIOCDEVPRIVATE+2)		/* Standard do_ioctl() ioctl interface */
-#define ATH6KL_IOCTL_STANDARD12		(SIOCDEVPRIVATE+12)		/* hole, please reserved */
-#define ATH6KL_IOCTL_STANDARD13		(SIOCDEVPRIVATE+13)		/* TX99 */
-#define ATH6KL_IOCTL_STANDARD15		(SIOCDEVPRIVATE+15)		/* hole, please reserved */
-#define ATH6KL_IOCTL_WEXT_PRIV26	(SIOCIWFIRSTPRIV+26)		/* ATH6KL_IOCTL_EXTENDED - extended ioctl */
-#define ATH6KL_IOCTL_WEXT_PRIV27	(SIOCIWFIRSTPRIV+27)		/* reserved for QCSAP (old) */
-#define ATH6KL_IOCTL_WEXT_PRIV31	(SIOCIWFIRSTPRIV+31)		/* reserved for QCSAP */
+/* Android privacy command */
+#define ATH6KL_IOCTL_STANDARD01		(SIOCDEVPRIVATE+1)
+
+/* Standard do_ioctl() ioctl interface */
+#define ATH6KL_IOCTL_STANDARD02		(SIOCDEVPRIVATE+2)
+
+/* hole, please reserved */
+#define ATH6KL_IOCTL_STANDARD12		(SIOCDEVPRIVATE+12)
+
+/* TX99 */
+#define ATH6KL_IOCTL_STANDARD13		(SIOCDEVPRIVATE+13)
+
+/* hole, please reserved */
+#define ATH6KL_IOCTL_STANDARD15		(SIOCDEVPRIVATE+15)
+
+/* ATH6KL_IOCTL_EXTENDED - extended ioctl */
+#define ATH6KL_IOCTL_WEXT_PRIV26	(SIOCIWFIRSTPRIV+26)
+
+/* reserved for QCSAP (old) */
+#define ATH6KL_IOCTL_WEXT_PRIV27	(SIOCIWFIRSTPRIV+27)
+
+/* reserved for QCSAP */
+#define ATH6KL_IOCTL_WEXT_PRIV31	(SIOCIWFIRSTPRIV+31)
 
 #define ATH6KL_IOCTL_AP_APSD		(0)
 #define ATH6KL_IOCTL_AP_INTRABSS	(1)
 
-/* TBD: ioctl number is aligned to olca branch 
+/* TBD: ioctl number is aligned to olca branch
  *      will refine one the loopback tool is ready for native ath6kl
  */
-typedef enum {
+enum ath6kl_xioctl {
 	ATH6KL_XIOCTL_TRAFFIC_ACTIVITY_CHANGE = 80,
-} XTND_IOCLTS;
-
+};
 
 struct ath6kl_traffic_activity_change {
-    u32    stream_id;   /* stream ID to indicate activity change */
-    u32    active;     /* active (1) or inactive (0) */
+	u32    stream_id;	/* stream ID to indicate activity change */
+	u32    active;		/* active (1) or inactive (0) */
 };
 
 struct ath6kl_ioctl_cmd {
@@ -352,8 +372,7 @@ struct ath6kl_android_wifi_priv_cmd {
 
 #define AGGR_NUM_OF_FREE_NETBUFS    16
 
-#define AGGR_RX_TIMEOUT          100	/* in ms */
-#define AGGR_RX_TIMEOUT_VO       50 /* in ms */
+#define AGGR_RX_TIMEOUT          50  /* in ms */
 
 #define AGGR_GET_RXTID_STATS(_p, _x)     (&(_p->stat[(_x)]))
 #define AGGR_GET_RXTID(_p, _x)           (&(_p->rx_tid[(_x)]))
@@ -361,9 +380,9 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AGGR_BA_EVT_GET_CONNID(_conn)    ((_conn) >> 4)
 #define AGGR_BA_EVT_GET_TID(_tid)        ((_tid) & 0xF)
 
-#define AGGR_TX_MAX_AGGR_SIZE   1600	/* Sync to max. PDU size of host. */
+#define AGGR_TX_MAX_AGGR_SIZE   1600 /* Sync to max. PDU size of host. */
 #define AGGR_TX_MAX_PDU_SIZE    120
-#define AGGR_TX_MIN_PDU_SIZE    64	/* 802.3(14) + LLC(8) + IP/TCP(20) = 42 */
+#define AGGR_TX_MIN_PDU_SIZE    64   /* 802.3(14) + LLC(8) + IP/TCP(20) = 42 */
 #define AGGR_TX_MAX_NUM		6
 #define AGGR_TX_TIMEOUT         4	/* in ms */
 
@@ -374,9 +393,9 @@ struct ath6kl_android_wifi_priv_cmd {
 #define MBOX_YIELD_LIMIT 99
 
 /* AP-PS */
-#define ATH6KL_PS_QUEUE_CHECK_AGE	(1 * 1000) 		/* 1 sec. */
-#define ATH6KL_PS_QUEUE_MAX_AGE		(5)			/* 5 cycles */
-#define ATH6KL_PS_QUEUE_NO_AGE		(0)			/* no aging */
+#define ATH6KL_PS_QUEUE_CHECK_AGE	(1 * 1000)	/* 1 sec. */
+#define ATH6KL_PS_QUEUE_MAX_AGE		(5)		/* 5 cycles */
+#define ATH6KL_PS_QUEUE_NO_AGE		(0)		/* no aging */
 
 #define ATH6KL_PS_QUEUE_MAX_DEPTH	(65535)
 #define ATH6KL_PS_QUEUE_NO_DEPTH	(0)			/* unlimit */
@@ -435,19 +454,14 @@ struct skb_hold_q {
 
 struct rxtid {
 	bool aggr;
+	bool progress;
+	bool timer_mon;
 	u16 win_sz;
 	u16 seq_next;
 	u32 hold_q_sz;
 	struct skb_hold_q *hold_q;
 	struct sk_buff_head q;
 	spinlock_t lock;
-    u16 timerwait_seq_num; /* current wait seq_no next */
-	bool sync_next_seq;
-	struct timer_list tid_timer;
-	u8 tid_timer_scheduled;
-	u8	tid;
-	u16	issue_timer_seq;
-	struct aggr_conn_info *aggr_conn;
 };
 
 struct rxtid_stats {
@@ -473,13 +487,13 @@ enum {
 struct txtid {
 	u8 tid;
 	u16 aid;
-	u16 max_aggr_sz;			/* 0 means disable */
+	u16 max_aggr_sz;		/* 0 means disable */
 	struct timer_list timer;
 	struct sk_buff *amsdu_skb;
-	u8 amsdu_cnt;				/* current aggr count */
-	u8 *amsdu_start;			/* start pointer of amsdu frame */
-	u16 amsdu_len;				/* current aggr length */
-	u16 amsdu_lastpdu_len;			/* last PDU length */
+	u8 amsdu_cnt;			/* current aggr count */
+	u8 *amsdu_start;		/* start pointer of amsdu frame */
+	u16 amsdu_len;			/* current aggr length */
+	u16 amsdu_lastpdu_len;		/* last PDU length */
 	spinlock_t lock;
 	struct ath6kl_vif *vif;
 
@@ -496,24 +510,25 @@ struct aggr_info {
 	struct sk_buff_head free_q;
 
 	/* RX */
-	u16 rx_aggr_timeout;		/* in ms */
+	u16 rx_aggr_timeout;	/* in ms */
 
 	/* TX A-MSDU */
-	bool tx_amsdu_enable;		/* IOT : treat A-MPDU & A-MSDU are exclusive. */
+	bool tx_amsdu_enable;	/* IOT : treat A-MPDU & A-MSDU are exclusive. */
 	bool tx_amsdu_seq_pkt;
 	u8 tx_amsdu_max_aggr_num;
 	u32 tx_amsdu_max_aggr_len;
 	u16 tx_amsdu_max_pdu_len;
-	u16 tx_amsdu_timeout; 		/* in ms */
+	u16 tx_amsdu_timeout;	/* in ms */
 };
 
 struct aggr_conn_info {
 	u8 aggr_sz;
+	u8 timer_scheduled;
+	struct timer_list timer;
 	struct aggr_info *aggr_cntxt;
 	struct net_device *dev;
 	struct rxtid rx_tid[NUM_OF_TIDS];
 	struct rxtid_stats stat[NUM_OF_TIDS];
-	u32 tid_timeout_setting[NUM_OF_TIDS];
 	/* TX A-MSDU */
 	struct txtid tx_tid[NUM_OF_TIDS];
 };
@@ -577,7 +592,7 @@ struct ath6kl_ps_buf_head {
 
 	/* stat */
 	u32 enqueued;
-	u32 enqueued_err;	
+	u32 enqueued_err;
 	u32 dequeued;
 	u32 aged;
 };
@@ -591,7 +606,9 @@ struct ath6kl_sta {
 	u8 auth;
 	u8 wpa_ie[ATH6KL_MAX_IE];
 	struct ath6kl_vif *vif;
-	spinlock_t lock;	/* ath6kl_sta global lock, psq_data & psq_mgmt also use it. */
+
+	/* ath6kl_sta global lock, psq_data & psq_mgmt also use it. */
+	spinlock_t lock;
 
 	/* AP-PS */
 	struct ath6kl_ps_buf_head psq_data;
@@ -600,7 +617,7 @@ struct ath6kl_sta {
 	u8 apsd_info;
 
 	/* TX/RX-AMSDU */
-	struct aggr_conn_info *aggr_conn_cntxt;	
+	struct aggr_conn_info *aggr_conn_cntxt;
 
 	/* AP-Keepalive */
 	u16 last_txrx_time_tgt;		/* target time. */
@@ -670,7 +687,7 @@ struct target_stats {
 	u64 cs_discon_cnt;
 
 	s32 tx_ucast_rate;
-    s8 tx_rate_index;
+	s8 tx_rate_index;
 	s32 rx_ucast_rate;
 
 	u32 lq_val;
@@ -779,6 +796,7 @@ enum ath6kl_vif_state {
 	PORT_STATUS_PEND,
 	WLAN_WOW_ENABLE,
 	SCANNING,
+	DORMANT,
 };
 
 struct ath6kl_vif {
@@ -839,13 +857,16 @@ struct ath6kl_vif {
 	u16 last_rsn_cap;
 #ifdef ATH6KL_DIAGNOSTIC
 	struct wifi_diag diag;
-#endif    
+#endif
 	struct p2p_ps_info *p2p_ps_info_ctx;
 	enum scanband_type scanband_type;
 	u32 scanband_chan;
 	struct ap_keepalive_info *ap_keepalive_ctx;
 	struct timer_list sche_scan_timer;
 	int sche_scan_interval;			/* in ms. */
+
+	u8 last_pwr_mode;
+	u8 saved_pwr_mode;
 };
 
 #define WOW_LIST_ID		0
@@ -995,9 +1016,15 @@ struct ath6kl {
 
 	bool p2p;			/* Support P2P or not */
 	bool p2p_concurrent;		/* Support P2P-Concurrent or not */
-	bool p2p_multichan_concurrent;	/* Support P2P-Multi-Channel-Concurrent or not */
-	bool p2p_dedicate;		/* Need Dedicated-P2P-Device interface or not */
-	bool p2p_compat;		/* Support ath6kl-3.2's P2P-Concurrent or not */
+
+	/* Support P2P-Multi-Channel-Concurrent or not */
+	bool p2p_multichan_concurrent;
+
+	/* Need Dedicated-P2P-Device interface or not */
+	bool p2p_dedicate;
+
+	/* Support ath6kl-3.2's P2P-Concurrent or not */
+	bool p2p_compat;
 
 	bool sche_scan;
 
@@ -1026,8 +1053,8 @@ struct ath6kl {
 		u8 disc_timeout;
 		u8 mimo_ps_enable;
 		u8 force_passive;
-        u16 bgscan_int;
-        enum wmi_roam_mode roam_mode;
+		u16 bgscan_int;
+		enum wmi_roam_mode roam_mode;
 
 		struct green_tx_param {
 			u32 green_tx_enable;
@@ -1051,13 +1078,13 @@ struct ath6kl {
 			u8 no_rfb_detect;
 		} lpl_force_enable_params;
 
-        struct power_param {
-            u16 idle_period;
-            u16 ps_poll_num;
-            u16 dtim;
-            u16 tx_wakeup;
-            u16 num_tx;
-        } power_params;
+		struct power_param {
+			u16 idle_period;
+			u16 ps_poll_num;
+			u16 dtim;
+			u16 tx_wakeup;
+			u16 num_tx;
+		} power_params;
 
 		struct ht_cap_param {
 			u8 isConfig;
@@ -1077,7 +1104,7 @@ struct ath6kl {
 #endif
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl_ctx;
 #ifdef CONFIG_HAS_EARLYSUSPEND
-    struct early_suspend early_suspend;
+	struct early_suspend early_suspend;
 #endif /* CONFIG_HAS_EARLYSUSPEND */
 #ifdef ATH6KL_SUPPORT_WLAN_HB
 	int wlan_hb_enable;
@@ -1087,7 +1114,7 @@ struct ath6kl {
 	struct work_struct init_defer_wk;
 	wait_queue_head_t init_defer_wait_wq;
 
-	u32 tx_on_vif; 
+	u32 tx_on_vif;
 
 	struct country_code_to_enum_rd *current_reg_domain;
 
@@ -1119,7 +1146,8 @@ static inline u32 ath6kl_ps_queue_get_age(struct ath6kl_ps_buf_desc *ps_buf)
 	return ps_buf->age;
 }
 
-static inline void ath6kl_ps_queue_set_age(struct ath6kl_ps_buf_desc *ps_buf, u32 age)
+static inline void ath6kl_ps_queue_set_age(struct ath6kl_ps_buf_desc *ps_buf,
+	u32 age)
 {
 	ps_buf->age = age;
 }
@@ -1129,6 +1157,13 @@ static inline void ath6kl_fw_crash_trap(struct ath6kl *ar)
 	/* Notify to usr */
 	if (ar->fw_crash_notify)
 		ar->fw_crash_notify(ar);
+}
+
+static inline bool ath6kl_is_p2p_ie(const u8 *pos)
+{
+	return pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
+		pos[2] == 0x50 && pos[3] == 0x6f &&
+		pos[4] == 0x9a && pos[5] == 0x09;
 }
 
 int ath6kl_configure_target(struct ath6kl *ar);
@@ -1154,16 +1189,12 @@ void ath6kl_tx_data_cleanup(struct ath6kl *ar);
 
 struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar);
 void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie);
-bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif, 
-                                     u32 id,
-                                     u32 freq,
-                                     u32 wait,
-                                     const u8* buf,
-                                     size_t len,
-                                     bool no_cck,
-                                     bool dont_wait_for_ack,
-                                     u32 *flags);
-int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev);
+bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif, u32 id, u32 freq,
+	u32 wait, const u8 *buf, size_t len, bool no_cck,
+	bool dont_wait_for_ack, u32 *flags);
+int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
+	bool bypass_tx_aggr);
+int ath6kl_start_tx(struct sk_buff *skb, struct net_device *dev);
 
 void aggr_tx_config(struct ath6kl_vif *vif,
 			bool tx_amsdu_seq_pkt,
@@ -1218,7 +1249,8 @@ int ath6kl_disconnect(struct ath6kl_vif *vif);
 void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid);
 void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 			     u8 win_sz);
-void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid, u16 amsdu_sz, u8 status);
+void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
+	u16 amsdu_sz, u8 status);
 void ath6kl_wakeup_event(void *dev);
 
 void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
@@ -1241,23 +1273,15 @@ void ath6kl_ps_queue_init(struct ath6kl_ps_buf_head *psq,
 void ath6kl_ps_queue_purge(struct ath6kl_ps_buf_head *psq);
 int ath6kl_ps_queue_empty(struct ath6kl_ps_buf_head *psq);
 int ath6kl_ps_queue_depth(struct ath6kl_ps_buf_head *psq);
-void ath6kl_ps_queue_stat(struct ath6kl_ps_buf_head *psq, 
-			 int *depth, 
-			 u32 *enqueued, 
-			 u32 *enqueued_err, 
-			 u32 *dequeued,
-			 u32 *aged);
-struct ath6kl_ps_buf_desc *ath6kl_ps_queue_dequeue(struct ath6kl_ps_buf_head *psq);
-int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq, 
-				const u8 *buf, 
-				u16 len, 
-				u32 id, 
-				u32 freq, 
-				u32 wait, 
-				bool no_cck, 
-				bool dont_wait_for_ack);
-int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq, 
-				struct sk_buff *skb);
+void ath6kl_ps_queue_stat(struct ath6kl_ps_buf_head *psq, int *depth,
+	u32 *enqueued, u32 *enqueued_err, u32 *dequeued, u32 *aged);
+struct ath6kl_ps_buf_desc *ath6kl_ps_queue_dequeue(
+	struct ath6kl_ps_buf_head *psq);
+int ath6kl_ps_queue_enqueue_mgmt(struct ath6kl_ps_buf_head *psq, const u8 *buf,
+	u16 len, u32 id, u32 freq, u32 wait, bool no_cck,
+	bool dont_wait_for_ack);
+int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq,
+	struct sk_buff *skb);
 void ath6kl_ps_queue_age_handler(unsigned long ptr);
 void ath6kl_ps_queue_age_start(struct ath6kl_sta *conn);
 void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn);
@@ -1268,5 +1292,10 @@ void ath6kl_sdio_exit_msm(void);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
+int _string_to_mac(char *string, int len, u8 *macaddr);
+
+extern unsigned int htc_bundle_recv;
+extern unsigned int htc_bundle_send;
+extern unsigned int htc_bundle_send_timer;
 
 #endif /* CORE_H */

@@ -164,7 +164,7 @@ static inline void ath6kl_hif_pipe_register_callback(struct ath6kl *ar,
 	ar->hif_ops->pipe_register_callback(ar, htc_context, callbacks);
 }
 
-static inline int ath6kl_hif_pipe_send_bundle(struct ath6kl *ar, u8 pid, 
+static inline int ath6kl_hif_pipe_send_bundle(struct ath6kl *ar, u8 pid,
 	struct sk_buff **msg_bundle, int num_msgs)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe send bundle\n");
@@ -212,7 +212,7 @@ static inline u16 ath6kl_hif_pipe_get_max_queue_number(struct ath6kl *ar,
 	return ar->hif_ops->pipe_get_max_queue_number(ar, pipe);
 }
 
-static inline u16 ath6kl_hif_pipe_set_max_sche(struct ath6kl *ar, 
+static inline u16 ath6kl_hif_pipe_set_max_sche(struct ath6kl *ar,
 	u32 max_sche_tx, u32 max_sche_rx)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set max scheduled packages\n");
@@ -232,7 +232,7 @@ static inline void ath6kl_hif_late_resume(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif late_resume\n");
 
 	ar->hif_ops->late_resume(ar);
-}	
+}
 #endif
 
 static inline int ath6kl_hif_bus_config(struct ath6kl *ar)

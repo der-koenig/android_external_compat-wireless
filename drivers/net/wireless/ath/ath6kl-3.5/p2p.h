@@ -29,17 +29,18 @@ enum {
 };
 
 struct ieee80211_p2p_noa_descriptor {
-	u8 count_or_type; 	/* 255: continuous schedule, 0: reserved */
+	u8 count_or_type;	/* 255: continuous schedule, 0: reserved */
 	__le32 duration;
 	__le32 interval;
 	__le32 start_or_offset;
-} __attribute__((packed));
+} __packed;
 
 struct ieee80211_p2p_noa_info {
 	u8 index;
 	u8 ctwindow_opps_param;
-	struct ieee80211_p2p_noa_descriptor noas[ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS];
-} __attribute__((packed));
+	struct ieee80211_p2p_noa_descriptor
+		noas[ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS];
+} __packed;
 
 struct ieee80211_p2p_noa_ie {
 	u8 element_id;
@@ -48,7 +49,7 @@ struct ieee80211_p2p_noa_ie {
 	u8 attr;
 	u16 attr_len;
 	struct ieee80211_p2p_noa_info noa_info;
-} __attribute__((packed));
+} __packed;
 
 struct p2p_ps_info {
 	struct ath6kl_vif *vif;
@@ -63,7 +64,7 @@ struct p2p_ps_info {
 	u8 *go_last_beacon_app_ie;
 	u16 go_last_beacon_app_ie_len;
 	u8 *go_last_noa_ie;
-	u16 go_last_noa_ie_len;	
+	u16 go_last_noa_ie_len;
 	u8 *go_working_buffer;
 };
 
@@ -71,26 +72,25 @@ struct p2p_ps_info {
 #define ATH6KL_P2P_FLOWCTRL_NULL_CONNID			(0xff)
 #define ATH6KL_P2P_FLOWCTRL_RECYCLE_LIMIT		(10)
 
-struct ath6kl_fw_conn_list
-{
+struct ath6kl_fw_conn_list {
 	struct list_head conn_queue;
 	struct list_head re_queue;
 
-	u8 connId;				/* ID sync between host and target. */
-	u8 parent_connId;			/* For P2P_FLOWCTRL_SCHE_TYPE_INTERFACE */
+	u8 connId;		/* ID sync between host and target. */
+	u8 parent_connId;	/* For P2P_FLOWCTRL_SCHE_TYPE_INTERFACE */
 	u8 mac_addr[ETH_ALEN];
 	struct ath6kl_vif *vif;
 
 	union {
 		struct {
-			u8 bk_uapsd    : 1;
-			u8 be_uapsd    : 1;
-			u8 vi_uapsd    : 1;
-			u8 vo_uapsd    : 1;
-			u8 ps          : 1; 	/* 1 means power saved */
-			u8 ocs         : 1; 	/* 1 means off channel */
-			u8 res         : 2;
-		}; 
+			u8 bk_uapsd:1;
+			u8 be_uapsd:1;
+			u8 vi_uapsd:1;
+			u8 vo_uapsd:1;
+			u8 ps:1;	/* 1 means power saved */
+			u8 ocs:1;	/* 1 means off channel */
+			u8 res:2;
+		};
 		u8 connect_status;
 	};
 
@@ -113,7 +113,7 @@ struct ath6kl_p2p_flowctrl {
 	spinlock_t p2p_flowctrl_lock;
 
 	enum p2p_flowctrl_sche_type sche_type;
-	struct ath6kl_fw_conn_list fw_conn_list[NUM_CONN];	
+	struct ath6kl_fw_conn_list fw_conn_list[NUM_CONN];
 };
 
 struct p2p_ps_info *ath6kl_p2p_ps_init(struct ath6kl_vif *vif);
@@ -133,34 +133,32 @@ int ath6kl_p2p_ps_setup_opps(struct p2p_ps_info *p2p_ps,
 			     u8 ctwindows);
 
 int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps);
-void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps, 
-	 		       u8 mgmt_frm_type,
-	 		       u8 **ie, 
-			       int *len);
+void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps, u8 mgmt_frm_type,
+			       u8 **ie, int *len);
 
-int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type, 
-				    u8 *opmode, 
+int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
+				    u8 *opmode,
 				    u8 *subopmode);
 int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 			       enum nl80211_iftype type);
 int ath6kl_p2p_utils_check_port(struct ath6kl_vif *vif,
 				u8 port_id);
 
-struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(struct ath6kl *ar);
+struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
+	struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar);
-int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
-				        void *pkt);
+int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar, void *pkt);
 void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 				      u8 numConn,
 				      u8 ac_map[],
 				      u8 ac_queue_depth[]);
-void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif, 
+void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif,
 				     u8 mac_addr[],
 				     u8 connId);
-u8 ath6kl_p2p_flowctrl_get_conn_id(struct ath6kl_vif *vif, 
+u8 ath6kl_p2p_flowctrl_get_conn_id(struct ath6kl_vif *vif,
 				   struct sk_buff *skb);
 int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 			     u8 *buf, int buf_len);

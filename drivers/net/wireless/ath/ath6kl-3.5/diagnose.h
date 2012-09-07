@@ -41,9 +41,9 @@
 
 /* does frame have QoS sequence control data */
 #define IEEE80211_QOS_HAS_SEQ(framectrl) \
-    ((framectrl & \
-      (IEEE80211_FC0_TYPE_MASK | IEEE80211_FC0_SUBTYPE_QOS)) == \
-      (IEEE80211_FC0_TYPE_DATA | IEEE80211_FC0_SUBTYPE_QOS))
+	((framectrl & \
+	 (IEEE80211_FC0_TYPE_MASK | IEEE80211_FC0_SUBTYPE_QOS)) == \
+	 (IEEE80211_FC0_TYPE_DATA | IEEE80211_FC0_SUBTYPE_QOS))
 
 #define IEEE80211_QOS_HEADERLEN		26
 #define IEEE80211_QOS_PADLEN		2
@@ -79,6 +79,8 @@
 #define MAX11_RATE_INDEX        43
 #define WHAL_RXERR_CRC          0x01
 
+extern unsigned int diag_local_test;
+extern struct wmi *globalwmi;
 
 struct ath_pktlog_txctl {
 	u16 framectrl;       /* frame control field from header */
@@ -90,16 +92,19 @@ struct ath_pktlog_txctl {
 	u32 txdesc_ctl[PKTLOG_MAX_TXCTL_WORDS];     /* Tx descriptor words */
 	u32 *proto_hdr;   /* Protocol header words (variable length!) */
 	u32 *misc;         /* Can be used for HT specific or other misc info */
-} __packed; 
-
+} __packed;
 
 struct ath_pktlog_txstatus {
-	u32 txdesc_status[PKTLOG_MAX_TXSTATUS_WORDS]; /* Tx descriptor status words */
-	u32 misc[3];         /* Can be used for HT specific or other misc info */ /* 0 is rsrate, 1 is txpower */
-	u32 buf_len;	
-	u8  buf[1];
-} __packed; 
+	/* Tx descriptor status words */
+	u32 txdesc_status[PKTLOG_MAX_TXSTATUS_WORDS];
 
+	/* Can be used for HT specific or other misc info */
+	/* 0 is rsrate, 1 is txpower */
+	u32 misc[3];
+
+	u32 buf_len;
+	u8  buf[1];
+} __packed;
 
 #define PKTLOG_MAX_RXSTATUS_WORDS 12
 
@@ -119,8 +124,7 @@ struct ath_pktlog_rx {
 	u32 seq_num;
 	u32 buf_len;
 	u8  buf[1];
-} __packed; 
-
+} __packed;
 
 /* Each packet log entry consists of the following fixed length header
    followed by variable length log information determined by log_type */
@@ -131,28 +135,30 @@ struct ath_pktlog_hdr {
 	u32 timestamp;
 } __packed;
 
-struct whal_rate_code{
+struct whal_rate_code {
 	u8 rateCode;
 	u8 flags;
-}__packed;
+} __packed;
 
 
 /* Rx status is in first ds, this shall be only used by AR6004_REV6 for now */
 
-struct rx_desc_status{
+struct rx_desc_status {
 	u16      rsDataLen; /* rx frame length */
 	u16      reserved0;  /* for alignment */
 	u8       rsStatus;  /* rx status, 0 => recv ok */
 	u8       reserved1;  /* for alignment */
 	u8       rsRssi;    /* rx frame RSSI */
 	u8       reserved2;   /* for alignment */
-	struct whal_rate_code rsRate;    /* h/w receive rate code + flags WHAL_RATE_CODE */
-}__packed;
+
+	/* h/w receive rate code + flags WHAL_RATE_CODE */
+	struct whal_rate_code rsRate;
+} __packed;
 
 /* tx ctrl descriptor */
-struct tx_ctrl_desc{
+struct tx_ctrl_desc {
 	u32    dsCtl0;    /* opaque DMA control 0 */
-}__packed;
+} __packed;
 
 #define WHAL_TXDESC_GET_FRAME_LEN(x)       ((x)->dsCtl0 & 0xFFF)
 
@@ -161,7 +167,7 @@ struct tx_ctrl_desc{
 /* DIANOSTIC API */
 
 /* event ID */
-typedef enum {
+enum wifi_diag_event_id {
 	WIFI_DIAG_MAC_TX_FRAME_EVENTID = 0x0001,
 	WIFI_DIAG_MAC_RX_FRAME_EVENTID,
 	WIFI_DIAG_MAC_FSM_EVENTID,
@@ -171,10 +177,10 @@ typedef enum {
 	WIFI_DIAG_TX_STAT_EVENTID,
 	WIFI_DIAG_RX_STAT_EVENTID,
 	WIFI_DIAG_BT_TIME_EVENTID,
-}__packed wifi_diag_event_id;
+};
 
 
-typedef enum {
+enum wifi_diag_status_t {
 	WIFI_DIAG_EOK = 0x0,
 	WIFI_DIAG_ENXIO,
 	WIFI_DIAG_ENOMEM,
@@ -185,33 +191,33 @@ typedef enum {
 	WIFI_DIAG_EEXIST,
 	WIFI_DIAG_ENOSPC,
 	WIFI_DIAG_ASYNC,
-}__packed wifi_diag_status_t;
+};
 
 
-typedef struct _wifi_diag_event_t {
+struct wifi_diag_event_t {
 	u16 event_id;
 	u16 len;
 	u32 seq_num;
 	u8 event_data[1];
-}__packed wifi_diag_event_t;
+} __packed;
 
-typedef enum{
-	WIFI_DIAG_MAC_FSM_SCANNING =0x0,
+enum wifi_diag_mac_fsm_t {
+	WIFI_DIAG_MAC_FSM_SCANNING = 0x0,
 	WIFI_DIAG_MAC_FSM_AUTH,
 	WIFI_DIAG_MAC_FSM_ASSOC,
 	WIFI_DIAG_MAC_FSM_CONNECTED,
 	WIFI_DIAG_MAC_FSM_DEAUTH,
 	WIFI_DIAG_MAC_FSM_DISASSOC,
 	WIFI_DIAG_MAC_FSM_DISCONNECTED,
-}__packed wifi_diag_mac_fsm_t;
+};
 
-typedef struct _wifi_diag_mac_fsm_event_t {
-	wifi_diag_mac_fsm_t  fsm;
-}__packed wifi_diag_mac_fsm_event_t;
+struct wifi_diag_mac_fsm_event_t {
+	enum wifi_diag_mac_fsm_t  fsm;
+} __packed;
 
 
 /* txrx frame event*/
-typedef struct _wifi_diag_mac_rx_frame_event_t {
+struct wifi_diag_mac_rx_frame_event_t {
 	u32 rssi;
 	u8  snr;
 	u32 rx_mcs;
@@ -221,9 +227,9 @@ typedef struct _wifi_diag_mac_rx_frame_event_t {
 	u8  frame_sub_type;
 	u16 frame_length;
 	u8  frame_data[1];
-}__packed wifi_diag_mac_rx_frame_event_t;
+} __packed;
 
-typedef struct _wifi_diag_mac_tx_frame_event_t {
+struct wifi_diag_mac_tx_frame_event_t {
 	u32 tx_pwr;
 	u8  tx_mcs;
 	u32 tx_bitrate;
@@ -231,79 +237,83 @@ typedef struct _wifi_diag_mac_tx_frame_event_t {
 	u8  frame_sub_type;
 	u16 frame_length;
 	u8  frame_data[1];
-}__packed wifi_diag_mac_tx_frame_event_t;
+} __packed;
 
 /* txrx statistics event */
-typedef struct _wifi_diag_tx_stat_event_t {
+struct wifi_diag_tx_stat_event_t {
 	u64 tx_pkt;
 	u64 tx_ucast_pkt;
 	u64 tx_retry_cnt;
 	u64 tx_fail_cnt;
 	u32 tx_rate_pkt[44];
-}__packed wifi_diag_tx_stat_event_t;
+} __packed;
 
-typedef struct _wifi_diag_rx_stat_event_t {
+struct wifi_diag_rx_stat_event_t {
 	u64 rx_pkt;
 	u64 rx_ucast_pkt;
 	u64 rx_dupl_frame;
 	u32 rx_rate_pkt[44];
-}__packed wifi_diag_rx_stat_event_t;
+} __packed;
 
 /* interference time period event */
-typedef struct _wifi_diag_interference_event_t {
+struct wifi_diag_interference_event_t {
 	u32 rx_clear_cnt;
-}__packed wifi_diag_interference_event_t;
+} __packed;
 
 /* RX time period event */
-typedef struct _wifi_diag_rxtime_event_t {
+struct wifi_diag_rxtime_event_t {
 	u32 rx_frame_cnt;
-}__packed wifi_diag_rxtime_event_t;
+} __packed;
 
 /* power save event */
-typedef enum{
-	WIFI_DIAG_DEEPSLEEP_START =0x0,
+enum wifi_diag_pwrsave_t {
+	WIFI_DIAG_DEEPSLEEP_START = 0x0,
 	WIFI_DIAG_DEEPSLEEP_STOP,
 	WIFI_DIAG_FAKESLEEP_START,
 	WIFI_DIAG_FAKESLEEP_STOP,
 	WIFI_DIAG_MAXPERF_START,
 	WIFI_DIAG_MAXPERF_STOP,
-}__packed wifi_diag_pwrsave_t;
+};
 
-typedef struct _wifi_diag_pwrsave_event_t {
-	wifi_diag_pwrsave_t  pwrsave;
-}__packed wifi_diag_pwrsave_event_t;
+struct wifi_diag_pwrsave_event_t {
+	enum wifi_diag_pwrsave_t  pwrsave;
+} __packed;
 
 
-typedef struct _wifi_diag_cmd_t {
+struct wifi_diag_cmd_t {
 	u16 cmd_id;
 	u16 len;
 	u8 cmd_data[1];
-}__packed wifi_diag_cmd_t;
+} __packed;
 
-typedef struct _wifi_diag_mac_tx_filter_cmd_t {
+struct wifi_diag_mac_tx_filter_cmd_t {
 	u32 filter_mask_low;
 	u32 filter_mask_high;
-}__packed wifi_diag_mac_tx_filter_cmd_t;
+} __packed;
 
-typedef struct _wifi_diag_mac_rx_filter_cmd_t {
+struct wifi_diag_mac_rx_filter_cmd_t {
 	u32 filter_mask_low;
 	u32 filter_mask_high;
-}__packed wifi_diag_mac_rx_filter_cmd_t;
+} __packed;
 
-typedef struct _wifi_diag_cfg_cmd_t {
+struct wifi_diag_cfg_cmd_t {
 	u32 cfg;
 	u16 value;
-}__packed wifi_diag_cfg_cmd_t;
+} __packed;
 
-typedef wifi_diag_status_t (*wifi_diag_event_callback_t)(void *diag_hdl, struct sk_buff *skb);
-
+struct wifi_diag_callbacks {
+	enum wifi_diag_status_t (*diag_event_callback)
+		(void *diag_hdl, struct sk_buff *skb);
+};
 
 struct wifi_drv_hdl_list {
 	void *             (*wifi_register)(void *diag_hdl);
-	wifi_diag_status_t (*wifi_unregister)(void * drv_hdl);
-	wifi_diag_status_t (*wifi_diag_reg_event_callback)(void *drv_hdl, wifi_diag_event_callback_t evt_callback);
-	wifi_diag_status_t (*wifi_diag_cmd)(void *drv_hdl, wifi_diag_cmd_t *cmd);
-}__packed;
+	enum wifi_diag_status_t (*wifi_unregister)(void *drv_hdl);
+	enum wifi_diag_status_t (*wifi_diag_reg_event_callback)
+		(void *drv_hdl, struct wifi_diag_callbacks *evt_callback);
+	enum wifi_diag_status_t (*wifi_diag_cmd)
+		(void *drv_hdl, struct wifi_diag_cmd_t *cmd);
+} __packed;
 
 
 struct wifi_diag {
@@ -316,56 +326,50 @@ struct wifi_diag {
 	u32	pre_rx_frame_cnt;
 	u32	connect_seq_num;
 	u32	disconnect_seq_num;
-	struct timer_list	tx_stat_timer; 
+	struct timer_list	tx_stat_timer;
 	struct timer_list	rx_stat_timer;
 	struct timer_list	interference_timer;
 	struct timer_list	rxtime_timer;
 	u32	tx_timer_val;
 	u32	rx_timer_val;
-}__packed;
+} __packed;
 
 
 void *
-wifi_diag_drv_register( void *diag_hdl);
-wifi_diag_status_t 
-wifi_diag_drv_unregister(void * drv_hdl);
-wifi_diag_status_t 
-wifi_diag_register_event_callback(void *drv_hdl, wifi_diag_event_callback_t evt_callback);
-wifi_diag_status_t 
-wifi_diag_cmd_send(void *drv_hdl, wifi_diag_cmd_t *cmd);
-void
-wifi_diag_mac_tx_frame_event(struct ath6kl_vif *vif, struct ath_pktlog_txstatus *txstatus_log);
-void
-wifi_diag_mac_txctrl_event(struct ath6kl_vif *vif, struct ath_pktlog_txctl *txctrl_log);
-void
-wifi_diag_mac_rx_frame_event(struct ath6kl_vif *vif, struct ath_pktlog_rx *rx_log);
-void
-wifi_diag_mac_fsm_event(struct ath6kl_vif *vif, wifi_diag_mac_fsm_t eventtype, u32 seq_num);
-void 
-wifi_diag_send_pwrsave_event(struct ath6kl_vif *vif, wifi_diag_pwrsave_t pwrsave, u32 seq_num);
-void
-wifi_diag_tx_stat_timer_handler(unsigned long ptr);
-void
-wifi_diag_rx_stat_timer_handler(unsigned long ptr);
-void
-wifi_diag_interference_timer_handler(unsigned long ptr);
-void
-wifi_diag_rxtime_timer_handler(unsigned long ptr);
-void
-wifi_diag_timer_destroy(struct ath6kl_vif *vif);
-void
-wifi_diag_init(void);
+wifi_diag_drv_register(void *diag_hdl);
+enum wifi_diag_status_t
+wifi_diag_drv_unregister(void *drv_hdl);
+enum wifi_diag_status_t wifi_diag_register_event_callback(void *drv_hdl,
+	struct wifi_diag_callbacks *evt_callback);
+enum wifi_diag_status_t wifi_diag_cmd_send(void *drv_hdl,
+	struct wifi_diag_cmd_t *cmd);
+void wifi_diag_mac_tx_frame_event(struct ath6kl_vif *vif,
+	struct ath_pktlog_txstatus *txstatus_log);
+void wifi_diag_mac_txctrl_event(struct ath6kl_vif *vif,
+	struct ath_pktlog_txctl *txctrl_log);
+void wifi_diag_mac_rx_frame_event(struct ath6kl_vif *vif,
+	struct ath_pktlog_rx *rx_log);
+void wifi_diag_mac_fsm_event(struct ath6kl_vif *vif,
+	enum wifi_diag_mac_fsm_t eventtype, u32 seq_num);
+void wifi_diag_send_pwrsave_event(struct ath6kl_vif *vif,
+	enum wifi_diag_pwrsave_t pwrsave, u32 seq_num);
+void wifi_diag_tx_stat_timer_handler(unsigned long ptr);
+void wifi_diag_rx_stat_timer_handler(unsigned long ptr);
+void wifi_diag_interference_timer_handler(unsigned long ptr);
+void wifi_diag_rxtime_timer_handler(unsigned long ptr);
+void wifi_diag_timer_destroy(struct ath6kl_vif *vif);
+void wifi_diag_init(void);
 
-int 
-ath6kl_wmi_stat_rx_rate_event(struct ath6kl_vif *vif, struct wmi *wmi, u8 *datap, int len, u32 seq_num);
-int 
-ath6kl_wmi_stat_tx_rate_event(struct ath6kl_vif *vif, struct wmi *wmi, u8 *datap, int len, u32 seq_num);
-int 
-ath6kl_wmi_interference_event(struct ath6kl_vif *vif, struct wmi *wmi, u8 *datap, int len, u32 seq_num);
-int 
-ath6kl_wmi_rxtime_event(struct ath6kl_vif *vif, struct wmi *wmi, u8 *datap, int len, u32 seq_num);
-int 
-ath6kl_wmi_diag_event(struct ath6kl_vif *vif, struct wmi *wmi, struct sk_buff *skb);
+int ath6kl_wmi_stat_rx_rate_event(struct ath6kl_vif *vif,
+	struct wmi *wmi, u8 *datap, int len, u32 seq_num);
+int ath6kl_wmi_stat_tx_rate_event(struct ath6kl_vif *vif,
+	struct wmi *wmi, u8 *datap, int len, u32 seq_num);
+int ath6kl_wmi_interference_event(struct ath6kl_vif *vif,
+	struct wmi *wmi, u8 *datap, int len, u32 seq_num);
+int ath6kl_wmi_rxtime_event(struct ath6kl_vif *vif,
+	struct wmi *wmi, u8 *datap, int len, u32 seq_num);
+int ath6kl_wmi_diag_event(struct ath6kl_vif *vif,
+	struct wmi *wmi, struct sk_buff *skb);
 
 #endif /* ATH6KL_DIAGNOSTIC */
 #endif /* DIAGNOSE_H */

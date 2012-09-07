@@ -19,9 +19,9 @@
 #include "linux/if.h"
 #include "linux/socket.h"
 #include "linux/netlink.h"
-#define NETLINK_ATH_EVENT     NETLINK_GENERIC+4
+#define NETLINK_ATH_EVENT	(NETLINK_GENERIC + 4)
 
-#define MAC_ADDR_LEN           6 
+#define MAC_ADDR_LEN           6
 
 int ath_netlink_init(void);
 int ath_netlink_delete(void);

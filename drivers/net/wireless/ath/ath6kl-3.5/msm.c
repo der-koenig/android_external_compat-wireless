@@ -20,11 +20,10 @@
 #define MMC_MSM_DEV "msm_sdcc.2"
 /* End MMC polling stuff */
 
+#define GET_INODE_FROM_FILEP(filp) ((filp)->f_path.dentry->d_inode)
 
-#define GET_INODE_FROM_FILEP(filp) \
-	(filp)->f_path.dentry->d_inode
-typedef char            A_CHAR;
-int android_readwrite_file(const A_CHAR *filename, A_CHAR *rbuf, const A_CHAR *wbuf, size_t length)
+int android_readwrite_file(const char *filename, char *rbuf,
+	const char *wbuf, size_t length)
 {
 	int ret = 0;
 	struct file *filp = (struct file *)-ENOENT;
@@ -47,7 +46,8 @@ int android_readwrite_file(const A_CHAR *filename, A_CHAR *rbuf, const A_CHAR *w
 
 			inode = GET_INODE_FROM_FILEP(filp);
 			if (!inode) {
-				printk(KERN_ERR "android_readwrite_file: Error 2\n");
+				printk(KERN_ERR
+					"android_readwrite_file: Error 2\n");
 				ret = -ENOENT;
 				break;
 			}
@@ -56,21 +56,26 @@ int android_readwrite_file(const A_CHAR *filename, A_CHAR *rbuf, const A_CHAR *w
 		}
 
 		if (wbuf) {
-			if ((ret=filp->f_op->write(filp, wbuf, length, &filp->f_pos)) < 0) {
-				printk(KERN_ERR "android_readwrite_file: Error 3\n");
+			ret = filp->f_op->write(
+				filp, wbuf, length, &filp->f_pos);
+			if (ret < 0) {
+				printk(KERN_ERR
+					"android_readwrite_file: Error 3\n");
 				break;
 			}
 		} else {
-			if ((ret=filp->f_op->read(filp, rbuf, length, &filp->f_pos)) < 0) {
-				printk(KERN_ERR "android_readwrite_file: Error 4\n");
+			ret = filp->f_op->read(
+				filp, rbuf, length, &filp->f_pos);
+			if (ret < 0) {
+				printk(KERN_ERR
+					"android_readwrite_file: Error 4\n");
 				break;
 			}
 		}
 	} while (0);
 
-	if (!IS_ERR(filp)) {
+	if (!IS_ERR(filp))
 		filp_close(filp, NULL);
-	}
 
 	set_fs(oldfs);
 	printk(KERN_ERR "android_readwrite_file: ret=%d\n", ret);
@@ -85,9 +90,11 @@ void __init ath6kl_sdio_init_msm(void)
 	int length;
 
 	length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
-	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV "/polling", NULL, buf, length);
+	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV
+		"/polling", NULL, buf, length);
 	length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
-	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV "/polling", NULL, buf, length);
+	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV
+		"/polling", NULL, buf, length);
 
 	mdelay(500);
 }
@@ -99,10 +106,12 @@ void __exit ath6kl_sdio_exit_msm(void)
 
 	length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
 	/* fall back to polling */
-	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV "/polling", NULL, buf, length);
+	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV
+		"/polling", NULL, buf, length);
 	length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
 	/* fall back to polling */
-	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV "/polling", NULL, buf, length);
+	android_readwrite_file("/sys/devices/platform/" MMC_MSM_DEV
+		"/polling", NULL, buf, length);
 	mdelay(1000);
 
 }

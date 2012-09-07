@@ -30,9 +30,9 @@
 #include "debug.h"
 #include "cfg80211.h"
 
-/* 
- * Define GPIO number for WoW in your platform other than zero 
- * Wake lock will be called when GPIO asserted. 
+/*
+ * Define GPIO number for WoW in your platform other than zero
+ * Wake lock will be called when GPIO asserted.
  */
 #ifdef CONFIG_ANDROID
 #define PLAT_WOW_GPIO_PIN                  26
@@ -147,8 +147,8 @@ static int ath6kl_sdio_func0_cmd52_wr_byte(struct mmc_card *card,
 }
 
 static int ath6kl_sdio_func0_cmd52_rd_byte(struct mmc_card *card,
-                                           unsigned int address,
-                                           unsigned char *byte)
+					unsigned int address,
+					unsigned char *byte)
 {
 	struct mmc_command io_cmd;
 	u32 err;
@@ -160,9 +160,8 @@ static int ath6kl_sdio_func0_cmd52_rd_byte(struct mmc_card *card,
 	io_cmd.flags = MMC_RSP_R5 | MMC_CMD_AC;
 
 	err = mmc_wait_for_cmd(card->host, &io_cmd, 0);
-	if (!err) {
+	if (!err)
 		*byte = io_cmd.resp[0] & 0xff;
-	}
 
 	return err;
 }
@@ -531,7 +530,7 @@ static int ath6kl_sdio_power_on(struct ath6kl *ar)
 	 * Wait for hardware to initialise. It should take a lot less than
 	 * 10 ms but let's be conservative here.
 	 */
-	msleep(10);
+	usleep_range(10000, 10000);
 
 	ar_sdio->is_disabled = false;
 
@@ -555,7 +554,7 @@ static int ath6kl_sdio_power_off(struct ath6kl *ar)
 	num = ar_sdio->func->num;
 	ar_sdio->func->num = 0;
 	sdio_writeb(ar_sdio->func, 0x05, 0xf0, &ret);
-        ar_sdio->func->num = num;
+	ar_sdio->func->num = num;
 
 	ret = sdio_disable_func(ar_sdio->func);
 	sdio_release_host(ar_sdio->func);
@@ -795,7 +794,7 @@ static int ath6kl_sdio_config(struct ath6kl *ar)
 		unsigned char sdio_irq_mode;
 
 		ret = ath6kl_sdio_func0_cmd52_rd_byte(func->card,
-				CCCR_SDIO_IRQ_MODE_REG,	
+				CCCR_SDIO_IRQ_MODE_REG,
 				&sdio_irq_mode);
 		if (ret) {
 			ath6kl_err("Failed to read CCCR SDIO IRQ mode reg %d\n",
@@ -804,8 +803,8 @@ static int ath6kl_sdio_config(struct ath6kl *ar)
 		} else if (!(sdio_irq_mode & SDIO_IRQ_MODE_ASYNC_4BIT_IRQ)) {
 			/* enable 4-bit ASYNC interrupt on AR6003 or later */
 			ret = ath6kl_sdio_func0_cmd52_wr_byte(func->card,
-							CCCR_SDIO_IRQ_MODE_REG,
-							(sdio_irq_mode | SDIO_IRQ_MODE_ASYNC_4BIT_IRQ));
+				CCCR_SDIO_IRQ_MODE_REG,
+				(sdio_irq_mode | SDIO_IRQ_MODE_ASYNC_4BIT_IRQ));
 			if (ret) {
 				ath6kl_err("Failed to enable 4-bit async irq mode %d\n",
 					   ret);
@@ -1239,7 +1238,7 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.power_off = ath6kl_sdio_power_off,
 	.stop = ath6kl_sdio_stop,
 	.get_stat = ath6kl_sdio_stat,
-#ifdef CONFIG_HAS_EARLYSUSPEND	
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	.early_suspend = ath6kl_sdio_early_suspend,
 	.late_resume = ath6kl_sdio_late_resume,
 #endif
@@ -1389,7 +1388,7 @@ static const struct sdio_device_id ath6kl_sdio_devices[] = {
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6004_BASE | 0x0))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6004_BASE | 0x1))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6006_BASE | 0x0))},
-        {SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6006_BASE | 0x1))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6006_BASE | 0x1))},
 	{},
 };
 

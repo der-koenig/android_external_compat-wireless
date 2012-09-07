@@ -20,36 +20,87 @@
 #include "hif.h"
 
 enum ATH6KL_MODULE_QUIRKS {
-	ATH6KL_MODULE_SUSPEND_CUTPOWER  = BIT(0), /* enable suspend cutpower */
-	AT6HKL_MODULE_LPL_ENABLE        = BIT(1), /* enable lpl */
-	ATH6KL_MODULE_MIMO_PS_ENABLE    = BIT(2), /* enable mimo ps */
+	/* enable suspend cutpower */
+	ATH6KL_MODULE_SUSPEND_CUTPOWER  = BIT(0),
+
+	/* enable lpl */
+	AT6HKL_MODULE_LPL_ENABLE        = BIT(1),
+
+	/* enable mimo ps */
+	ATH6KL_MODULE_MIMO_PS_ENABLE    = BIT(2),
+
 	/* hole */
-	ATH6KL_MODULE_TESTMODE_ENABLE   = BIT(4), /* enable test mode */
-	ATH6KL_MODULES_ANI_ENABLE       = BIT(5), /* anti-noise-immunity */
-	ATH6KL_MODULE_ENABLE_EPPING		= BIT(6), /* enable endpoing loopback */
-	ATH6KL_MODULE_DISABLE_5G		= BIT(7), /* disable 5G support */
-	ATH6KL_MODULE_P2P_MAX_FW_VIF	= BIT(8), /* enable max. fw vif */
-	ATH6KL_MODULE_P2P_FLOWCTRL	= BIT(9), /* enable p2p flowctrl */
-	ATH6KL_MODULE_ENABLE_USB_REMOTE_WKUP= BIT(10), /* enable usb remote wakeup support */
-	ATH6KL_MODULE_DISABLE_2G_HT40	= BIT(11), /* disable 2.4G HT40 in default */
-	ATH6KL_MODULE_ENABLE_FWLOG	= BIT(12), /* enable fwlog by default */
-	ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND = BIT(13), /* Disable USB Auto-suspend */	
-	ATH6KL_MODULE_ENABLE_KEEPALIVE	= BIT(14), /* enable AP keep-alive by default */
-	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15), /* offload AP keep-alive to supplicant */
-	ATH6KL_MODULE_DISABLE_ADD_P2P_INF = BIT(16), /* disable create dedicated p2p interface */
-	ATH6KL_MODULE_ENABLE_SCHE_SCAN  = BIT(17), /* enable sche-scan */
-	ATH6KL_MODULE_ENABLE_FWLOG_EXT  = BIT(18), /* enable extensive fwlog */
-	ATH6KL_MODULE_ENABLE_P2P_CHANMODE  = BIT(19), /* enable channel-mode select for P2P-GO */
-	ATH6KL_MODULE_DISABLE_WAIT_DEFER = BIT(20), /* not to wait init defer function completed */
-	ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY = BIT(21), /* enable fw crash notify function */
+
+	/* enable test mode */
+	ATH6KL_MODULE_TESTMODE_ENABLE   = BIT(4),
+
+	/* anti-noise-immunity */
+	ATH6KL_MODULES_ANI_ENABLE       = BIT(5),
+
+	/* enable endpoing loopback */
+	ATH6KL_MODULE_ENABLE_EPPING		= BIT(6),
+
+	/* disable 5G support */
+	ATH6KL_MODULE_DISABLE_5G		= BIT(7),
+
+	/* enable max. fw vif */
+	ATH6KL_MODULE_P2P_MAX_FW_VIF	= BIT(8),
+
+	/* enable p2p flowctrl */
+	ATH6KL_MODULE_P2P_FLOWCTRL	= BIT(9),
+
+	/* enable usb remote wakeup support */
+	ATH6KL_MODULE_ENABLE_USB_REMOTE_WKUP = BIT(10),
+
+	/* disable 2.4G HT40 in default */
+	ATH6KL_MODULE_DISABLE_2G_HT40	= BIT(11),
+
+	/* enable fwlog by default */
+	ATH6KL_MODULE_ENABLE_FWLOG	= BIT(12),
+
+	/* Disable USB Auto-suspend */
+	ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND = BIT(13),
+
+	/* enable AP keep-alive by default */
+	ATH6KL_MODULE_ENABLE_KEEPALIVE	= BIT(14),
+
+	/* offload AP keep-alive to supplicant */
+	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15),
+
+	/* disable create dedicated p2p interface */
+	ATH6KL_MODULE_DISABLE_ADD_P2P_INF = BIT(16),
+
+	/* enable sche-scan */
+	ATH6KL_MODULE_ENABLE_SCHE_SCAN  = BIT(17),
+
+	/* enable extensive fwlog */
+	ATH6KL_MODULE_ENABLE_FWLOG_EXT  = BIT(18),
+
+	/* enable channel-mode select for P2P-GO */
+	ATH6KL_MODULE_ENABLE_P2P_CHANMODE  = BIT(19),
+
+	/* not to wait init defer function completed */
+	ATH6KL_MODULE_DISABLE_WAIT_DEFER = BIT(20),
+
+	/* enable fw crash notify function */
+	ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY = BIT(21),
 };
 
 enum ATH6KL_MODULE_P2P {
-	ATH6KL_MODULEP2P_P2P_ENABLE			= BIT(0), /* enable single interface p2p */
-	ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE	= BIT(1), /* enable p2p_concurrent, with dedicate */
-	ATH6KL_MODULEP2P_CONCURRENT_NO_DEDICATE 	= BIT(2), /* enable p2p_concurrent, no dedicate */ 
-	ATH6KL_MODULEP2P_CONCURRENT_COMPAT	 	= BIT(3), /* enable p2p_concurrent, ath6kl-3.2 compatible */ 
-	ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN	 	= BIT(4), /* enable p2p_concurrent with multi-channel */ 
+	/* enable single interface p2p */
+	ATH6KL_MODULEP2P_P2P_ENABLE			= BIT(0),
+
+	/* enable p2p_concurrent, with dedicate */
+	ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE	= BIT(1),
+
+	/* enable p2p_concurrent, no dedicate */
+	ATH6KL_MODULEP2P_CONCURRENT_NO_DEDICATE		= BIT(2),
+
+	/* enable p2p_concurrent, ath6kl-3.2 compatible */
+	ATH6KL_MODULEP2P_CONCURRENT_COMPAT		= BIT(3),
+
+	/* enable p2p_concurrent with multi-channel */
+	ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN		= BIT(4),
 };
 
 enum ATH6K_DEBUG_MASK {
@@ -78,14 +129,14 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_USB_BULK	= BIT(22),
 	ATH6KL_DBG_HTCOEX	= BIT(23),		/* HT20/40 Coexist */
 	ATH6KL_DBG_WLAN_TX_AMSDU = BIT(24),    /* wlan tx a-msdu */
-	ATH6KL_DBG_POWERSAVE 	= BIT(25),    /* power-saving */
+	ATH6KL_DBG_POWERSAVE	= BIT(25),	/* power-saving */
 	ATH6KL_DBG_WOWLAN	= BIT(26),    /* wowlan tracing */
 	ATH6KL_DBG_RTT          = BIT(27),
 	ATH6KL_DBG_FLOWCTRL     = BIT(28),    /* P2P flowctrl */
 	ATH6KL_DBG_KEEPALIVE    = BIT(29),    /* AP keep-alive */
 	/* hole */
-	ATH6KL_DBG_INFO         = BIT(31),    /* keep last */	
-	ATH6KL_DBG_ANY	        = 0xffffffff  /* enable all logs */
+	ATH6KL_DBG_INFO		= BIT(31),    /* keep last */
+	ATH6KL_DBG_ANY		= 0xffffffff  /* enable all logs */
 };
 
 extern unsigned int debug_mask;
@@ -106,9 +157,9 @@ enum ath6kl_war {
 };
 
 static inline int ath6kl_mod_debug_quirks(struct ath6kl *ar,
-                  enum ATH6KL_MODULE_QUIRKS mask)
+	enum ATH6KL_MODULE_QUIRKS mask)
 {
-	if(ar->mod_debug_quirks & mask)
+	if (ar->mod_debug_quirks & mask)
 		return 1;
 	else
 		return 0;

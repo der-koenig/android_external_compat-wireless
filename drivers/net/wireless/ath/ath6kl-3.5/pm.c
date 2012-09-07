@@ -22,19 +22,16 @@ static void ath6kl_early_suspend(struct early_suspend *handler)
 {
 	struct ath6kl *ar = container_of(handler, struct ath6kl, early_suspend);
 
-	if (ar){
+	if (ar)
 		ath6kl_hif_early_suspend(ar);
-	}
 }
 
 static void ath6kl_late_resume(struct early_suspend *handler)
 {
 	struct ath6kl *ar = container_of(handler, struct ath6kl, early_suspend);
 
-	if (ar){
+	if (ar)
 		ath6kl_hif_late_resume(ar);
-	}
-
 }
 #endif
 

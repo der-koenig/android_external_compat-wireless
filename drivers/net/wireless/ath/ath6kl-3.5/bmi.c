@@ -145,13 +145,16 @@ int ath6kl_bmi_read(struct ath6kl *ar, u32 addr, u8 *buf, u32 len)
 					len_remain : ar->bmi.max_data_size;
 		offset = 0;
 		endianBuf32 = cpu_to_le32(cid);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(cid);
 		endianBuf32 = cpu_to_le32(addr);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(addr);
 		endianBuf32 = cpu_to_le32(rx_len);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(len);
 
 		ret = ath6kl_hif_bmi_write(ar, ar->bmi.cmd_buf, offset);
@@ -171,13 +174,13 @@ int ath6kl_bmi_read(struct ath6kl *ar, u32 addr, u8 *buf, u32 len)
 	}
 
 #ifdef __BIG_ENDIAN
-    if(len == 4) {
-    	u32 buf_tmp;
+	if (len == 4) {
+		u32 buf_tmp;
 
-    	memcpy(&buf_tmp, buf, sizeof(u32));
-    	buf_tmp = le32_to_cpu(buf_tmp);
-    	memcpy(buf, &buf_tmp, sizeof(u32));
-    }
+		memcpy(&buf_tmp, buf, sizeof(u32));
+		buf_tmp = le32_to_cpu(buf_tmp);
+		memcpy(buf, &buf_tmp, sizeof(u32));
+	}
 #endif
 
 	return 0;
@@ -231,17 +234,21 @@ int ath6kl_bmi_write(struct ath6kl *ar, u32 addr, u8 *buf, u32 len)
 
 		offset = 0;
 		endianBuf32 = cpu_to_le32(cid);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(cid);
 		endianBuf32 = cpu_to_le32(addr);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(addr);
 		endianBuf32 = cpu_to_le32(tx_len);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(tx_len);
-		if(len == 4){
+		if (len == 4) {
 			endianBuf32 = cpu_to_le32(*((u32 *)src));
-			memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+			memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+				sizeof(endianBuf32));
 		} else {
 			memcpy(&(ar->bmi.cmd_buf[offset]), src, tx_len);
 		}
@@ -308,13 +315,13 @@ int ath6kl_bmi_execute(struct ath6kl *ar, u32 addr, u32 *param)
 	memcpy(param, ar->bmi.cmd_buf, sizeof(*param));
 
 #ifdef __BIG_ENDIAN
-    {
-    	u32 buf_tmp;
+	{
+		u32 buf_tmp;
 
-    	memcpy(&buf_tmp, param, sizeof(u32));
-    	buf_tmp = le32_to_cpu(buf_tmp);
-    	memcpy(param, &buf_tmp, sizeof(u32));
-    }
+		memcpy(&buf_tmp, param, sizeof(u32));
+		buf_tmp = le32_to_cpu(buf_tmp);
+		memcpy(param, &buf_tmp, sizeof(u32));
+	}
 #endif
 
 	return 0;
@@ -403,13 +410,13 @@ int ath6kl_bmi_reg_read(struct ath6kl *ar, u32 addr, u32 *param)
 	memcpy(param, ar->bmi.cmd_buf, sizeof(*param));
 
 #ifdef __BIG_ENDIAN
-    {
-    	u32 buf_tmp;
+	{
+		u32 buf_tmp;
 
-    	memcpy(&buf_tmp, param, sizeof(u32));
-    	buf_tmp = le32_to_cpu(buf_tmp);
-    	memcpy(param, &buf_tmp, sizeof(u32));
-    }
+		memcpy(&buf_tmp, param, sizeof(u32));
+		buf_tmp = le32_to_cpu(buf_tmp);
+		memcpy(param, &buf_tmp, sizeof(u32));
+	}
 #endif
 
 	return 0;
@@ -491,10 +498,12 @@ int ath6kl_bmi_lz_data(struct ath6kl *ar, u8 *buf, u32 len)
 
 		offset = 0;
 		endianBuf32 = cpu_to_le32(cid);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(cid);
 		endianBuf32 = cpu_to_le32(tx_len);
-		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32, sizeof(endianBuf32));
+		memcpy(&(ar->bmi.cmd_buf[offset]), &endianBuf32,
+			sizeof(endianBuf32));
 		offset += sizeof(tx_len);
 		memcpy(&(ar->bmi.cmd_buf[offset]), &buf[len - len_remain],
 			tx_len);

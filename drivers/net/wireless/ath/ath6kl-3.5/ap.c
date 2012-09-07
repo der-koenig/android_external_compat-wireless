@@ -17,23 +17,28 @@
 #include "core.h"
 #include "debug.h"
 
-static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(struct ath6kl_sta *conn, 
-						u16 last_txrx_time, unsigned long now)
+static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(
+						struct ath6kl_sta *conn,
+						u16 last_txrx_time,
+						unsigned long now)
 {
 	u32 diff_ms;
 	enum ap_keepalive_adjust adjust_result = AP_KA_ADJ_ERROR;
 
 	if (conn->last_txrx_time_tgt) {
 		if (last_txrx_time >= conn->last_txrx_time_tgt)
-			diff_ms = (last_txrx_time - conn->last_txrx_time_tgt) << 10;
+			diff_ms =
+			(last_txrx_time - conn->last_txrx_time_tgt) << 10;
 		else	/* wrap */
-			diff_ms = (0xffff - (conn->last_txrx_time_tgt - last_txrx_time)) << 10; 
-		
+			diff_ms =
+			(0xffff - (conn->last_txrx_time_tgt - last_txrx_time))
+			<< 10;
+
 		/* Update to last one. */
 		conn->last_txrx_time_tgt = last_txrx_time;
 		conn->last_txrx_time += msecs_to_jiffies(diff_ms);
 
-		if (conn->last_txrx_time > now) 
+		if (conn->last_txrx_time > now)
 			conn->last_txrx_time = now;
 
 		adjust_result = AP_KA_ADJ_ADJUST;
@@ -49,7 +54,7 @@ static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(struct at
 }
 
 static int _ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif,
-						struct ath6kl_sta *conn, 
+						struct ath6kl_sta *conn,
 						u16 last_txrx_time)
 {
 	struct ap_keepalive_info *ap_keepalive = vif->ap_keepalive_ctx;
@@ -58,12 +63,15 @@ static int _ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif,
 	int action = AP_KA_ACTION_NONE;
 
 	spin_lock_bh(&conn->lock);
-	adjust_result = __ap_keepalive_adjust_txrx_time(conn, last_txrx_time, now);
+	adjust_result = __ap_keepalive_adjust_txrx_time(
+						conn, last_txrx_time, now);
 	if (adjust_result == AP_KA_ADJ_ADJUST) {
-		if (now - conn->last_txrx_time >= msecs_to_jiffies(ap_keepalive->ap_ka_interval))
+		if (now - conn->last_txrx_time >=
+			msecs_to_jiffies(ap_keepalive->ap_ka_interval))
 			action = AP_KA_ACTION_POLL;
 
-		if (now - conn->last_txrx_time >= msecs_to_jiffies(ap_keepalive->ap_ka_remove_time))
+		if (now - conn->last_txrx_time >=
+			msecs_to_jiffies(ap_keepalive->ap_ka_remove_time))
 			action = AP_KA_ACTION_REMOVE;
 	}
 	spin_unlock_bh(&conn->lock);
@@ -76,7 +84,7 @@ static int _ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif,
 		   conn->last_txrx_time_tgt,
 		   conn->last_txrx_time,
 		   now,
-		   (action == AP_KA_ACTION_NONE) ? "NONE" : 
+		   (action == AP_KA_ACTION_NONE) ? "NONE" :
 			((action == AP_KA_ACTION_POLL) ? "POLL" : "REMOVE"));
 
 	return action;
@@ -113,23 +121,25 @@ static int ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif)
 		if (per_sta_stat->aid) {
 			conn = ath6kl_find_sta_by_aid(vif, per_sta_stat->aid);
 			if (conn) {
-				action = _ap_keepalive_update_check_txrx_time(vif, 
-									      conn, 
-									      per_sta_stat->last_txrx_time);
+				action = _ap_keepalive_update_check_txrx_time(
+						vif,
+						conn,
+						per_sta_stat->last_txrx_time);
 
 				if (action == AP_KA_ACTION_POLL) {
-					ath6kl_wmi_ap_poll_sta(ar->wmi, 
-							       vif->fw_vif_idx, 
+					ath6kl_wmi_ap_poll_sta(ar->wmi,
+							       vif->fw_vif_idx,
 							       conn->aid);
 				} else if (action == AP_KA_ACTION_REMOVE) {
-					ath6kl_wmi_ap_set_mlme(ar->wmi, 
-							       vif->fw_vif_idx, 
-							       WMI_AP_DEAUTH,
-							       conn->mac, 
-							       WLAN_REASON_DISASSOC_DUE_TO_INACTIVITY);
+					ath6kl_wmi_ap_set_mlme(ar->wmi,
+					vif->fw_vif_idx,
+					WMI_AP_DEAUTH,
+					conn->mac,
+					WLAN_REASON_DISASSOC_DUE_TO_INACTIVITY);
 				}
 			} else {
-				ath6kl_err("can't find this AID %d in STA list\n", per_sta_stat->aid);
+				ath6kl_err("can't find this AID %d in STA list\n"
+					, per_sta_stat->aid);
 			}
 		}
 	}
@@ -139,7 +149,8 @@ static int ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif)
 
 static void ap_keepalive_start(unsigned long arg)
 {
-	struct ap_keepalive_info *ap_keepalive = (struct ap_keepalive_info *) arg;
+	struct ap_keepalive_info *ap_keepalive =
+		(struct ap_keepalive_info *) arg;
 	struct ath6kl_vif *vif = ap_keepalive->vif;
 	int ret;
 
@@ -149,40 +160,48 @@ static void ap_keepalive_start(unsigned long arg)
 		   "ap_keepalive timer (vif idx %d) sta_list_index %x %s\n",
 		   vif->fw_vif_idx,
 		   vif->sta_list_index,
-		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) ? "preload" : "update check");
+		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) ?
+		   "preload" : "update check");
 
 	if ((vif->nw_type == AP_NETWORK) &&
-	    test_bit(CONNECTED, &vif->flags)) {		
-	    	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
+	    test_bit(CONNECTED, &vif->flags)) {
+		if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
 			ret = ap_keepalive_preload_txrx_time(vif);
-			if (ret) {
-				ath6kl_err("preload last_txrx_time fail, ret %d\n", ret);
-			}
+			if (ret)
+				ath6kl_err(
+				"preload last_txrx_time fail, ret %d\n", ret);
 		} else {
 			/* Update and check last TXRX time each stations. */
 			ret = ap_keepalive_update_check_txrx_time(vif);
-			if (ret) {
-				ath6kl_err("update and check last_txrx_time fail, ret %d\n", ret);
-			}
-	    	}
+			if (ret)
+				ath6kl_err(
+				"update and check last_txrx_time fail, ret %d\n"
+				, ret);
+		}
 
 		if ((ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_START) &&
 		    (ap_keepalive->ap_ka_interval)) {
-		    	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
+			if (ap_keepalive->flags
+			    & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
 				mod_timer(&ap_keepalive->ap_ka_timer,
-					  jiffies + 
-					  msecs_to_jiffies(ATH6KL_AP_KA_PRELOAD_STAT_TIME));
-				ap_keepalive->flags &= ~ATH6KL_AP_KA_FLAGS_PRELOAD_STAT;
-		    	} else {
+				    jiffies +
+				    msecs_to_jiffies(
+					ATH6KL_AP_KA_PRELOAD_STAT_TIME));
+				ap_keepalive->flags &=
+					~ATH6KL_AP_KA_FLAGS_PRELOAD_STAT;
+			} else {
 				mod_timer(&ap_keepalive->ap_ka_timer,
-					  jiffies + 
-					  msecs_to_jiffies(ap_keepalive->ap_ka_interval) -
-					  msecs_to_jiffies(ATH6KL_AP_KA_PRELOAD_STAT_TIME));
-				ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_PRELOAD_STAT;
-		    	}
+					  jiffies +
+					  msecs_to_jiffies(
+					    ap_keepalive->ap_ka_interval) -
+					  msecs_to_jiffies(
+					    ATH6KL_AP_KA_PRELOAD_STAT_TIME));
+				ap_keepalive->flags |=
+					ATH6KL_AP_KA_FLAGS_PRELOAD_STAT;
+			}
 		}
 	}
-	
+
 	return;
 }
 
@@ -203,18 +222,13 @@ struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 	if (mode == AP_KA_MODE_ENABLE) {
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_ENABLED;
 		ap_keepalive->ap_ka_interval = ATH6KL_AP_KA_INTERVAL_DEFAULT;
-		ap_keepalive->ap_ka_reclaim_cycle = ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT;
-
-#ifdef CONFIG_ANDROID
-		if (vif->ar->p2p) {
-			ap_keepalive->ap_ka_interval = ATH6KL_AP_KA_INTERVAL_DEFAULT_P2P;
-			ap_keepalive->ap_ka_reclaim_cycle = ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P;
-		}
-#endif
+		ap_keepalive->ap_ka_reclaim_cycle =
+			ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT;
 	} else if (mode == AP_KA_MODE_BYSUPP)
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_BY_SUPP;
 
-	ap_keepalive->ap_ka_remove_time = ap_keepalive->ap_ka_interval * ap_keepalive->ap_ka_reclaim_cycle;
+	ap_keepalive->ap_ka_remove_time = ap_keepalive->ap_ka_interval *
+		ap_keepalive->ap_ka_reclaim_cycle;
 
 	/* Init. periodic scan timer. */
 	init_timer(&ap_keepalive->ap_ka_timer);
@@ -226,9 +240,10 @@ struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 		   vif->fw_vif_idx,
 		   ap_keepalive->ap_ka_interval,
 		   ap_keepalive->ap_ka_reclaim_cycle,
-		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) ? "ON" : 
-		    ((ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_BY_SUPP) ? "SUPP" : "OFF"));
-		
+		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) ? "ON" :
+		    ((ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_BY_SUPP) ?
+			"SUPP" : "OFF"));
+
 	return ap_keepalive;
 }
 
@@ -265,12 +280,13 @@ int ath6kl_ap_keepalive_start(struct ath6kl_vif *vif)
 		   ap_keepalive->flags);
 
 	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) {
-		mod_timer(&ap_keepalive->ap_ka_timer, 
-				jiffies + 
-				msecs_to_jiffies(ap_keepalive->ap_ka_interval) - 
-				msecs_to_jiffies(ATH6KL_AP_KA_PRELOAD_STAT_TIME));
-		ap_keepalive->flags |= (ATH6KL_AP_KA_FLAGS_START | 
-					ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);		
+		mod_timer(&ap_keepalive->ap_ka_timer,
+				jiffies +
+				msecs_to_jiffies(ap_keepalive->ap_ka_interval) -
+				msecs_to_jiffies(
+				ATH6KL_AP_KA_PRELOAD_STAT_TIME));
+		ap_keepalive->flags |= (ATH6KL_AP_KA_FLAGS_START |
+					ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
 	}
 
 	return 0;
@@ -290,15 +306,15 @@ void ath6kl_ap_keepalive_stop(struct ath6kl_vif *vif)
 
 	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_START) {
 		del_timer(&ap_keepalive->ap_ka_timer);
-		ap_keepalive->flags &= ~(ATH6KL_AP_KA_FLAGS_START | 
+		ap_keepalive->flags &= ~(ATH6KL_AP_KA_FLAGS_START |
 					 ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
 	}
 
 	return;
 }
 
-int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif, 
-			       u32 ap_ka_interval, 
+int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
+			       u32 ap_ka_interval,
 			       u32 ap_ka_reclaim_cycle)
 {
 	struct ap_keepalive_info *ap_keepalive = vif->ap_keepalive_ctx;
@@ -319,7 +335,7 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 
 	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_START) {
 		del_timer(&ap_keepalive->ap_ka_timer);
-		ap_keepalive->flags &= ~(ATH6KL_AP_KA_FLAGS_START | 
+		ap_keepalive->flags &= ~(ATH6KL_AP_KA_FLAGS_START |
 					 ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
 		restart = 1;
 	}
@@ -329,24 +345,31 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 		ap_keepalive->ap_ka_reclaim_cycle = 0;
 		ap_keepalive->flags &= ~ATH6KL_AP_KA_FLAGS_ENABLED;
 	} else {
-		if (ap_ka_interval * ap_ka_reclaim_cycle < ATH6KL_AP_KA_RECLAIM_TIME_MAX) {
+		if (ap_ka_interval * ap_ka_reclaim_cycle <
+			ATH6KL_AP_KA_RECLAIM_TIME_MAX) {
 			ap_keepalive->ap_ka_interval = ap_ka_interval;
 			ap_keepalive->ap_ka_reclaim_cycle = ap_ka_reclaim_cycle;
 		} else {
-			ap_keepalive->ap_ka_interval = ATH6KL_AP_KA_INTERVAL_DEFAULT;
-			ap_keepalive->ap_ka_reclaim_cycle = ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT;
+			ap_keepalive->ap_ka_interval =
+				ATH6KL_AP_KA_INTERVAL_DEFAULT;
+			ap_keepalive->ap_ka_reclaim_cycle =
+				ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT;
 		}
 
-		ap_keepalive->ap_ka_remove_time = ap_keepalive->ap_ka_interval * ap_keepalive->ap_ka_reclaim_cycle;
-		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_ENABLED;	
-			
+		ap_keepalive->ap_ka_remove_time =
+			ap_keepalive->ap_ka_interval *
+			ap_keepalive->ap_ka_reclaim_cycle;
+		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_ENABLED;
+
 		if (restart) {
-			mod_timer(&ap_keepalive->ap_ka_timer, 
-					jiffies + 
-					msecs_to_jiffies(ap_keepalive->ap_ka_interval) -
-					msecs_to_jiffies(ATH6KL_AP_KA_PRELOAD_STAT_TIME * 1000));
-			ap_keepalive->flags |= (ATH6KL_AP_KA_FLAGS_START | 
-						ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
+			mod_timer(&ap_keepalive->ap_ka_timer,
+					jiffies +
+					msecs_to_jiffies(
+					ap_keepalive->ap_ka_interval) -
+					msecs_to_jiffies(
+					ATH6KL_AP_KA_PRELOAD_STAT_TIME * 1000));
+			ap_keepalive->flags |= (ATH6KL_AP_KA_FLAGS_START |
+					    ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
 		}
 	}
 
@@ -355,7 +378,8 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 		   vif->fw_vif_idx,
 		   ap_keepalive->ap_ka_interval,
 		   ap_keepalive->ap_ka_reclaim_cycle,
-		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) ? "ON" : "OFF",
+		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) ?
+			"ON" : "OFF",
 		   restart);
 
 
@@ -363,7 +387,8 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 }
 
 /* Offload to supplicant/hostapd */
-static u32 ap_keepalive_get_inactive_time(struct ath6kl_vif *vif, struct ath6kl_sta *conn)
+static u32 ap_keepalive_get_inactive_time(struct ath6kl_vif *vif,
+					  struct ath6kl_sta *conn)
 {
 	struct wmi_ap_mode_stat *ap_stats = &vif->ap_stats;
 	u32 inact_time = 0;
@@ -371,22 +396,24 @@ static u32 ap_keepalive_get_inactive_time(struct ath6kl_vif *vif, struct ath6kl_
 
 	for (i = 0; i < AP_MAX_NUM_STA; i++) {
 		struct wmi_per_sta_stat *per_sta_stat = &ap_stats->sta[i];
-		
+
 		if (per_sta_stat->aid == conn->aid) {
 			unsigned long now = jiffies;
 
 			spin_lock_bh(&conn->lock);
-			__ap_keepalive_adjust_txrx_time(conn, per_sta_stat->last_txrx_time, now);
+			__ap_keepalive_adjust_txrx_time(
+				conn, per_sta_stat->last_txrx_time, now);
 
 			/* get inactive time. */
-			inact_time = jiffies_to_msecs(now - conn->last_txrx_time);
+			inact_time = jiffies_to_msecs(
+					now - conn->last_txrx_time);
 			spin_unlock_bh(&conn->lock);
 
 			ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
-				   "ap_keepalive inact tgt/hst/now %d %ld %ld \n",
-				   conn->last_txrx_time_tgt,
-				   conn->last_txrx_time,
-				   now);
+			    "ap_keepalive inact tgt/hst/now %d %ld %ld\n",
+			    conn->last_txrx_time_tgt,
+			    conn->last_txrx_time,
+			    now);
 		}
 	}
 
@@ -405,13 +432,13 @@ u32 ath6kl_ap_keepalive_get_inactive_time(struct ath6kl_vif *vif, u8 *mac)
 	} else {
 		inact_time = 0;		/* return -1 ? */
 
-		ath6kl_err("can't find sta %02x:%02x:%02x:%02x:%02x:%02x vif-idx %d\n", 
-			mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 
+		ath6kl_err("can't find sta %02x:%02x:%02x:%02x:%02x:%02x vif-idx %d\n",
+			mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
 			vif->fw_vif_idx);
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
-		   "ap_keepalive inact aid %d inact_time %d ms \n",
+		   "ap_keepalive inact aid %d inact_time %d ms\n",
 		   (conn ? (conn->aid) : 0),
 		   inact_time);
 

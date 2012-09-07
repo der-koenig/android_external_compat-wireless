@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2011 Atheros Communications Inc.
  *
@@ -30,89 +29,89 @@
 #include "core.h"
 #include "debug.h"
 #define MAX_PAYLOAD 1024
-struct sock *ath_nl_sock = NULL;
-u32 gpid=0;
-void ath_netlink_send(char *event_data, u32 event_datalen) 
+
+static struct sock *ath_nl_sock;
+static u32 gpid;
+
+void ath_netlink_send(char *event_data, u32 event_datalen)
 {
-           struct sk_buff *skb = NULL;
-	   struct nlmsghdr *nlh;
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh;
 
-           skb = nlmsg_new(NLMSG_SPACE(event_datalen), GFP_ATOMIC);
-           if (!skb) {
-               ath6kl_err("%s: No memory, \n", __func__);
-               return;
-             }
+	skb = nlmsg_new(NLMSG_SPACE(event_datalen), GFP_ATOMIC);
+	if (!skb) {
+		ath6kl_err("%s: No memory,\n", __func__);
+		return;
+	}
 
-           nlh = nlmsg_put(skb, gpid, 0, 0 , NLMSG_SPACE(event_datalen), 0);
-           if (!nlh) {
-               ath6kl_err("%s: nlmsg_put() failed\n", __func__);
-               return;
-             }
+	nlh = nlmsg_put(skb, gpid, 0, 0 , NLMSG_SPACE(event_datalen), 0);
+	if (!nlh) {
+		ath6kl_err("%s: nlmsg_put() failed\n", __func__);
+		return;
+	}
 
-           memcpy(NLMSG_DATA(nlh), event_data, event_datalen);
+	memcpy(NLMSG_DATA(nlh), event_data, event_datalen);
 
-           NETLINK_CB(skb).pid = 0;        /* from kernel */
-           NETLINK_CB(skb).dst_group = 0;  /* unicast */
-           netlink_unicast(ath_nl_sock, skb, gpid, MSG_DONTWAIT);
+	NETLINK_CB(skb).pid = 0;        /* from kernel */
+	NETLINK_CB(skb).dst_group = 0;  /* unicast */
+	netlink_unicast(ath_nl_sock, skb, gpid, MSG_DONTWAIT);
 }
 
 /* --adhoc_netlink_data_ready--
  * Stub function that does nothing */
-void ath_netlink_reply(int pid,int seq,void *payload) 
+void ath_netlink_reply(int pid, int seq, void *payload)
 {
-    return;
+	return;
 }
 
-/* Receive messages from netlink socket. */ 
+/* Receive messages from netlink socket. */
 static void ath_netlink_receive(struct sk_buff *__skb)
-{ 
-	   struct sk_buff *skb=NULL;
-	   struct nlmsghdr *nlh = NULL;
-	   u_int8_t *data = NULL;
-	   u_int32_t uid, pid, seq;
-	   
-	   
-	   skb = skb_get(__skb);
-           if(skb)
-           {         
-	      /* process netlink message pointed by skb->data */
-	      nlh = (struct nlmsghdr *)skb->data;
-	      pid = NETLINK_CREDS(skb)->pid;
-	      pid = nlh->nlmsg_pid;
-	      uid = NETLINK_CREDS(skb)->uid;
-	      seq = nlh->nlmsg_seq;
-	      data = NLMSG_DATA(nlh);
-     
-	      
-              gpid = pid; 
-		       
-	      ath_netlink_reply(pid, seq,data); 
-              rttm_issue_request(data,nlmsg_len(nlh));
-              kfree_skb(skb);
-           }
-	   return ;
+{
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh = NULL;
+	u_int8_t *data = NULL;
+	u_int32_t uid, pid, seq;
+
+	skb = skb_get(__skb);
+	if (skb) {
+		/* process netlink message pointed by skb->data */
+		nlh = (struct nlmsghdr *)skb->data;
+		pid = NETLINK_CREDS(skb)->pid;
+		pid = nlh->nlmsg_pid;
+		uid = NETLINK_CREDS(skb)->uid;
+		seq = nlh->nlmsg_seq;
+		data = NLMSG_DATA(nlh);
+
+		gpid = pid;
+		ath_netlink_reply(pid, seq, data);
+		rttm_issue_request(data, nlmsg_len(nlh));
+		kfree_skb(skb);
+	}
+	return ;
 }
 
 int ath_netlink_init()
 {
-    if (ath_nl_sock == NULL) {
-        ath_nl_sock = (struct sock *)netlink_kernel_create(&init_net, NETLINK_ATH_EVENT,
-                                   1, &ath_netlink_receive, NULL, THIS_MODULE);
-        if (ath_nl_sock == NULL) {
-            ath6kl_err("%s NetLink Create Failed\n", __func__);
-            return -ENODEV;
-        }
-    }
-    
-    return 0;	
+	if (ath_nl_sock == NULL) {
+		ath_nl_sock = (struct sock *)netlink_kernel_create(
+					&init_net, NETLINK_ATH_EVENT,
+					1, &ath_netlink_receive, NULL,
+					THIS_MODULE);
+		if (ath_nl_sock == NULL) {
+			ath6kl_err("%s NetLink Create Failed\n", __func__);
+			return -ENODEV;
+		}
+	}
+
+	return 0;
 }
 
 int ath_netlink_free(void)
 {
-    if (ath_nl_sock) {
-        netlink_kernel_release(ath_nl_sock);
-        ath_nl_sock = NULL;
-    }
+	if (ath_nl_sock) {
+		netlink_kernel_release(ath_nl_sock);
+		ath_nl_sock = NULL;
+	}
 
-    return 0;
+	return 0;
 }

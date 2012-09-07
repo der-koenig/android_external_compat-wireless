@@ -62,36 +62,35 @@ void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len)
 {
 	struct sk_buff *skb;
 
-        if (!buf || buf_len == 0)
-        {
-	    printk(KERN_ERR "buf buflen is empty\n");
-	    return;
-        }
- 
+	if (!buf || buf_len == 0) {
+		printk(KERN_ERR "buf buflen is empty\n");
+		return;
+	}
+
 	skb = cfg80211_testmode_alloc_event_skb(ar->wiphy, buf_len, GFP_ATOMIC);
 
 	if (!skb) {
-		printk (KERN_ERR "failed to allocate testmode rx skb!\n");
+		printk(KERN_ERR "failed to allocate testmode rx skb!\n");
 		return;
-        }
+	}
 
 	NLA_PUT_U32(skb, ATH6KL_TM_ATTR_CMD, ATH6KL_TM_CMD_TCMD);
 	NLA_PUT(skb, ATH6KL_TM_ATTR_DATA, buf_len, buf);
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
- 
- nla_put_failure:
+
+nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode rx skb!\n");
 }
 
 #ifdef ATH6KL_SUPPORT_WLAN_HB
-void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value, void *buf, size_t buf_len)
+void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value,
+			void *buf, size_t buf_len)
 {
 	struct sk_buff *skb;
 
-	if (!buf || buf_len == 0)
-	{
+	if (!buf || buf_len == 0) {
 		printk(KERN_ERR "buf buflen is empty\n");
 		return;
 	}
@@ -108,7 +107,7 @@ void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value, void *buf, size_t buf_len
 	NLA_PUT(skb, ATH6KL_TM_ATTR_DATA, buf_len, buf);
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
- 
+
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode event skb!\n");
@@ -120,8 +119,7 @@ void ath6kl_tm_disc_event(struct ath6kl *ar, void *buf, size_t buf_len)
 {
 	struct sk_buff *skb;
 
-	if (!buf || buf_len == 0)
-	{
+	if (!buf || buf_len == 0) {
 		printk(KERN_ERR "buf buflen is empty\n");
 		return;
 	}
@@ -137,7 +135,7 @@ void ath6kl_tm_disc_event(struct ath6kl *ar, void *buf, size_t buf_len)
 	NLA_PUT(skb, ATH6KL_TM_ATTR_DATA, buf_len, buf);
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
- 
+
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode event skb!\n");
@@ -241,7 +239,7 @@ struct wlan_hb_params {
 
 		struct {
 			u16 length;
-			u8 filter[64];          
+			u8 filter[64];
 		} udp_filter;
 
 		struct {
@@ -266,7 +264,7 @@ enum nl80211_wifi_disc_cmd {
 
 struct wifi_disc_params {
 	u16 cmd;
-	
+
 	union {
 		struct {
 			u16 length;
@@ -297,12 +295,12 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
 	struct nlattr *tb[ATH6KL_TM_ATTR_MAX + 1];
-        int err, buf_len;
+	int err, buf_len;
 	void *buf;
 
 	err = nla_parse(tb, ATH6KL_TM_ATTR_MAX, data, len,
 			ath6kl_tm_policy);
-         
+
 	if (err)
 		return err;
 
@@ -334,7 +332,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 			return -EINVAL;
 
 		if (!tb[ATH6KL_TM_ATTR_DATA]) {
-			printk("%s: NO DATA\n", __func__);
+			printk(KERN_ERR "%s: NO DATA\n", __func__);
 			return -EINVAL;
 		}
 
@@ -346,90 +344,112 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 		if (hb_params->cmd == NL80211_WLAN_HB_ENABLE) {
 			if (hb_params->enable != 0) {
 				if (hb_params->enable & WLAN_HB_TCP_ENABLE) {
-					ar->wlan_hb_enable |= WLAN_HB_TCP_ENABLE;
+					ar->wlan_hb_enable |=
+						WLAN_HB_TCP_ENABLE;
 
-					if (ath6kl_wmi_set_heart_beat_params(ar->wmi,
-						vif->fw_vif_idx, WLAN_HB_TCP_ENABLE)) {
-						printk("%s: set heart beat enable fail\n", __func__);
+					if (ath6kl_wmi_set_heart_beat_params(
+						ar->wmi,
+						vif->fw_vif_idx,
+						WLAN_HB_TCP_ENABLE)) {
+						printk(KERN_ERR
+						"%s: set heart beat enable fail\n",
+						__func__);
 						return -EINVAL;
 					}
+				} else
+				if (hb_params->enable & WLAN_HB_UDP_ENABLE) {
+					ar->wlan_hb_enable |=
+						WLAN_HB_UDP_ENABLE;
 				}
-				else if (hb_params->enable & WLAN_HB_UDP_ENABLE) {
-					ar->wlan_hb_enable |= WLAN_HB_UDP_ENABLE;
-				}
-			}
-			else {
+			} else {
 				ar->wlan_hb_enable = 0;
 				if (ath6kl_wmi_set_heart_beat_params(ar->wmi,
 					vif->fw_vif_idx, 0)) {
-					printk("%s: set heart beat enable fail\n", __func__);
+					printk(KERN_ERR
+					"%s: set heart beat enable fail\n",
+					__func__);
 					return -EINVAL;
 				}
 			}
 
-		}
-		else if (hb_params->cmd == NL80211_WLAN_TCP_PARAMS) {
-			if (ath6kl_wmi_heart_beat_set_tcp_params(ar->wmi, vif->fw_vif_idx,
+		} else if (hb_params->cmd == NL80211_WLAN_TCP_PARAMS) {
+			if (ath6kl_wmi_heart_beat_set_tcp_params(ar->wmi,
+				vif->fw_vif_idx,
 				hb_params->params.tcp_params.src_port,
 				hb_params->params.tcp_params.dst_port,
 				hb_params->params.tcp_params.timeout)) {
-				printk("%s: set heart beat tcp params fail\n", __func__);
+				printk(KERN_ERR
+				"%s: set heart beat tcp params fail\n",
+				__func__);
 				return -EINVAL;
 			}
 
-		}
-		else if (hb_params->cmd == NL80211_WLAN_TCP_FILTER) {
-                        if (hb_params->params.tcp_filter.length > WMI_MAX_TCP_FILTER_SIZE) {
-				printk("%s: size of tcp filter is too large: %d\n",
-					__func__, hb_params->params.tcp_filter.length);
-                                return -E2BIG;
-                        }
+		} else if (hb_params->cmd == NL80211_WLAN_TCP_FILTER) {
+			if (hb_params->params.tcp_filter.length
+				> WMI_MAX_TCP_FILTER_SIZE) {
+				printk(KERN_ERR "%s: size of tcp filter is too large: %d\n",
+					__func__,
+					hb_params->params.tcp_filter.length);
+				return -E2BIG;
+			}
 
-                        if (ath6kl_wmi_heart_beat_set_tcp_filter(ar->wmi, vif->fw_vif_idx,
-                        	hb_params->params.tcp_filter.filter,
-                        	hb_params->params.tcp_filter.length)) {
-				printk("%s: set heart beat tcp filter fail\n", __func__);
+			if (ath6kl_wmi_heart_beat_set_tcp_filter(ar->wmi,
+				vif->fw_vif_idx,
+				hb_params->params.tcp_filter.filter,
+				hb_params->params.tcp_filter.length)) {
+				printk(KERN_ERR
+				"%s: set heart beat tcp filter fail\n",
+				__func__);
 				return -EINVAL;
 			}
-		}
-		else if (hb_params->cmd == NL80211_WLAN_UDP_PARAMS) {
-			if (ath6kl_wmi_heart_beat_set_udp_params(ar->wmi, vif->fw_vif_idx,
+		} else if (hb_params->cmd == NL80211_WLAN_UDP_PARAMS) {
+			if (ath6kl_wmi_heart_beat_set_udp_params(ar->wmi,
+				vif->fw_vif_idx,
 				hb_params->params.udp_params.src_port,
 				hb_params->params.udp_params.dst_port,
 				hb_params->params.udp_params.interval,
 				hb_params->params.udp_params.timeout)) {
-				printk("%s: set heart beat udp params fail\n", __func__);
+				printk(KERN_ERR
+				"%s: set heart beat udp params fail\n",
+				__func__);
 				return -EINVAL;
 			}
-		}
-		else if (hb_params->cmd == NL80211_WLAN_UDP_FILTER) {
-			if (hb_params->params.udp_filter.length > WMI_MAX_UDP_FILTER_SIZE) {
-				printk("%s: size of udp filter is too large: %d\n",
-					__func__, hb_params->params.udp_filter.length);
+		} else if (hb_params->cmd == NL80211_WLAN_UDP_FILTER) {
+			if (hb_params->params.udp_filter.length
+					> WMI_MAX_UDP_FILTER_SIZE) {
+				printk(KERN_ERR
+				"%s: size of udp filter is too large: %d\n",
+				__func__,
+				hb_params->params.udp_filter.length);
 				return -E2BIG;
 			}
 
-			if (ath6kl_wmi_heart_beat_set_udp_filter(ar->wmi, vif->fw_vif_idx,
+			if (ath6kl_wmi_heart_beat_set_udp_filter(ar->wmi,
+					vif->fw_vif_idx,
 					hb_params->params.udp_filter.filter,
 					hb_params->params.udp_filter.length)) {
-				printk("%s: set heart beat udp filter fail\n", __func__);
+				printk(KERN_ERR
+				"%s: set heart beat udp filter fail\n",
+				__func__);
 				return -EINVAL;
 			}
-		}
-		else if (hb_params->cmd == NL80211_WLAN_NET_INFO) {
-			if (ath6kl_wmi_heart_beat_set_network_info(ar->wmi, vif->fw_vif_idx,
+		} else if (hb_params->cmd == NL80211_WLAN_NET_INFO) {
+			if (ath6kl_wmi_heart_beat_set_network_info(ar->wmi,
+				vif->fw_vif_idx,
 				hb_params->params.net_info.device_ip,
 				hb_params->params.net_info.server_ip,
 				hb_params->params.net_info.gateway_ip,
 				hb_params->params.net_info.gateway_mac)) {
-				printk("%s: set heart beat network information fail\n", __func__);
+				printk(KERN_ERR
+				"%s: set heart beat network information fail\n",
+				__func__);
 				return -EINVAL;
 			}
 		}
 	}
 
-        return 0;
-        break;
+	return 0;
+	break;
 #endif
 #ifdef ATH6KL_SUPPORT_WIFI_DISC
 	case ATH6KL_TM_CMD_WIFI_DISC:
@@ -443,7 +463,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 			return -EINVAL;
 
 		if (!tb[ATH6KL_TM_ATTR_DATA]) {
-			printk("%s: NO DATA\n", __func__);
+			printk(KERN_ERR "%s: NO DATA\n", __func__);
 			return -EINVAL;
 		}
 
@@ -456,90 +476,106 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 			u8 ie_hdr[6] = {0xDD, 0x00, 0x00, 0x03, 0x7f, 0x00};
 			u8 *ie = NULL;
 			u16 ie_length = disc_params->params.ie_params.length;
-			
+
 			ie = kmalloc(ie_length+6, GFP_KERNEL);
 			if (ie == NULL)
 				return -ENOMEM;
-			
+
 			memcpy(ie, ie_hdr, 6);
 			ie[1] = ie_length+4;
-			memcpy(ie+6, disc_params->params.ie_params.ie, ie_length);
+			memcpy(ie+6,
+				disc_params->params.ie_params.ie,
+				ie_length);
 
 			if (ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
-						       WMI_FRAME_PROBE_REQ, ie, ie_length+6)) {
+				WMI_FRAME_PROBE_REQ, ie, ie_length+6)) {
 				kfree(ie);
-				printk("%s: wifi discovery set probe request ie fail\n", __func__);
+				printk(KERN_ERR
+				"%s: wifi discovery set probe request ie fail\n",
+				__func__);
 				return -EINVAL;
 			}
 
 			if (ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
-						       WMI_FRAME_PROBE_RESP, ie, ie_length+6)) {
+				WMI_FRAME_PROBE_RESP, ie, ie_length+6)) {
 				kfree(ie);
-				printk("%s: wifi discovery set probe response ie fail\n", __func__);
+				printk(KERN_ERR
+				"%s: wifi discovery set probe response ie fail\n",
+				__func__);
 				return -EINVAL;
 			}
 
 			kfree(ie);
-		}
-		else if (disc_params->cmd == NL80211_WIFI_DISC_IE_FILTER) {
-			if (ath6kl_wmi_disc_ie_cmd(ar->wmi, vif->fw_vif_idx, 
-					disc_params->params.ie_filter_params.enable, 
-					disc_params->params.ie_filter_params.startPos, 
-					disc_params->params.ie_filter_params.filter, 
-					disc_params->params.ie_filter_params.length)) {
-				printk("%s: wifi discovery set ie filter fail\n", __func__);
+		} else if (disc_params->cmd == NL80211_WIFI_DISC_IE_FILTER) {
+			if (ath6kl_wmi_disc_ie_cmd(ar->wmi, vif->fw_vif_idx,
+				disc_params->params.ie_filter_params.enable,
+				disc_params->params.ie_filter_params.startPos,
+				disc_params->params.ie_filter_params.filter,
+				disc_params->params.ie_filter_params.length)) {
+				printk(KERN_ERR
+				"%s: wifi discovery set ie filter fail\n",
+				__func__);
 				return -EINVAL;
 			}
-		}
-		else if (disc_params->cmd == NL80211_WIFI_DISC_START) {
-                        int band, freq, numPeers, random;
-			
+		} else if (disc_params->cmd == NL80211_WIFI_DISC_START) {
+			int band, freq, numPeers, random;
+
 			if (disc_params->params.start_params.channel <= 14)
 				band = IEEE80211_BAND_2GHZ;
 			else
 				band = IEEE80211_BAND_5GHZ;
-			
-			freq = ieee80211_channel_to_frequency(disc_params->params.start_params.channel, band);
-			if (!freq) {
-				printk("%s: wifi discovery start channel %d error\n", 
-					__func__, disc_params->params.start_params.channel);
-				return -EINVAL;
-			}
-			
-			if (disc_params->params.start_params.numPeers == 0) {
-				numPeers = 1;
-			} else if (disc_params->params.start_params.numPeers > 4) {
-				numPeers = 4;
-			} else {
-				numPeers = disc_params->params.start_params.numPeers;
-			}
-			
-			random = (disc_params->params.start_params.random == 0) ? 100 : disc_params->params.start_params.random;
-			
-			if (disc_params->params.start_params.txPower)
-				ath6kl_wmi_set_tx_pwr_cmd(ar->wmi, vif->fw_vif_idx, disc_params->params.start_params.txPower);
-			
-			/* disable scanning */
-			ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0xFFFF, 0, 0,
-					      0, 0, 0, 0, 0, 0, 0);
 
-			if (ath6kl_wmi_disc_mode_cmd(ar->wmi, vif->fw_vif_idx, 1, freq, 
-							disc_params->params.start_params.dwellTime,
-							disc_params->params.start_params.sleepTime, 
-							random, numPeers, 
-							disc_params->params.start_params.peerTimeout)) {
-				printk("%s: wifi discovery start fail\n", __func__);
+			freq = ieee80211_channel_to_frequency(
+				disc_params->params.start_params.channel, band);
+			if (!freq) {
+				printk(KERN_ERR "%s: wifi discovery start channel %d error\n",
+				__func__,
+				disc_params->params.start_params.channel);
 				return -EINVAL;
 			}
-		}
-		else if (disc_params->cmd == NL80211_WIFI_DISC_STOP) {
-			if (ath6kl_wmi_disc_mode_cmd(ar->wmi, vif->fw_vif_idx, 0, 0, 0, 0, 0, 0, 0)) {
-				printk("%s: wifi discovery stop fail\n", __func__);
+
+			if (disc_params->params.start_params.numPeers == 0)
+				numPeers = 1;
+			else if (disc_params->params.start_params.numPeers > 4)
+				numPeers = 4;
+			else
+				numPeers =
+				disc_params->params.start_params.numPeers;
+
+			random = (disc_params->params.start_params.random == 0)
+				? 100 : disc_params->params.start_params.random;
+
+			if (disc_params->params.start_params.txPower)
+				ath6kl_wmi_set_tx_pwr_cmd(ar->wmi,
+				vif->fw_vif_idx,
+				disc_params->params.start_params.txPower);
+
+			/* disable scanning */
+			ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
+						0xFFFF, 0, 0,
+						0, 0, 0, 0, 0, 0, 0);
+
+			if (ath6kl_wmi_disc_mode_cmd(ar->wmi,
+				vif->fw_vif_idx, 1, freq,
+				disc_params->params.start_params.dwellTime,
+				disc_params->params.start_params.sleepTime,
+				random, numPeers,
+				disc_params->params.start_params.peerTimeout
+				)) {
+				printk(KERN_ERR "%s: wifi discovery start fail\n",
+						__func__);
+				return -EINVAL;
+			}
+		} else if (disc_params->cmd == NL80211_WIFI_DISC_STOP) {
+			if (ath6kl_wmi_disc_mode_cmd(ar->wmi, vif->fw_vif_idx,
+							0, 0, 0, 0, 0, 0, 0)) {
+				printk(KERN_ERR "%s: wifi discovery stop fail\n",
+						__func__);
 				return -EINVAL;
 			}
 		}
 	}
-	
+
 	return 0;
 	break;
 #endif

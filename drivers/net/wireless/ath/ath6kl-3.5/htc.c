@@ -95,8 +95,8 @@ static void ath6kl_credit_init(struct ath6kl_htc_credit_info *cred_info,
 		 */
 	}
 	/*
-	 * For ath6kl_credit_seek function, 
-	 * it use list_for_each_entry_reverse to walk around the whole ep list. 
+	 * For ath6kl_credit_seek function,
+	 * it use list_for_each_entry_reverse to walk around the whole ep list.
 	 * Therefore assign this lowestpri_ep_dist after walk around the ep_list
 	 */
 	cred_info->lowestpri_ep_dist = cur_ep_dist->list;
@@ -225,8 +225,10 @@ static void ath6kl_credit_seek(struct ath6kl_htc_credit_info *cred_info,
 	if (ep_dist->svc_id == WMI_CONTROL_SVC)
 		goto out;
 	/*
-	 * For WMM test case 5.2.27 step8 on 1x1 solution, it has two streams VI and VO
-	 * If VO don't seek credit from VI, VO throughput can't pass the criterion
+	 * For WMM test case 5.2.27 step8 on 1x1 solution,
+	 * it has two streams VI and VO.
+	 * If VO don't seek credit from VI,
+	 * VO throughput can't pass the criterion.
 	 */
 	if (ep_dist->svc_id == WMI_DATA_VI_SVC)
 		if ((ep_dist->cred_assngd >= ep_dist->cred_norm))
@@ -2456,8 +2458,10 @@ static int ath6kl_htc_mbox_conn_service(struct htc_target *target,
 		conn_resp->resp_code = resp_msg->status;
 		/* check response status */
 		if (resp_msg->status != HTC_SERVICE_SUCCESS) {
-			ath6kl_err("target failed service 0x%X connect request (status:%d)\n",
-				   le16_to_cpu(resp_msg->svc_id), resp_msg->status);
+			ath6kl_err("target failed service 0x%X "
+				"connect request (status:%d)\n",
+				le16_to_cpu(resp_msg->svc_id),
+				resp_msg->status);
 			status = -ENOMEM;
 			goto fail_tx;
 		}
