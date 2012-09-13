@@ -67,8 +67,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* offload AP keep-alive to supplicant */
 	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15),
 
-	/* disable create dedicated p2p interface */
-	ATH6KL_MODULE_DISABLE_ADD_P2P_INF = BIT(16),
+	/* disable create virtual interface automatically */
+	ATH6KL_MODULE_DISABLE_AUTO_ADD_INF = BIT(16),
 
 	/* enable sche-scan */
 	ATH6KL_MODULE_ENABLE_SCHE_SCAN  = BIT(17),
@@ -101,6 +101,11 @@ enum ATH6KL_MODULE_P2P {
 
 	/* enable p2p_concurrent with multi-channel */
 	ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN		= BIT(4),
+
+	/* hole */
+
+	/* enable p2p_concurrent with softAP */
+	ATH6KL_MODULEP2P_CONCURRENT_AP			= BIT(8),
 };
 
 enum ATH6K_DEBUG_MASK {
@@ -112,7 +117,7 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_HTC		= BIT(5),
 	ATH6KL_DBG_HIF		= BIT(6),
 	ATH6KL_DBG_IRQ		= BIT(7),     /* interrupt processing */
-	/* hole */
+	ATH6KL_DBG_ACL		= BIT(8),     /* access control list */
 	/* hole */
 	ATH6KL_DBG_WMI          = BIT(10),    /* wmi tracing */
 	ATH6KL_DBG_TRC	        = BIT(11),    /* generic func tracing */

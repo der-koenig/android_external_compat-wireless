@@ -470,6 +470,10 @@ int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
 		*subopmode = HI_OPTION_FW_SUBMODE_P2PDEV;
 	} else {
 		switch (type) {
+		case NL80211_IFTYPE_AP:
+			*opmode = HI_OPTION_FW_MODE_AP;
+			*subopmode = HI_OPTION_FW_SUBMODE_NONE;
+			break;
 		case NL80211_IFTYPE_STATION:
 			*opmode = HI_OPTION_FW_MODE_BSS_STA;
 			*subopmode = HI_OPTION_FW_SUBMODE_NONE;
@@ -484,7 +488,6 @@ int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
 			break;
 		case NL80211_IFTYPE_UNSPECIFIED:
 		case NL80211_IFTYPE_ADHOC:
-		case NL80211_IFTYPE_AP:
 		case NL80211_IFTYPE_AP_VLAN:
 		case NL80211_IFTYPE_WDS:
 		case NL80211_IFTYPE_MONITOR:
@@ -561,8 +564,9 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 						WMI_TIMEOUT/10);
 			WARN_ON(left <= 0);
 
-			/* WAR: Revert HT CAP, only for P2P-GO case. */
-			if (subopmode == HI_OPTION_FW_SUBMODE_P2PGO) {
+			/* WAR: Revert HT CAP, only for AP/P2P-GO cases. */
+			if ((type == NL80211_IFTYPE_AP) ||
+				(type == NL80211_IFTYPE_P2P_GO)) {
 #ifdef CONFIG_ATH6KL_DEBUG
 				struct ht_cap_param *htCapParam;
 

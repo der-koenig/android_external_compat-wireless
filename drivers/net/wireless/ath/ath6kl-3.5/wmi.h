@@ -2863,6 +2863,28 @@ struct wmi_ap_poll_sta_cmd {
 	u8 reserved[7];
 } __packed;
 
+/* AP ACL */
+#define AP_ACL_SIZE             10
+
+#define AP_ACL_DISABLE		0x00
+#define AP_ACL_ALLOW_MAC	0x01
+#define AP_ACL_DENY_MAC		0x02
+#define AP_ACL_RETAIN_LIST_MASK	0x80
+
+struct wmi_ap_acl_policy_cmd {
+	u8 policy;
+} __packed;
+
+#define ADD_MAC_ADDR		1
+#define DEL_MAC_ADDR		2
+
+struct wmi_ap_acl_mac_list_cmd {
+	u8 action;
+	u8 index;
+	u8 mac[ETH_ALEN];
+	u8 wildcard;
+} __packed;
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
@@ -3113,4 +3135,7 @@ int ath6kl_wmi_disc_mode_cmd(struct wmi *wmi, u8 if_idx, u16 enable,
 	u16 channel, u32 home_dwell_time, u32 sleepTime, u32 random,
 	u32 numPeers, u32 peerTimeout);
 int ath6kl_wmi_ap_poll_sta(struct wmi *wmi, u8 if_idx, u8 aid);
+int ath6kl_wmi_ap_acl_policy(struct wmi *wmi, u8 if_idx, u8 policy);
+int ath6kl_wmi_ap_acl_mac_list(struct wmi *wmi, u8 if_idx,
+	u8 idx, u8 *mac_addr, u8 action);
 #endif /* WMI_H */

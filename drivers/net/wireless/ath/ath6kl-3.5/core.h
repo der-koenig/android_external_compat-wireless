@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.125
+#define __BUILD_VERSION_ 3.5.0.128
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -89,6 +89,14 @@
 
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_P2P
+#define ATH6KL_DEVNAME_DEF_P2P		"p2p%d"
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_AP
+#define ATH6KL_DEVNAME_DEF_AP		"ap%d"
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -336,7 +344,7 @@ struct ath6kl_android_wifi_priv_cmd {
 	"ath6k/AR6006/hw1.0/bdata.bin"
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
 
-#define AR6004_MAX_64K_FW_SIZE                58880
+#define AR6004_MAX_64K_FW_SIZE                65536
 
 #define BDATA_CHECKSUM_OFFSET                 4
 #define BDATA_MAC_ADDR_OFFSET                 8
@@ -862,6 +870,7 @@ struct ath6kl_vif {
 	enum scanband_type scanband_type;
 	u32 scanband_chan;
 	struct ap_keepalive_info *ap_keepalive_ctx;
+	struct ap_acl_info *ap_acl_ctx;
 	struct timer_list sche_scan_timer;
 	int sche_scan_interval;			/* in ms. */
 
@@ -1014,8 +1023,11 @@ struct ath6kl {
 
 	struct dentry *debugfs_phy;
 
-	bool p2p;			/* Support P2P or not */
-	bool p2p_concurrent;		/* Support P2P-Concurrent or not */
+	/* Support P2P or not */
+	bool p2p;
+
+	/* Support P2P-Concurrent or not */
+	bool p2p_concurrent;
 
 	/* Support P2P-Multi-Channel-Concurrent or not */
 	bool p2p_multichan_concurrent;
@@ -1025,6 +1037,17 @@ struct ath6kl {
 
 	/* Support ath6kl-3.2's P2P-Concurrent or not */
 	bool p2p_compat;
+
+	/*
+	 * STA + AP is a special mode.
+	 * Reuse P2P framwork but no P2P function.
+	 * At least 4VAPs to support STA(1) + P2P(2) + AP(1) mode.
+	 */
+#define IS_STA_AP_ONLY(_ar)					\
+	((_ar)->p2p_concurrent_ap && ((_ar)->vif_max < 4))
+
+	/* Support P2P-Concurrent with softAP or not */
+	bool p2p_concurrent_ap;
 
 	bool sche_scan;
 

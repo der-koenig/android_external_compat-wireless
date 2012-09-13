@@ -199,7 +199,7 @@ ath6kl_wmi_pktlog_event_rx(struct wmi *wmi, u8 *datap, u32 len)
 	struct ath6kl_vif *vif = ath6kl_get_vif_by_index(wmi->parent_dev, 0);
 
 	if (vif == NULL)
-		return -1;
+		return -EINVAL;
 
 	while (len - offset > 0) {
 		switch (le16_to_cpu(log_hdr->log_type)) {
@@ -1103,7 +1103,7 @@ ath6kl_wmi_stat_rx_rate_event(struct ath6kl_vif *vif,
 	if (!diag_local_test) {
 		if (!(vif->diag.cfg_mask & WIFI_DIAG_RX_STAT_EVENTENABLE)
 			|| diag_evt_callback.diag_event_callback == NULL)
-			return -1;
+			return -EINVAL;
 	}
 
 	printk(KERN_INFO "ath6kl_wmi_stat_rx_rate_event\n");
@@ -1111,7 +1111,7 @@ ath6kl_wmi_stat_rx_rate_event(struct ath6kl_vif *vif,
 	size = sizeof(*pwifi_diag_rxstat_event) + sizeof(*prx_stat_event_data);
 	skb = ath6kl_wmi_get_new_buf(size);
 	if (!skb)
-		return -1;
+		return -ENOMEM;
 
 	pwifi_diag_rxstat_event = (struct wifi_diag_event_t *) skb->data;
 	pwifi_diag_rxstat_event->event_id = WIFI_DIAG_RX_STAT_EVENTID;
@@ -1148,7 +1148,7 @@ ath6kl_wmi_stat_tx_rate_event(struct ath6kl_vif *vif,
 	if (!diag_local_test) {
 		if (!(vif->diag.cfg_mask & WIFI_DIAG_TX_STAT_EVENTENABLE)
 			|| diag_evt_callback.diag_event_callback == NULL)
-			return -1;
+			return -EINVAL;
 	}
 
 	printk(KERN_INFO "ath6kl_wmi_stat_tx_rate_event\n");
@@ -1156,7 +1156,7 @@ ath6kl_wmi_stat_tx_rate_event(struct ath6kl_vif *vif,
 	size = sizeof(*pwifi_diag_txstat_event) + sizeof(*ptx_stat_event_data);
 	skb = ath6kl_wmi_get_new_buf(size);
 	if (!skb)
-		return -1;
+		return -ENOMEM;
 
 	pwifi_diag_txstat_event = (struct wifi_diag_event_t *) skb->data;
 	pwifi_diag_txstat_event->event_id = WIFI_DIAG_TX_STAT_EVENTID;
@@ -1193,14 +1193,14 @@ ath6kl_wmi_interference_event(struct ath6kl_vif *vif,
 	if (!diag_local_test) {
 		if (!(vif->diag.cfg_mask & WIFI_DIAG_INTERFERENCE_EVENTENABLE)
 			|| diag_evt_callback.diag_event_callback == NULL)
-			return -1;
+			return -EINVAL;
 	}
 
 	size = sizeof(*pwifi_diag_interference_event) +
 		sizeof(*pinterference_event_data);
 	skb = ath6kl_wmi_get_new_buf(size);
 	if (!skb)
-		return -1;
+		return -ENOMEM;
 
 	pwifi_diag_interference_event = (struct wifi_diag_event_t *) skb->data;
 	pwifi_diag_interference_event->event_id =
@@ -1240,13 +1240,13 @@ ath6kl_wmi_rxtime_event(struct ath6kl_vif *vif,
 	if (!diag_local_test) {
 		if (!(vif->diag.cfg_mask & WIFI_DIAG_RX_TIME_EVENTENABLE)
 			|| diag_evt_callback.diag_event_callback == NULL)
-			return -1;
+			return -EINVAL;
 	}
 
 	size = sizeof(*pwifi_diag_rxtime_event) + sizeof(*prxtime_event_data);
 	skb = ath6kl_wmi_get_new_buf(size);
 	if (!skb)
-		return -1;
+		return -ENOMEM;
 
 	pwifi_diag_rxtime_event = (struct wifi_diag_event_t *) skb->data;
 	pwifi_diag_rxtime_event->event_id = WIFI_DIAG_RX_TIME_EVENTID;

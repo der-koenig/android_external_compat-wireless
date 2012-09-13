@@ -3886,6 +3886,176 @@ static const struct file_operations fops_chan_list = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for AP ACL */
+static ssize_t ath6kl_ap_acl_policy_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	char *p;
+	int policy;
+	char buf[32];
+	ssize_t len;
+	int i;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	p = buf;
+
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &policy);
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+
+		/* Now, only for softap mode, not P2P-GO mode */
+		if ((vif) &&
+		    (vif->wdev.iftype == NL80211_IFTYPE_AP))
+			ath6kl_ap_acl_config_policy(vif, (u8)policy);
+	}
+
+	return count;
+}
+
+static ssize_t ath6kl_ap_acl_policy_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(256)
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	u8 *buf;
+	unsigned int len = 0;
+	int i;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if ((vif) &&
+		    (vif->ap_acl_ctx)) {
+			struct ap_acl_info *ap_acl = vif->ap_acl_ctx;
+
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				"int-%d acl_policy %s\n",
+				vif->fw_vif_idx,
+				(ap_acl->acl_mode ?
+					(ap_acl->acl_mode == AP_ACL_MODE_DENY ?
+						"DENY" : "ALLOW") :
+					"DISABLED"));
+		}
+	}
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+/* debug fs for AP ACL */
+static const struct file_operations fops_ap_acl_policy = {
+	.read = ath6kl_ap_acl_policy_read,
+	.write = ath6kl_ap_acl_policy_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+/* File operation functions for AP ACL MAC-LIST */
+static ssize_t ath6kl_ap_acl_mac_list_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	char *p;
+	bool removed;
+	char buf[32];
+	u8 mac_addr[ETH_ALEN];
+	int addr[ETH_ALEN];
+	ssize_t len;
+	int i;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	p = buf;
+
+	SKIP_SPACE;
+
+	if (sscanf(p, "%02x:%02x:%02x:%02x:%02x:%02x",
+		   &addr[0], &addr[1], &addr[2],
+		   &addr[3], &addr[4], &addr[5]) != ETH_ALEN)
+		return -EINVAL;
+
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	if (strstr(p, "r"))
+		removed = true;
+	else
+		removed = false;
+
+	for (i = 0; i < ETH_ALEN; i++)
+		mac_addr[i] = (u8)addr[i];
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+
+		/* Now, only for softap mode, not P2P-GO mode */
+		if ((vif) &&
+		    (vif->wdev.iftype == NL80211_IFTYPE_AP))
+			ath6kl_ap_acl_config_mac_list(vif,
+						mac_addr,
+						removed);
+	}
+
+	return count;
+}
+
+static ssize_t ath6kl_ap_acl_mac_list_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(2048)
+	struct ath6kl *ar = file->private_data;
+	u8 *buf;
+	unsigned int len = 0;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	len = ath6kl_ap_acl_dump(ar, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+/* debug fs for AP ACL MAC-LIST */
+static const struct file_operations fops_ap_acl_mac_list = {
+	.read = ath6kl_ap_acl_mac_list_read,
+	.write = ath6kl_ap_acl_mac_list_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -4039,6 +4209,12 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("chan_list", S_IRUSR,
 			    ar->debugfs_phy, ar, &fops_chan_list);
+
+	debugfs_create_file("ap_acl_policy", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_ap_acl_policy);
+
+	debugfs_create_file("ap_acl_mac_list", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_ap_acl_mac_list);
 
 	return 0;
 }

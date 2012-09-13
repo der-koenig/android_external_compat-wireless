@@ -39,6 +39,12 @@
 #define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
 #define BTCOEX_A2DP_WLAN_MAX_DUR			   25
 
+#define WMI_SCO_CONFIG_FLAG_ALLOW_OPTIMIZATION   (1 << 0)
+#define WMI_SCO_CONFIG_FLAG_IS_EDR_CAPABLE       (1 << 1)
+#define WMI_SCO_CONFIG_FLAG_IS_BT_MASTER         (1 << 2)
+#define WMI_SCO_CONFIG_FLAG_FW_DETECT_OF_PER     (1 << 3)
+#define WMI_SCO_CONFIG_FLAG_DIS_SCANCONN_STOMP   (1 << 4)
+
 static inline struct sk_buff *ath6kl_wmi_btcoex_get_new_buf(u32 size)
 {
 	struct sk_buff *skb;
@@ -188,6 +194,19 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 		}
 
 		pspoll_config->a2dp_wlan_max_dur = BTCOEX_A2DP_WLAN_MAX_DUR;
+	}
+	break;
+	case WMI_SET_BTCOEX_SCO_CONFIG_CMDID:
+	{
+		struct wmi_set_btcoex_sco_config_cmd *cmd =
+			(struct wmi_set_btcoex_sco_config_cmd *)buf;
+		struct btcoex_sco_config *sco_config = &cmd->sco_config;
+		if (sco_config->sco_flags &
+			WMI_SCO_CONFIG_FLAG_IS_EDR_CAPABLE) {
+			/* disable stomping BT during WLAN scan/connection */
+			sco_config->sco_flags |= cpu_to_le32(
+				WMI_SCO_CONFIG_FLAG_DIS_SCANCONN_STOMP);
+		}
 	}
 	break;
 

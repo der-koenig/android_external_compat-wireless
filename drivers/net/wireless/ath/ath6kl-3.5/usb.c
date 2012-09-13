@@ -95,7 +95,7 @@ struct ath6kl_usb_pipe {
 	struct sk_buff_head io_comp_queue;
 	struct usb_endpoint_descriptor *ep_desc;
 	struct ath6kl_usb_pipe_stat usb_pipe_stat;
-	volatile unsigned long worker_lock;
+	unsigned long worker_lock;
 };
 
 #define ATH6KL_USB_PIPE_FLAG_TX    (1 << 0)

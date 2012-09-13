@@ -163,6 +163,28 @@ static struct ieee80211_supported_band ath6kl_band_5ghz = {
 	},
 };
 
+/* Max. 2 devices = 1STA + 1SOFTAP */
+static const struct ieee80211_iface_limit ath6kl_limits_sta_ap[] = {
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_STATION),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_AP),
+	},
+};
+
+static struct ieee80211_iface_combination
+	ath6kl_iface_combinations_sta_ap[] = {
+	{
+		.num_different_channels = 1,
+		.max_interfaces = 2,
+		.limits = ath6kl_limits_sta_ap,
+		.n_limits = ARRAY_SIZE(ath6kl_limits_sta_ap),
+	},
+};
+
 /* Max. 2 devices = 1STA&P2P-DEVICE + 1P2P-GO|P2P-CLIENT */
 static const struct ieee80211_iface_limit ath6kl_limits_p2p_concurrent2[] = {
 	{
@@ -229,6 +251,33 @@ static struct ieee80211_iface_combination
 		.max_interfaces = 4,
 		.limits = ath6kl_limits_p2p_concurrent4,
 		.n_limits = ARRAY_SIZE(ath6kl_limits_p2p_concurrent4),
+	},
+};
+
+/* Max. 4 devices = 1STA + 1P2P-DEVICE + 1P2P-GO|P2P-CLIENT + 1SOFTAP */
+static const struct ieee80211_iface_limit ath6kl_limits_p2p_concurrent4_1[] = {
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_STATION),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_AP),
+	},
+	{	/* Treat P2P-DEVICE as P2P-CLIENT */
+		.max = 2,
+		.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
+				BIT(NL80211_IFTYPE_P2P_GO),
+	},
+};
+
+static struct ieee80211_iface_combination
+	ath6kl_iface_combinations_p2p_concurrent4_1[] = {
+	{
+		.num_different_channels = 1,
+		.max_interfaces = 4,
+		.limits = ath6kl_limits_p2p_concurrent4_1,
+		.n_limits = ARRAY_SIZE(ath6kl_limits_p2p_concurrent4_1),
 	},
 };
 
@@ -394,6 +443,14 @@ static bool ath6kl_is_wmm_ie(const u8 *pos)
 		pos[5] == 0x02);
 }
 
+static bool ath6kl_is_vendor_acl_ie(const u8 *pos)
+{
+	return (pos[0] == WLAN_EID_VENDOR_SPECIFIC &&
+		pos[1] > 6 &&
+		pos[2] == 0x00 && pos[3] == 0x50 && pos[4] == 0x00 &&
+		((pos[5] == 0x00) || (pos[5] == 0x01)));
+}
+
 static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 				    size_t ies_len)
 {
@@ -482,6 +539,17 @@ static bool ath6kl_is_valid_iftype(struct ath6kl *ar, enum nl80211_iftype type,
 	 * firmware design in the dedicate interface case
 	 */
 	if (ar->p2p_concurrent && ar->p2p_dedicate) {
+		if ((ar->p2p_concurrent_ap) &&
+			(type == NL80211_IFTYPE_AP)) {
+			for (i = 0; i < ar->max_norm_iface; i++) {
+				if ((ar->avail_idx_map >> i) & BIT(0)) {
+					*if_idx = i;
+					return true;
+				}
+			}
+			return false;
+		}
+
 		if (type == NL80211_IFTYPE_STATION ||
 			type == NL80211_IFTYPE_AP ||
 			type == NL80211_IFTYPE_ADHOC) {
@@ -2454,6 +2522,12 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	if (wow->four_way_handshake || wow->any)
 		filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
 
+	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
+	if (vif->auth_mode == WPA2_AUTH_CCKM || vif->auth_mode == WPA2_PSK_AUTH
+	  || vif->auth_mode == WPA_AUTH_CCKM || vif->auth_mode == WPA_PSK_AUTH){
+		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
+	}
+
 	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
 					  ATH6KL_WOW_MODE_ENABLE,
 					  filter,
@@ -3019,6 +3093,121 @@ static int ath6kl_set_rsn_cap(struct wiphy *wiphy, struct net_device *dev,
 	return ret;
 }
 
+static int ath6kl_set_ap_acl(struct wiphy *wiphy, struct net_device *dev,
+				u8 *ies, int ies_len)
+{
+#define _MAX_ACL_SETTING_SIZE (2 + ATH6KL_AP_ACL_MAX_NUM * (ETH_ALEN + 6))
+	struct ath6kl_vif *vif = netdev_priv(dev);
+	u8 *pos, *acl_setting;
+	bool found = false;
+
+	/* Now, only accept ACL for softAP mode. */
+	if (vif->wdev.iftype == NL80211_IFTYPE_P2P_GO)
+		return 0;
+
+	/*
+	 * ACL-DENY IE Format : [0xdd][len][0x00 0x50 0x00][0x00]
+	 *                      [policy][num_mac]
+	 *                      [mac_address (6B)][vlan id (6B)]
+	 *                      ...
+	 * ACL-ACPT IE Format : [0xdd][len][0x00 0x50 0x00][0x01]
+	 *                      [policy][num_mac]
+	 *                      [mac_address (6B)][vlan id (6B)]
+	 *                      ...
+	 */
+	if (ies && ies_len) {
+		pos = ies;
+
+		while (pos + 1 < ies + ies_len) {
+			if (pos + 2 + pos[1] > ies + ies_len)
+				break;
+
+			/*
+			 * Get ACL-DENY & ACL-ACPE IEs at the same time and
+			 * just take the one we need.
+			 */
+			if (ath6kl_is_vendor_acl_ie(pos) &&
+			    (!(pos[5] ^ pos[6]))) {
+				found = true;
+				break;
+			}
+
+			pos += 2 + pos[1];
+		}
+	}
+
+	if (found) {
+		u8 policy = pos[6];
+		int i, num = pos[7];
+
+		/*
+		 * In current hostapd design, policy
+		 *  0 is DENY
+		 *  1 is ALLOW
+		 * DENY and number 0 menas OPEN.
+		 */
+		if ((policy > 1) || (num > ATH6KL_AP_ACL_MAX_NUM)) {
+			ath6kl_dbg(ATH6KL_DBG_ACL,
+				"ap_acl wrong setting policy %d, num %d\n",
+				policy, num);
+
+			return 0;
+		}
+
+		acl_setting = kzalloc(_MAX_ACL_SETTING_SIZE, GFP_KERNEL);
+		if (!acl_setting) {
+			ath6kl_err("kzalloc fail for acl_setting\n");
+			return 0;
+		}
+
+		if ((pos[1] - 4) > _MAX_ACL_SETTING_SIZE) {
+			ath6kl_err("wrong ACL setting length!\n");
+			return 0;
+		}
+
+		memcpy(acl_setting, &pos[6], (pos[1] - 4));
+
+		/* check if need to reconfig */
+		if (vif->ap_acl_ctx->last_acl_config &&
+			(memcmp(vif->ap_acl_ctx->last_acl_config,
+				acl_setting,
+				_MAX_ACL_SETTING_SIZE) == 0)) {
+			kfree(acl_setting);
+
+			ath6kl_dbg(ATH6KL_DBG_ACL,
+				"ap_acl ignore the same ACL setting\n");
+
+			return 0;
+		}
+
+		if (vif->ap_acl_ctx->last_acl_config != NULL)
+			kfree(vif->ap_acl_ctx->last_acl_config);
+		vif->ap_acl_ctx->last_acl_config = acl_setting;
+
+		if (policy == 0)
+			policy = AP_ACL_MODE_DENY;
+		else if (policy == 1)
+			policy = AP_ACL_MODE_ALLOW;
+		else
+			policy = AP_ACL_MODE_DISABLE;
+
+		ath6kl_dbg(ATH6KL_DBG_ACL,
+				"ap_acl reconfig policy %d num %d\n",
+				policy, num);
+
+		ath6kl_ap_acl_config_mac_list_reset(vif);
+		ath6kl_ap_acl_config_policy(vif, policy);
+
+		for (i = 0; i < num; i++)
+			ath6kl_ap_acl_config_mac_list(vif,
+						acl_setting + (2 + i * 12),
+						false);
+	}
+
+	return 0;
+#undef _MAX_ACL_SETTING_SIZE
+}
+
 static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 			    struct beacon_parameters *info, bool add)
 {
@@ -3096,6 +3285,12 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 	if (!add) {
 		up(&ar->sem);
 		return 0;
+	}
+
+	/* Configure ACL. */
+	if (ath6kl_set_ap_acl(wiphy, dev, info->tail, info->tail_len)) {
+		up(&ar->sem);
+		return -EIO;
 	}
 
 	/* Turn-on/off uAPS. */
@@ -3302,6 +3497,9 @@ static int ath6kl_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 
 	/* Stop keep-alive. */
 	ath6kl_ap_keepalive_stop(vif);
+
+	/* Stop ACL. */
+	ath6kl_ap_acl_stop(vif);
 
 	ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
 	clear_bit(CONNECTED, &vif->flags);
@@ -3868,11 +4066,12 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_8021X_4WAYHS\n");
 		filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
 	}
-#if 0
-	if (wow->rfkill_release)
-		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_NWK_DISASSOC\n");
 
-#endif
+	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
+	if (vif->auth_mode == WPA2_AUTH_CCKM || vif->auth_mode == WPA2_PSK_AUTH
+	  || vif->auth_mode == WPA_AUTH_CCKM || vif->auth_mode == WPA_PSK_AUTH){
+		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
+	}
 
 	if (filter || wow->n_patterns) {
 		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "Set filter: 0x%x ", filter);
@@ -4115,35 +4314,57 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	ar->p2p_multichan_concurrent =
 		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN);
 
-	ar->p2p_compat = !!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
+	ar->p2p_compat =
+		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
+
+	ar->p2p_concurrent_ap =
+		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_AP);
 
 	WARN_ON((!ar->p2p_concurrent) && (ar->p2p_multichan_concurrent));
-
-	ath6kl_info("P2P %s, concurrent %s, %s dedicate p2p-device, multi-channel-concurrent %s, p2p-compat %s\n",
-		(ar->p2p ? "enable" : "disable"),
-		(ar->p2p_concurrent ? "on" : "off"),
-		(ar->p2p_dedicate ? "with" : "without"),
-		(ar->p2p_multichan_concurrent ? "enable" : "disable"),
-		(ar->p2p_compat ? "enable (ignore p2p_dedicate)" : "disable"));
+	WARN_ON((ar->p2p_concurrent_ap) &&
+		((!ar->p2p_concurrent) || (!ar->p2p_dedicate)));
 
 	ar->wiphy = wiphy;
 	ar->dev = dev;
 
 	if (ar->p2p_concurrent) {
-		if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_MAX_FW_VIF)) {
+		if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_MAX_FW_VIF))
 			ar->vif_max = 4;
-		} else {
+		else {
 			if (ar->p2p_dedicate)
 				ar->vif_max = ATH6KL_VIF_MAX;
 			else
-				ar->vif_max = 2;/*currently we only support 2*/
+				ar->vif_max = 2; /*currently we only support 2*/
 
 		}
-	} else {
+	} else
 		ar->vif_max = 1;
-	}
+
+	/*
+	 * P2P-Concurrent w/ softAP:
+	 *  STA + AP       : vif_max == 3 && ar->p2p_concurrent_ap
+	 *  STA + P2P + AP : vif_max >= 4 && ar->p2p_concurrent_ap (not yet)
+	 *  w/ MCC         : (not yet)
+	 */
+	WARN_ON((ar->p2p_concurrent_ap) && (ar->vif_max >= 4));
+	WARN_ON((ar->p2p_concurrent_ap) && (ar->p2p_multichan_concurrent));
 
 	ar->max_norm_iface = 1;
+	if (ar->p2p_concurrent_ap)
+		ar->max_norm_iface++;
+
+	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
+		" %s dedicate p2p-device,"
+		" multi-channel-concurrent %s, p2p-compat %s\n",
+		ar->vif_max,
+		ar->max_norm_iface,
+		(ar->p2p ? "enable" : "disable"),
+		(ar->p2p_concurrent ? "on" : "off"),
+		(ar->p2p_concurrent_ap ? "with softAP" : ""),
+		(ar->p2p_dedicate ? "with" : "without"),
+		(ar->p2p_multichan_concurrent ? "enable" : "disable"),
+		(ar->p2p_compat ? "enable (ignore p2p_dedicate)" : "disable"));
+
 
 	spin_lock_init(&ar->lock);
 	spin_lock_init(&ar->list_lock);
@@ -4192,8 +4413,10 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 				 BIT(NL80211_IFTYPE_ADHOC) |
 				 BIT(NL80211_IFTYPE_AP);
 	if (ar->p2p) {
-		wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_GO) |
-					  BIT(NL80211_IFTYPE_P2P_CLIENT);
+		if (!IS_STA_AP_ONLY(ar))
+			wiphy->interface_modes |=
+				BIT(NL80211_IFTYPE_P2P_GO) |
+				BIT(NL80211_IFTYPE_P2P_CLIENT);
 	}
 
 	if (ar->p2p_concurrent) {
@@ -4223,14 +4446,28 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 			WARN_ON(1);
 		}
 
+		/* Overwrite it if P2P-Concurrent w/ softAP mode. */
+		if (ar->p2p_concurrent_ap) {
+			if (IS_STA_AP_ONLY(ar)) {
+				ieee80211_iface_combination =
+				ath6kl_iface_combinations_sta_ap;
+				wiphy->n_iface_combinations = ARRAY_SIZE(
+				ath6kl_iface_combinations_sta_ap);
+			} else {
+				ieee80211_iface_combination =
+				ath6kl_iface_combinations_p2p_concurrent4_1;
+				wiphy->n_iface_combinations = ARRAY_SIZE(
+				ath6kl_iface_combinations_p2p_concurrent4_1);
+			}
+		}
+
 		/* Update max. channel support */
 		if (ar->p2p_multichan_concurrent) {
 			ieee80211_iface_combination[0].num_different_channels =
 			ieee80211_iface_combination[0].max_interfaces;
 		}
 
-		wiphy->iface_combinations =
-				ieee80211_iface_combination;
+		wiphy->iface_combinations = ieee80211_iface_combination;
 
 		if (ar->p2p_compat) {
 			wiphy->n_iface_combinations = 0;
@@ -4383,6 +4620,12 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+	vif->ap_acl_ctx = ath6kl_ap_acl_init(vif);
+	if (!vif->ap_acl_ctx) {
+		ath6kl_err("failed to initialize ap_acl\n");
+		return -ENOMEM;
+	}
+
 	setup_timer(&vif->disconnect_timer, disconnect_timer_handler,
 		    (unsigned long) vif->ndev);
 	set_bit(WMM_ENABLED, &vif->flags);
@@ -4419,6 +4662,8 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 	ath6kl_p2p_ps_deinit(vif);
 
 	ath6kl_ap_keepalive_deinit(vif);
+
+	ath6kl_ap_acl_deinit(vif);
 
 	ath6kl_sched_scan_deinit(vif);
 
@@ -4497,6 +4742,7 @@ err:
 	ath6kl_htcoex_deinit(vif);
 	ath6kl_p2p_ps_deinit(vif);
 	ath6kl_ap_keepalive_deinit(vif);
+	ath6kl_ap_acl_deinit(vif);
 	free_netdev(ndev);
 	return NULL;
 }
@@ -4534,23 +4780,40 @@ void ath6kl_core_init_defer(struct work_struct *wk)
 	ar = container_of(wk, struct ath6kl,
 			    init_defer_wk);
 
-	/* Automatically create p2p0 interface in P2P concurrent mode. */
-	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_ADD_P2P_INF) &&
+	/* Automatically create virtual interface. */
+	if (!ath6kl_mod_debug_quirks(ar,
+		ATH6KL_MODULE_DISABLE_AUTO_ADD_INF) &&
 	    (ar->p2p_concurrent) &&
 	    (ar->p2p_dedicate)) {
-		ath6kl_info("Create dedicated p2p interface\n");
+		if (!IS_STA_AP_ONLY(ar)) {
+			ath6kl_info("Create dedicated p2p interface\n");
 
-		params.use_4addr = 0;
-
-		rtnl_lock();
-		if (ath6kl_cfg80211_add_iface(ar->wiphy,
-						"p2p%d",
-						NL80211_IFTYPE_STATION,
-						NULL,
-						&params) == NULL) {
-			ath6kl_err("Create dedicated p2p interface fail!\n");
+			rtnl_lock();
+			params.use_4addr = 0;
+			if (ath6kl_cfg80211_add_iface(ar->wiphy,
+							ATH6KL_DEVNAME_DEF_P2P,
+							NL80211_IFTYPE_STATION,
+							NULL,
+							&params) == NULL) {
+				ath6kl_err("Create dedicated p2p interface fail!\n");
+			}
+			rtnl_unlock();
 		}
-		rtnl_unlock();
+
+		if (ar->p2p_concurrent_ap) {
+			ath6kl_info("Create concurrent ap interface\n");
+
+			rtnl_lock();
+			params.use_4addr = 0;
+			if (ath6kl_cfg80211_add_iface(ar->wiphy,
+							ATH6KL_DEVNAME_DEF_AP,
+							NL80211_IFTYPE_AP,
+							NULL,
+							&params) == NULL) {
+				ath6kl_err("Create concurrent ap interface fail!\n");
+			}
+			rtnl_unlock();
+		}
 	}
 
 	/* Wait target report WMI_REGDOMAIN_EVENTID done */

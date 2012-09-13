@@ -23,8 +23,9 @@
 
 int _string_to_mac(char *string, int len, u8 *macaddr)
 {
-	int i, k;
+	int i, k, ret;
 	char temp[3] = {0};
+	unsigned long value;
 
 	/* assume string is "00:11:22:33:44:55". */
 	if (!string || (len < 17))
@@ -34,7 +35,10 @@ int _string_to_mac(char *string, int len, u8 *macaddr)
 	i = k = 0;
 	while (i < len) {
 		memcpy(temp, string + i, 2);
-		macaddr[k++] = (u8)simple_strtoul(temp, NULL, 16);
+		ret = kstrtoul(temp, 16, &value);
+		if (ret < 0)
+			return -1;
+		macaddr[k++] = (u8)value;
 		i += 3;
 	}
 
@@ -1530,6 +1534,9 @@ static int ath6kl_close(struct net_device *dev)
 	/* Stop keep-alive. */
 	ath6kl_ap_keepalive_stop(vif);
 
+	/* Stop ACL. */
+	ath6kl_ap_acl_stop(vif);
+
 	ath6kl_disconnect(vif);
 
 	vif->sme_state = SME_DISCONNECTED;
@@ -1656,6 +1663,56 @@ static int ath6kl_ioctl_p2p_dev_addr(struct ath6kl_vif *vif,
 	return ret;
 }
 
+static int ath6kl_ioctl_ap_acl(struct ath6kl_vif *vif,
+				char *user_cmd,
+				u8 *buf,	/* reserved for GET op */
+				int len)
+{
+	int ret = 0;
+
+	/* SET::ACL {MACCMD|ADDMAC|DELMAC} {{[0|1|2]}|{MAC ADDRESS}} */
+	if (len > 1) {
+		int i, policy, addr[ETH_ALEN];
+		u8 mac_addr[ETH_ALEN];
+
+		if (strstr(user_cmd, "MACCMD ")) {
+			user_cmd += 7;
+			sscanf(user_cmd, "%d", &policy);
+			ret = ath6kl_ap_acl_config_policy(vif, policy);
+		} else if (strstr(user_cmd, "ADDMAC ")) {
+			user_cmd += 7;
+			if (sscanf(user_cmd, "%02x:%02x:%02x:%02x:%02x:%02x",
+				   &addr[0], &addr[1], &addr[2],
+				   &addr[3], &addr[4], &addr[5]) != ETH_ALEN)
+				return -EFAULT;
+
+			for (i = 0; i < ETH_ALEN; i++)
+				mac_addr[i] = (u8)addr[i];
+
+			ret = ath6kl_ap_acl_config_mac_list(vif,
+							    mac_addr,
+							    false);
+		} else if (strstr(user_cmd, "DELMAC ")) {
+			user_cmd += 7;
+			if (sscanf(user_cmd, "%02x:%02x:%02x:%02x:%02x:%02x",
+				   &addr[0], &addr[1], &addr[2],
+				   &addr[3], &addr[4], &addr[5]) != ETH_ALEN)
+				return -EFAULT;
+
+			for (i = 0; i < ETH_ALEN; i++)
+				mac_addr[i] = (u8)addr[i];
+
+			ret = ath6kl_ap_acl_config_mac_list(vif,
+							    mac_addr,
+							    true);
+		} else
+			ret = -EFAULT;
+	} else
+		ret = -EFAULT;
+
+	return ret;
+}
+
 static int ath6kl_ioctl_standard(struct net_device *dev,
 				struct ifreq *rq, int cmd)
 {
@@ -1697,6 +1754,11 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					ret = ath6kl_ioctl_p2p_dev_addr(vif,
 							user_cmd,
 							android_cmd.buf);
+				else if (strstr(user_cmd, "ACL "))
+					ret = ath6kl_ioctl_ap_acl(vif,
+						(user_cmd + 4),
+						NULL,
+						(android_cmd.used_len - 4));
 				else {
 					ath6kl_dbg(ATH6KL_DBG_TRC,
 						"not yet support \"%s\"\n",
