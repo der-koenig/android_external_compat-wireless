@@ -24,14 +24,12 @@
 	((filp)->f_path.dentry->d_inode)
 
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
 
 #define ATH6KL_INIT_TIMEOUT	(3 * HZ)
 
 wait_queue_head_t init_wq;
 static atomic_t init_done = ATOMIC_INIT(0);
 
-#endif
 
 int android_readwrite_file(const char *filename,
 			   char *rbuf, const char *wbuf, size_t length)
@@ -182,7 +180,6 @@ void __exit ath6kl_sdio_exit_platform(void)
 
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
 int ath6kl_wait_for_init_comp(void)
 {
 	int left;
@@ -205,4 +202,3 @@ void ath6kl_notify_init_done(void)
 	atomic_set(&init_done, 1);
 	wake_up(&init_wq);
 }
-#endif

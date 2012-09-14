@@ -322,7 +322,7 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	 */
 	connect.conn_flags |= HTC_CONN_FLGS_REDUCE_CRED_DRIB;
 	connect.conn_flags &= ~HTC_CONN_FLGS_THRESH_MASK;
-	connect.conn_flags |= HTC_CONN_FLGS_THRESH_LVL_HALF;
+	connect.conn_flags |= HTC_CONN_FLGS_THRESH_LVL_QUAT;
 
 	connect.svc_id = WMI_DATA_BE_SVC;
 
@@ -1975,10 +1975,14 @@ err_wq:
 
 void ath6kl_init_hw_restart(struct ath6kl *ar)
 {
+	clear_bit(WMI_READY, &ar->flag);
+
 	ath6kl_cfg80211_stop_all(ar);
 
-	if (__ath6kl_init_hw_stop(ar))
+	if (__ath6kl_init_hw_stop(ar)) {
+		ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Failed to stop during fw error recovery\n");
 		return;
+	}
 
 	if (__ath6kl_init_hw_start(ar)) {
 		ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Failed to restart during fw error recovery\n");
