@@ -61,7 +61,7 @@ static void ath6kl_recovery_hb_timer(unsigned long data)
 	struct ath6kl *ar = (struct ath6kl *) data;
 	int err;
 
-	if (!ar->fw_recovery.enable)
+	if (!ar->fw_recovery.enable || !test_bit(WMI_READY, &ar->flag))
 		return;
 
 	if (ar->fw_recovery.hb_pending)
