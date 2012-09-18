@@ -2667,8 +2667,6 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 	}
 #endif
 
-	ath6kl_cfg80211_stop_all(ar);
-
 	for (i = 0; i < ar->vif_max; i++) {
 		if (need_suspend_vif & (1 << i)) {
 			vif = ath6kl_get_vif_by_index(ar, i);
@@ -2679,6 +2677,9 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 			}
 		}
 	}
+
+	ath6kl_cfg80211_stop_all(ar);
+
 
 	return ret;
 }

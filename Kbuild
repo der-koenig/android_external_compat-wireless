@@ -21,7 +21,7 @@ wlan-y += drivers/net/wireless/ath/ath6kl-3.5/pm.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/p2p.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/ap.o
 
-ccflags-y += -DATH6KL_MCC
+ccflags-y += -DCONFIG_ATH6KL_UB134
 endif
 
 ifeq ($(BUILD_ATH6KL_VER_32), 1)
