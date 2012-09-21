@@ -857,19 +857,6 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		return 0;
 	}
 
-	/*
-	 * Wait for sometime for recovery work to get
-	 * scheduled on any detected firmware error.
-	 */
-	if (ar->fw_recovery.err_reason)
-		usleep_range(5000, 10000);
-
-	ar->fw_recovery.enable = false;
-
-	cancel_work_sync(&ar->fw_recovery.recovery_work);
-
-	ar->fw_recovery.err_reason = 0;
-
 	if (ar->suspend_mode == WLAN_POWER_STATE_WOW ||
 	    (!ar->suspend_mode && wow)) {
 
@@ -959,11 +946,12 @@ static int ath6kl_sdio_resume(struct ath6kl *ar)
 
 	case ATH6KL_STATE_RESUMING:
 		break;
+
+	case ATH6KL_STATE_RECOVERY:
+		break;
 	}
 
 	ath6kl_cfg80211_resume(ar);
-
-	ar->fw_recovery.enable = true;
 
 	return 0;
 }

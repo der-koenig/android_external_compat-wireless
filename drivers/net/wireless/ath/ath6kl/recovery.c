@@ -18,50 +18,49 @@
 #include "cfg80211.h"
 #include "debug.h"
 
-static void ath6kl_fw_reset(struct ath6kl *ar)
-{
-
-	ath6kl_cfg80211_stop_all(ar);
-
-	if (ath6kl_init_hw_stop(ar))
-		return;
-
-	if (ath6kl_init_hw_start(ar))
-		ath6kl_dbg(ATH6KL_DBG_ERR_RECOVERY, "Failed to restart during fw error recovery\n");
-}
-
-static void ath6kl_fw_err_recovery_work(struct work_struct *work)
+static void ath6kl_recovery_work(struct work_struct *work)
 {
 	struct ath6kl *ar = container_of(work, struct ath6kl,
 					 fw_recovery.recovery_work);
 
-	set_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag);
-
-	ath6kl_fw_reset(ar);
-
-	clear_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag);
+	ath6kl_init_hw_restart(ar);
 
 	clear_bit(WMI_CTRL_EP_FULL, &ar->flag);
 
 	ar->fw_recovery.err_reason = 0;
 }
 
-void ath6kl_fw_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason)
+void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason)
 {
-	ath6kl_dbg(ATH6KL_DBG_ERR_RECOVERY, "Fw error detected, reason:%d\n",
+	ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Fw error detected, reason:%d\n",
 		   reason);
 
 	set_bit(reason, &ar->fw_recovery.err_reason);
 
-	if (ar->fw_recovery.enable &&
-	    !test_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag))
+	if (ar->fw_recovery.enable && ar->state != ATH6KL_STATE_RECOVERY)
 		queue_work(ar->ath6kl_wq, &ar->fw_recovery.recovery_work);
 }
 
-void ath6kl_fw_err_recovery_init(struct ath6kl *ar)
+void ath6kl_recovery_init(struct ath6kl *ar)
 {
 	struct ath6kl_fw_recovery *recovery = &ar->fw_recovery;
 
 	recovery->enable = true;
-	INIT_WORK(&recovery->recovery_work, ath6kl_fw_err_recovery_work);
+	INIT_WORK(&recovery->recovery_work, ath6kl_recovery_work);
+}
+
+void ath6kl_recovery_cleanup(struct ath6kl *ar)
+{
+	ar->fw_recovery.enable = false;
+
+	cancel_work_sync(&ar->fw_recovery.recovery_work);
+}
+
+void ath6kl_recovery_suspend(struct ath6kl *ar)
+{
+	ath6kl_recovery_cleanup(ar);
+
+	/* Process pending fw error detection */
+	if (ar->fw_recovery.err_reason)
+		ath6kl_init_hw_restart(ar);
 }
