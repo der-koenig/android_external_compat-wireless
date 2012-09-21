@@ -548,6 +548,11 @@
  *	%NL80211_ATTR_IFINDEX is now on %NL80211_ATTR_WIPHY_FREQ with
  *	%NL80211_ATTR_WIPHY_CHANNEL_TYPE.
  *
+ * @NL80211_CMD_CONN_FAILED: connection request to an AP failed; used to
+ *	notify userspace that AP has rejected the connection request from a
+ *	station, due to particular reason. %NL80211_ATTR_CONN_FAILED_REASON
+ *	is used for this.
+ *
  * @NL80211_CMD_BTCOEX: Send BTCOEX command to firmware.  This is
  *  used by the firmware to be aware of BT traffic and share radio
  *	between WiFi and BT.
@@ -708,6 +713,8 @@ enum nl80211_commands {
 	NL80211_CMD_SET_NOACK_MAP, /* just to maintain ABI with CH_SWITCH_NOTIFY */
 
 	NL80211_CMD_CH_SWITCH_NOTIFY,
+
+	NL80211_CMD_CONN_FAILED,
 
 	NL80211_CMD_SET_MAC_ACL,
 
@@ -1211,6 +1218,19 @@ enum nl80211_commands {
  * @NL80211_ATTR_BG_SCAN_PERIOD: Background scan period in seconds
  *      or 0 to disable background scan.
  *
+ * @NL80211_ATTR_WDEV: wireless device identifier, used for pseudo-devices
+ *	that don't have a netdev (u64)
+ *
+ * @NL80211_ATTR_USER_REG_HINT_TYPE: type of regulatory hint passed from
+ *	userspace. If unset it is assumed the hint comes directly from
+ *	a user. If set code could specify exactly what type of source
+ *	was used to provide the hint. For the different types of
+ *	allowed user regulatory hints see nl80211_user_reg_hint_type.
+ *
+ * @NL80211_ATTR_CONN_FAILED_REASON: The reason for which AP has rejected
+ *	the connection request from a station. nl80211_connect_failed_reason
+ *	enum has different reasons of connection failure.
+ *
  * @NL80211_ATTR_BTCOEX_DATA: BT coex wmi command.
  *
  * @NL80211_ATTR_ACS: Enable automatic channel selection by the driver
@@ -1476,6 +1496,12 @@ enum nl80211_attrs {
 	NL80211_ATTR_RX_SIGNAL_DBM,
 
 	NL80211_ATTR_BG_SCAN_PERIOD,
+
+	NL80211_ATTR_WDEV,
+
+	NL80211_ATTR_USER_REG_HINT_TYPE,
+
+	NL80211_ATTR_CONN_FAILED_REASON,
 
 	NL80211_ATTR_STA_CAP_REQ,
 
@@ -2919,4 +2945,16 @@ enum nl80211_acl_policy_attr {
 	NL80211_ACL_POLICY_ACCEPT,
 	NL80211_ACL_POLICY_DENY,
 };
+
+/**
+ * enum nl80211_connect_failed_reason - connection request failed reasons
+ * @NL80211_CONN_FAIL_MAX_CLIENTS: Maximum number of clients that can be
+ *	handled by the AP is reached.
+ * @NL80211_CONN_FAIL_BLOCKED_CLIENT: Client's MAC is in the AP's blocklist.
+ * */
+enum nl80211_connect_failed_reason {
+	NL80211_CONN_FAIL_MAX_CLIENTS,
+	NL80211_CONN_FAIL_BLOCKED_CLIENT,
+};
+
 #endif /* __LINUX_NL80211_H */
