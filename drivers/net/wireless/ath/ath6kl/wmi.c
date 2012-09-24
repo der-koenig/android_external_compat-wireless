@@ -922,8 +922,12 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 
 		regpair = ath6kl_get_regpair((u16) reg_code);
 		country = ath6kl_regd_find_country_by_rd((u16) reg_code);
-		ath6kl_dbg(ATH6KL_DBG_WMI, "Regpair used: 0x%0x\n",
-				regpair->regDmnEnum);
+		if (regpair)
+			ath6kl_dbg(ATH6KL_DBG_WMI, "Regpair used: 0x%0x\n",
+				   regpair->regDmnEnum);
+		else
+			ath6kl_warn("Regpair not found reg_code 0x%0x\n",
+				    reg_code);
 	}
 
 	if (country) {
@@ -1155,6 +1159,9 @@ static int ath6kl_wmi_bitrate_reply_rx(struct wmi *wmi, u8 *datap, int len)
 		rate = RATE_AUTO;
 	} else {
 		index = reply->rate_index & 0x7f;
+		if (WARN_ON_ONCE(index > (RATE_MCS_7_40 + 1)))
+			return -EINVAL;
+
 		sgi = (reply->rate_index & 0x80) ? 1 : 0;
 		rate = wmi_rate_tbl[index][sgi];
 	}
