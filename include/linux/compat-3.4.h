@@ -5,8 +5,45 @@
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0))
 
+
+/* This backports:
+ *
+ * commit 63b2001169e75cd71e917ec953fdab572e3f944a
+ * Author: Thomas Gleixner <tglx@linutronix.de>
+ * Date:   Thu Dec 1 00:04:00 2011 +0100
+
+ * 	sched/wait: Add __wake_up_all_locked() API
+ */
+#include <linux/wait.h>
+extern void compat_wake_up_locked(wait_queue_head_t *q, unsigned int mode, int nr);
+#define wake_up_all_locked(x)	compat_wake_up_locked((x), TASK_NORMAL, 0)
+
+/* This backports:
+ *
+ * commit a8203725dfded5c1f79dca3368a4a273e24b59bb
+ * Author: Xi Wang <xi.wang@gmail.com>
+ * Date:   Mon Mar 5 15:14:41 2012 -0800
+ *
+ * 	slab: introduce kmalloc_array()
+ */
+
+/* SIZE_MAX is backported in compat-3.5.h so include it */
+#include <linux/compat-3.5.h>
+static inline void *kmalloc_array(size_t n, size_t size, gfp_t flags)
+{
+	if (size != 0 && n > SIZE_MAX / size)
+		return NULL;
+	return __kmalloc(n * size, flags);
+}
+
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+extern const struct i2c_algorithm i2c_bit_algo;
+#endif
+
+extern int simple_open(struct inode *inode, struct file *file);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28))
 #define skb_add_rx_frag(skb, i, page, off, size, truesize) \

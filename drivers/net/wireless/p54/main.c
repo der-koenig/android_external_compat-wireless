@@ -27,7 +27,7 @@
 #include "p54.h"
 #include "lmac.h"
 
-static int modparam_nohwcrypt;
+static bool modparam_nohwcrypt;
 module_param_named(nohwcrypt, modparam_nohwcrypt, bool, S_IRUGO);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption.");
 MODULE_AUTHOR("Michael Wu <flamingice@sourmilk.net>");
@@ -227,6 +227,9 @@ static int p54_add_interface(struct ieee80211_hw *dev,
 			     struct ieee80211_vif *vif)
 {
 	struct p54_common *priv = dev->priv;
+	int err;
+
+	vif->driver_flags |= IEEE80211_VIF_BEACON_FILTER;
 
 	mutex_lock(&priv->conf_mutex);
 	if (priv->mode != NL80211_IFTYPE_MONITOR) {
@@ -249,9 +252,9 @@ static int p54_add_interface(struct ieee80211_hw *dev,
 	}
 
 	memcpy(priv->mac_addr, vif->addr, ETH_ALEN);
-	p54_setup_mac(priv);
+	err = p54_setup_mac(priv);
 	mutex_unlock(&priv->conf_mutex);
-	return 0;
+	return err;
 }
 
 static void p54_remove_interface(struct ieee80211_hw *dev,
@@ -360,18 +363,11 @@ out:
 	return ret;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 static u64 p54_prepare_multicast(struct ieee80211_hw *dev,
 				 struct netdev_hw_addr_list *mc_list)
-#else
-static u64 p54_prepare_multicast(struct ieee80211_hw *dev, int mc_count,
-				 struct dev_addr_list *ha)
-#endif
 {
 	struct p54_common *priv = dev->priv;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	struct netdev_hw_addr *ha;
-#endif
 	int i;
 
 	BUILD_BUG_ON(ARRAY_SIZE(priv->mc_maclist) !=
@@ -381,23 +377,12 @@ static u64 p54_prepare_multicast(struct ieee80211_hw *dev, int mc_count,
 	 * Otherwise the firmware will drop it and ARP will no longer work.
 	 */
 	i = 1;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	priv->mc_maclist_num = netdev_hw_addr_list_count(mc_list) + i;
 	netdev_hw_addr_list_for_each(ha, mc_list) {
 		memcpy(&priv->mc_maclist[i], ha->addr, ETH_ALEN);
-#else
-	priv->mc_maclist_num = mc_count + i;
-	while (i <= mc_count) {
-		if (!ha)
-			break;
-		memcpy(&priv->mc_maclist[i], ha->dmi_addr, ETH_ALEN);
-#endif
 		i++;
 		if (i >= ARRAY_SIZE(priv->mc_maclist))
 			break;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-		ha = ha->next;
-#endif
 	}
 
 	return 1; /* update */
@@ -752,7 +737,6 @@ struct ieee80211_hw *p54_init_common(size_t priv_data_len)
 		     IEEE80211_HW_SIGNAL_DBM |
 		     IEEE80211_HW_SUPPORTS_PS |
 		     IEEE80211_HW_PS_NULLFUNC_STACK |
-		     IEEE80211_HW_BEACON_FILTER |
 		     IEEE80211_HW_REPORTS_TX_ACK_STATUS;
 
 	dev->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
@@ -812,11 +796,14 @@ int p54_register_common(struct ieee80211_hw *dev, struct device *pdev)
 		dev_err(pdev, "Cannot register device (%d).\n", err);
 		return err;
 	}
+	priv->registered = true;
 
 #ifdef CONFIG_P54_LEDS
 	err = p54_init_leds(priv);
-	if (err)
+	if (err) {
+		p54_unregister_common(dev);
 		return err;
+	}
 #endif /* CONFIG_P54_LEDS */
 
 	dev_info(pdev, "is registered as '%s'\n", wiphy_name(dev->wiphy));
@@ -856,7 +843,11 @@ void p54_unregister_common(struct ieee80211_hw *dev)
 	p54_unregister_leds(priv);
 #endif /* CONFIG_P54_LEDS */
 
-	ieee80211_unregister_hw(dev);
+	if (priv->registered) {
+		priv->registered = false;
+		ieee80211_unregister_hw(dev);
+	}
+
 	mutex_destroy(&priv->conf_mutex);
 	mutex_destroy(&priv->eeprom_mutex);
 }

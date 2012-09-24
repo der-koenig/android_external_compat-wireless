@@ -21,8 +21,10 @@
 
 */
 
+#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/printk.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
@@ -738,6 +740,50 @@ done:
 	return ret;
 }
 
+static void if_cs_prog_firmware(struct lbs_private *priv, int ret,
+				 const struct firmware *helper,
+				 const struct firmware *mainfw)
+{
+	struct if_cs_card *card = priv->card;
+
+	if (ret) {
+		pr_err("failed to find firmware (%d)\n", ret);
+		return;
+	}
+
+	/* Load the firmware */
+	ret = if_cs_prog_helper(card, helper);
+	if (ret == 0 && (card->model != MODEL_8305))
+		ret = if_cs_prog_real(card, mainfw);
+	if (ret)
+		goto out;
+
+	/* Now actually get the IRQ */
+	ret = request_irq(card->p_dev->irq, if_cs_interrupt,
+		IRQF_SHARED, DRV_NAME, card);
+	if (ret) {
+		pr_err("error in request_irq\n");
+		goto out;
+	}
+
+	/*
+	 * Clear any interrupt cause that happened while sending
+	 * firmware/initializing card
+	 */
+	if_cs_write16(card, IF_CS_CARD_INT_CAUSE, IF_CS_BIT_MASK);
+	if_cs_enable_ints(card);
+
+	/* And finally bring the card up */
+	priv->fw_ready = 1;
+	if (lbs_start_card(priv) != 0) {
+		pr_err("could not activate card\n");
+		free_irq(card->p_dev->irq, card);
+	}
+
+out:
+	release_firmware(helper);
+	release_firmware(mainfw);
+}
 
 
 /********************************************************************/
@@ -780,11 +826,7 @@ static void if_cs_release(struct pcmcia_device *p_dev)
 
 	lbs_deb_enter(LBS_DEB_CS);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	free_irq(p_dev->irq, card);
-#else
-	free_irq(p_dev->irq.AssignedIRQ, card);
-#endif
 	pcmcia_disable_device(p_dev);
 	if (card->iobase)
 		ioport_unmap(card->iobase);
@@ -792,7 +834,7 @@ static void if_cs_release(struct pcmcia_device *p_dev)
 	lbs_deb_leave(LBS_DEB_CS);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
+
 static int if_cs_ioprobe(struct pcmcia_device *p_dev, void *priv_data)
 {
 	p_dev->resource[0]->flags &= ~IO_DATA_PATH_WIDTH;
@@ -802,39 +844,9 @@ static int if_cs_ioprobe(struct pcmcia_device *p_dev, void *priv_data)
 		pr_err("wrong CIS (check number of IO windows)\n");
 		return -ENODEV;
 	}
-#else
-static int if_cs_ioprobe(struct pcmcia_device *p_dev,
-			 cistpl_cftable_entry_t *cfg,
-			 cistpl_cftable_entry_t *dflt,
-			 unsigned int vcc,
-			 void *priv_data)
-{
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
-	p_dev->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
-	p_dev->resource[0]->start = cfg->io.win[0].base;
-	p_dev->resource[0]->end = cfg->io.win[0].len;
-#else
-	p_dev->io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
-	p_dev->io.BasePort1 = cfg->io.win[0].base;
-	p_dev->io.NumPorts1 = cfg->io.win[0].len;
-#endif
-
-	/* Do we need to allocate an interrupt? */
-	p_dev->conf.Attributes |= CONF_ENABLE_IRQ;
-
-	/* IO window settings */
-	if (cfg->io.nwin != 1) {
-		pr_err("wrong CIS (check number of IO windows)\n");
-		return -ENODEV;
-	}
-#endif
 
 	/* This reserves IO space but doesn't actually enable it */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	return pcmcia_request_io(p_dev);
-#else
-	return pcmcia_request_io(p_dev, &p_dev->io);
-#endif
 }
 
 static int if_cs_probe(struct pcmcia_device *p_dev)
@@ -843,29 +855,17 @@ static int if_cs_probe(struct pcmcia_device *p_dev)
 	unsigned int prod_id;
 	struct lbs_private *priv;
 	struct if_cs_card *card;
-	const struct firmware *helper = NULL;
-	const struct firmware *mainfw = NULL;
 
 	lbs_deb_enter(LBS_DEB_CS);
 
 	card = kzalloc(sizeof(struct if_cs_card), GFP_KERNEL);
-	if (!card) {
-		pr_err("error in kzalloc\n");
+	if (!card)
 		goto out;
-	}
+
 	card->p_dev = p_dev;
 	p_dev->priv = card;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
 	p_dev->config_flags |= CONF_ENABLE_IRQ | CONF_AUTO_SET_IO;
-#else
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-	p_dev->irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING;
-	p_dev->irq.Handler = NULL;
-#endif
-	p_dev->conf.Attributes = 0;
-	p_dev->conf.IntType = INT_MEMORY_AND_IO;
-#endif
 
 	if (pcmcia_loop_config(p_dev, if_cs_ioprobe, NULL)) {
 		pr_err("error in pcmcia_loop_config\n");
@@ -877,26 +877,12 @@ static int if_cs_probe(struct pcmcia_device *p_dev)
 	 * a handler to the interrupt, unless the 'Handler' member of
 	 * the irq structure is initialized.
 	 */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	if (!p_dev->irq)
 		goto out1;
-#else
-	if (p_dev->conf.Attributes & CONF_ENABLE_IRQ) {
-		ret = pcmcia_request_irq(p_dev, &p_dev->irq);
-		if (ret) {
-			pr_err("error in pcmcia_request_irq\n");
-			goto out1;
-		}
-	}
-#endif
 
 	/* Initialize io access */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	card->iobase = ioport_map(p_dev->resource[0]->start,
 				resource_size(p_dev->resource[0]));
-#else
-	card->iobase = ioport_map(p_dev->io.BasePort1, p_dev->io.NumPorts1);
-#endif
 	if (!card->iobase) {
 		pr_err("error in ioport_map\n");
 		ret = -EIO;
@@ -910,23 +896,13 @@ static int if_cs_probe(struct pcmcia_device *p_dev)
 	}
 
 	/* Finally, report what we've done */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	lbs_deb_cs("irq %d, io %pR", p_dev->irq, p_dev->resource[0]);
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
-	lbs_deb_cs("irq %d, io 0x%04x-0x%04x\n",
-		  p_dev->irq, p_dev->io.BasePort1,
-		  p_dev->io.BasePort1 + p_dev->io.NumPorts1 - 1);
-#else
-	lbs_deb_cs("irq %d, io 0x%04x-0x%04x\n",
-		  p_dev->irq.AssignedIRQ, p_dev->io.BasePort1,
-		  p_dev->io.BasePort1 + p_dev->io.NumPorts1 - 1);
-#endif
 
 	/*
 	 * Most of the libertas cards can do unaligned register access, but some
 	 * weird ones cannot. That's especially true for the CF8305 card.
 	 */
-	card->align_regs = 0;
+	card->align_regs = false;
 
 	card->model = get_model(p_dev->manf_id, p_dev->card_id);
 	if (card->model == MODEL_UNKNOWN) {
@@ -938,7 +914,7 @@ static int if_cs_probe(struct pcmcia_device *p_dev)
 	/* Check if we have a current silicon */
 	prod_id = if_cs_read8(card, IF_CS_PRODUCT_ID);
 	if (card->model == MODEL_8305) {
-		card->align_regs = 1;
+		card->align_regs = true;
 		if (prod_id < IF_CS_CF8305_B1_REV) {
 			pr_err("8305 rev B0 and older are not supported\n");
 			ret = -ENODEV;
@@ -958,20 +934,6 @@ static int if_cs_probe(struct pcmcia_device *p_dev)
 		goto out2;
 	}
 
-	ret = lbs_get_firmware(&p_dev->dev, NULL, NULL, card->model,
-				&fw_table[0], &helper, &mainfw);
-	if (ret) {
-		pr_err("failed to find firmware (%d)\n", ret);
-		goto out2;
-	}
-
-	/* Load the firmware early, before calling into libertas.ko */
-	ret = if_cs_prog_helper(card, helper);
-	if (ret == 0 && (card->model != MODEL_8305))
-		ret = if_cs_prog_real(card, mainfw);
-	if (ret)
-		goto out2;
-
 	/* Make this card known to the libertas driver */
 	priv = lbs_add_card(card, &p_dev->dev);
 	if (!priv) {
@@ -979,41 +941,22 @@ static int if_cs_probe(struct pcmcia_device *p_dev)
 		goto out2;
 	}
 
-	/* Finish setting up fields in lbs_private */
+	/* Set up fields in lbs_private */
 	card->priv = priv;
 	priv->card = card;
 	priv->hw_host_to_card = if_cs_host_to_card;
 	priv->enter_deep_sleep = NULL;
 	priv->exit_deep_sleep = NULL;
 	priv->reset_deep_sleep_wakeup = NULL;
-	priv->fw_ready = 1;
 
-	/* Now actually get the IRQ */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
-	ret = request_irq(p_dev->irq, if_cs_interrupt,
-#else
-	ret = request_irq(p_dev->irq.AssignedIRQ, if_cs_interrupt,
-#endif
-		IRQF_SHARED, DRV_NAME, card);
+	/* Get firmware */
+	ret = lbs_get_firmware_async(priv, &p_dev->dev, card->model, fw_table,
+				     if_cs_prog_firmware);
 	if (ret) {
-		pr_err("error in request_irq\n");
+		pr_err("failed to find firmware (%d)\n", ret);
 		goto out3;
 	}
 
-	/*
-	 * Clear any interrupt cause that happened while sending
-	 * firmware/initializing card
-	 */
-	if_cs_write16(card, IF_CS_CARD_INT_CAUSE, IF_CS_BIT_MASK);
-	if_cs_enable_ints(card);
-
-	/* And finally bring the card up */
-	if (lbs_start_card(priv) != 0) {
-		pr_err("could not activate card\n");
-		goto out3;
-	}
-
-	ret = 0;
 	goto out;
 
 out3:
@@ -1023,11 +966,6 @@ out2:
 out1:
 	pcmcia_disable_device(p_dev);
 out:
-	if (helper)
-		release_firmware(helper);
-	if (mainfw)
-		release_firmware(mainfw);
-
 	lbs_deb_leave_args(LBS_DEB_CS, "ret %d", ret);
 	return ret;
 }
@@ -1066,13 +1004,7 @@ MODULE_DEVICE_TABLE(pcmcia, if_cs_ids);
 
 static struct pcmcia_driver lbs_driver = {
 	.owner		= THIS_MODULE,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
 	.name		= DRV_NAME,
-#else
-	.drv		= {
-		.name	= DRV_NAME,
-	},
-#endif
 	.probe		= if_cs_probe,
 	.remove		= if_cs_detach,
 	.id_table       = if_cs_ids,

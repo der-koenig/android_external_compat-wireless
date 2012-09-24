@@ -40,7 +40,7 @@ struct brcms_timer {
 	bool periodic;
 	bool set;		/* indicates if timer is active */
 	struct brcms_timer *next;	/* for freeing on unload */
-#ifdef BCMDBG
+#ifdef DEBUG
 	char *name;		/* Description of the timer */
 #endif
 };
@@ -68,8 +68,6 @@ struct brcms_info {
 	spinlock_t lock;	/* per-device perimeter lock */
 	spinlock_t isr_lock;	/* per-device ISR synchronization lock */
 
-	/* regsva for unmap in brcms_free() */
-	void __iomem *regsva;	/* opaque chip registers virtual address */
 
 	/* timer related fields */
 	atomic_t callbacks;	/* # outstanding callback functions */

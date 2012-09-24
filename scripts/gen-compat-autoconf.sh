@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 
 # Copyright 2007	Luis R. Rodriguez <mcgrof@winlab.rutgers.edu>
 #
@@ -12,19 +12,20 @@
 # This indicates which is the oldest kernel we support
 # Update this if you are adding support for older kernels.
 OLDEST_KERNEL_SUPPORTED="2.6.24"
-COMPAT_RELEASE="compat_version"
-KERNEL_RELEASE="compat_base_tree_version"
+COMPAT_RELEASE=".compat_version"
+KERNEL_RELEASE=".compat_base_tree_version"
 MULT_DEP_FILE=".compat_pivot_dep"
 
-if [ $# -ne 1 ]; then
-	echo "Usage $0 config-file"
+if [ $# -ne 2 ]; then
+	echo "Usage $0 <generic-compat-config-file> <compat-drivers-config-file>"
 	exit
 fi
 
-COMPAT_CONFIG="$1"
+COMPAT_CONFIG_1="$1"
+COMPAT_CONFIG_2="$2"
 
-if [ ! -f $COMPAT_CONFIG ]; then
-	echo "File $1 is not a file"
+if [[ ! -f $COMPAT_CONFIG_1 || ! -f $COMPAT_CONFIG_2 ]]; then
+	echo "File $COMPAT_CONFIG_1 and $COMPAT_CONFIG_2 files must be present"
 	exit
 fi
 
@@ -66,19 +67,19 @@ function define_config {
 	esac
 }
 
-# This deals with core compat-wireless kernel requirements.
+# This deals with core compat-drivers kernel requirements.
 function define_config_req {
 	VAR=$1
 	echo "#ifndef $VAR"
-	echo -n "#error Compat-wireless requirement: $VAR must be enabled "
+	echo -n "#error Compat-drivers requirement: $VAR must be enabled "
 	echo "in your kernel"
 	echo "#endif /* $VAR */"
 }
 
 # This handles modules which have dependencies from the kernel
-# which compat-wireless isn't providing yet either because
+# which compat-drivers isn't providing yet either because
 # the dependency is not available as kernel module or
-# the module simply isn't provided by compat-wireless.
+# the module simply isn't provided by compat-drivers.
 function define_config_dep {
 	VAR=$1
 	VALUE=$2
@@ -134,8 +135,8 @@ cat <<EOF
 /*
  * Automatically generated C config: don't edit
  * $DATE 
- * compat-wireless-2.6: $CREL
- * linux-2.6: $KREL
+ * compat-drivers: $CREL
+ * linux: $KREL
  */
 #define COMPAT_RELEASE "$CREL"
 #define COMPAT_KERNEL_RELEASE "$KREL"
@@ -145,7 +146,9 @@ EOF
 kernel_version_req $OLDEST_KERNEL_SUPPORTED
 
 # For each CONFIG_FOO=x option
-for i in $(egrep '^CONFIG_|^ifdef CONFIG_|^ifndef CONFIG_|^endif #CONFIG_|^else #CONFIG_' $COMPAT_CONFIG | sed 's/ /+/'); do
+for i in $(egrep -h '^export CONFIG_|^ifdef CONFIG_|^ifndef CONFIG_|^endif #CONFIG_|^else #CONFIG_' $COMPAT_CONFIG_1 $COMPAT_CONFIG_2 | \
+	sed 's/export //' | \
+	sed 's/ /+/'); do
 	case $i in
 	'ifdef+CONFIG_'* )
 		echo "#$i" | sed -e 's/+/ /' -e 's/\(ifdef CONFIG_COMPAT_KERNEL_3_\)\([0-9]*\)/if (LINUX_VERSION_CODE < KERNEL_VERSION(3,\2,0))/' -e 's/\(ifdef CONFIG_COMPAT_KERNEL_2_6_\)\([0-9]*\)/if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,\2))/' -e 's/\(ifdef CONFIG_COMPAT_RHEL_\)\([0-9]*\)_\([0-9]*\)/if (defined(RHEL_MAJOR) \&\& RHEL_MAJOR == \2 \&\& RHEL_MINOR >= \3)/' -e 's/\(#ifdef \)\(CONFIG_[^:space:]*\)/#if defined(\2) || defined(\2_MODULE)/'

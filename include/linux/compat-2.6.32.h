@@ -10,6 +10,14 @@
 #include <net/iw_handler.h>
 #include <linux/workqueue.h>
 #include <net/genetlink.h>
+#include <net/sch_generic.h>
+
+#define TCQ_F_CAN_BYPASS        4
+
+static inline int qdisc_qlen(const struct Qdisc *q)
+{
+	return q->q.qlen;
+}
 
 #define SDIO_VENDOR_ID_INTEL			0x0089
 #define SDIO_DEVICE_ID_INTEL_IWMC3200WIMAX	0x1402
@@ -17,6 +25,55 @@
 #define SDIO_DEVICE_ID_INTEL_IWMC3200TOP	0x1404
 #define SDIO_DEVICE_ID_INTEL_IWMC3200GPS	0x1405
 #define SDIO_DEVICE_ID_INTEL_IWMC3200BT		0x1406
+
+/*
+ * Backports 5e928f77a09a07f9dd595bb8a489965d69a83458
+ * run-time power management cannot really be backported
+ * given that the implementation added bus specific
+ * callbacks that we won't have on older kernels. If
+ * you really want run-time power management or good
+ * power management upgrade your kernel. We'll just
+ * compile this out as if run-time power management was
+ * disabled just as the kernel disables run-time power management
+ * when CONFIG_PM_RUNTIME is disabled.
+ */
+static inline void pm_runtime_init(struct device *dev) {}
+static inline void pm_runtime_remove(struct device *dev) {}
+static inline int pm_runtime_get(struct device *dev)
+{
+	return 0;
+}
+
+static inline int pm_runtime_get_sync(struct device *dev)
+{
+	return 0;
+}
+
+static inline int pm_runtime_put(struct device *dev)
+{
+	return 0;
+}
+
+static inline int pm_runtime_put_sync(struct device *dev)
+{
+	return 0;
+}
+
+static inline int pm_runtime_set_active(struct device *dev)
+{
+	return 0;
+}
+
+static inline void pm_runtime_set_suspended(struct device *dev)
+{
+}
+
+static inline void pm_runtime_disable(struct device *dev)
+{
+}
+
+static inline void pm_runtime_put_noidle(struct device *dev) {}
+static inline void pm_runtime_get_noresume(struct device *dev) {}
 
 static inline void flush_delayed_work(struct delayed_work *dwork)
 {
@@ -67,9 +124,20 @@ typedef enum netdev_tx netdev_tx_t;
 /*
  * dev_pm_ops is only available on kernels >= 2.6.29, for
  * older kernels we rely on reverting the work to old
- * power management style stuff.
+ * power management style stuff. On 2.6.29 the pci calls
+ * weren't included yet though, so include them here.
  */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
+#if (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,29))
+#define SIMPLE_DEV_PM_OPS(name, suspend_fn, resume_fn)		\
+struct dev_pm_ops name = {					\
+	.suspend = suspend_fn ## _compat,			\
+	.resume = resume_fn ## _compat,				\
+	.freeze = suspend_fn ## _compat,			\
+	.thaw = resume_fn ## _compat,				\
+	.poweroff = suspend_fn ## _compat,			\
+	.restore = resume_fn ## _compat,			\
+}
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30))
 /*
  * Use this if you want to use the same suspend and resume callbacks for suspend
  * to RAM and hibernation.

@@ -16,7 +16,11 @@
 
 /* Toplevel file. Relies on dhd_linux.c to send commands to the dongle. */
 
+#undef pr_fmt
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
+#include <linux/printk.h>
 #include <linux/if_arp.h>
 #include <linux/sched.h>
 #include <linux/kthread.h>
@@ -1374,7 +1378,7 @@ brcmf_cfg80211_connect(struct wiphy *wiphy, struct net_device *ndev,
 	memset(&join_params, 0, sizeof(join_params));
 	join_params_size = sizeof(join_params.ssid_le);
 
-	ssid.SSID_len = min_t(u32, sizeof(ssid.SSID), sme->ssid_len);
+	ssid.SSID_len = min_t(u32, sizeof(ssid.SSID), (u32)sme->ssid_len);
 	memcpy(&join_params.ssid_le.SSID, sme->ssid, ssid.SSID_len);
 	memcpy(&ssid.SSID, sme->ssid, ssid.SSID_len);
 	join_params.ssid_le.SSID_len = cpu_to_le32(ssid.SSID_len);
@@ -1429,7 +1433,7 @@ brcmf_cfg80211_disconnect(struct wiphy *wiphy, struct net_device *ndev,
 
 static s32
 brcmf_cfg80211_set_tx_power(struct wiphy *wiphy,
-			 enum nl80211_tx_power_setting type, s32 dbm)
+			    enum nl80211_tx_power_setting type, s32 mbm)
 {
 
 	struct brcmf_cfg80211_priv *cfg_priv = wiphy_to_cfg(wiphy);
@@ -1437,6 +1441,7 @@ brcmf_cfg80211_set_tx_power(struct wiphy *wiphy,
 	u16 txpwrmw;
 	s32 err = 0;
 	s32 disable = 0;
+	s32 dbm = MBM_TO_DBM(mbm);
 
 	WL_TRACE("Enter\n");
 	if (!check_sys_up(wiphy))
@@ -1446,12 +1451,6 @@ brcmf_cfg80211_set_tx_power(struct wiphy *wiphy,
 	case NL80211_TX_POWER_AUTOMATIC:
 		break;
 	case NL80211_TX_POWER_LIMITED:
-		if (dbm < 0) {
-			WL_ERR("TX_POWER_LIMITED - dbm is negative\n");
-			err = -EINVAL;
-			goto done;
-		}
-		break;
 	case NL80211_TX_POWER_FIXED:
 		if (dbm < 0) {
 			WL_ERR("TX_POWER_FIXED - dbm is negative\n");
@@ -2006,7 +2005,6 @@ static s32 brcmf_inform_single_bss(struct brcmf_cfg80211_priv *cfg_priv,
 	s32 err = 0;
 	u16 channel;
 	u32 freq;
-	u64 notify_timestamp;
 	u16 notify_capability;
 	u16 notify_interval;
 	u8 *notify_ie;
@@ -2029,7 +2027,6 @@ static s32 brcmf_inform_single_bss(struct brcmf_cfg80211_priv *cfg_priv,
 	freq = ieee80211_channel_to_frequency(channel, band->band);
 	notify_channel = ieee80211_get_channel(wiphy, freq);
 
-	notify_timestamp = jiffies_to_msecs(jiffies)*1000; /* uSec */
 	notify_capability = le16_to_cpu(bi->capability);
 	notify_interval = le16_to_cpu(bi->beacon_period);
 	notify_ie = (u8 *)bi + le16_to_cpu(bi->ie_offset);
@@ -2043,10 +2040,9 @@ static s32 brcmf_inform_single_bss(struct brcmf_cfg80211_priv *cfg_priv,
 	WL_CONN("Capability: %X\n", notify_capability);
 	WL_CONN("Beacon interval: %d\n", notify_interval);
 	WL_CONN("Signal: %d\n", notify_signal);
-	WL_CONN("notify_timestamp: %#018llx\n", notify_timestamp);
 
 	bss = cfg80211_inform_bss(wiphy, notify_channel, (const u8 *)bi->BSSID,
-		notify_timestamp, notify_capability, notify_interval, notify_ie,
+		0, notify_capability, notify_interval, notify_ie,
 		notify_ielen, notify_signal, GFP_KERNEL);
 
 	if (!bss)
@@ -2101,7 +2097,6 @@ static s32 wl_inform_ibss(struct brcmf_cfg80211_priv *cfg_priv,
 	s32 err = 0;
 	u16 channel;
 	u32 freq;
-	u64 notify_timestamp;
 	u16 notify_capability;
 	u16 notify_interval;
 	u8 *notify_ie;
@@ -2137,7 +2132,6 @@ static s32 wl_inform_ibss(struct brcmf_cfg80211_priv *cfg_priv,
 	freq = ieee80211_channel_to_frequency(channel, band->band);
 	notify_channel = ieee80211_get_channel(wiphy, freq);
 
-	notify_timestamp = jiffies_to_msecs(jiffies)*1000; /* uSec */
 	notify_capability = le16_to_cpu(bi->capability);
 	notify_interval = le16_to_cpu(bi->beacon_period);
 	notify_ie = (u8 *)bi + le16_to_cpu(bi->ie_offset);
@@ -2148,10 +2142,9 @@ static s32 wl_inform_ibss(struct brcmf_cfg80211_priv *cfg_priv,
 	WL_CONN("capability: %X\n", notify_capability);
 	WL_CONN("beacon interval: %d\n", notify_interval);
 	WL_CONN("signal: %d\n", notify_signal);
-	WL_CONN("notify_timestamp: %#018llx\n", notify_timestamp);
 
 	bss = cfg80211_inform_bss(wiphy, notify_channel, bssid,
-		notify_timestamp, notify_capability, notify_interval,
+		0, notify_capability, notify_interval,
 		notify_ie, notify_ielen, notify_signal, GFP_KERNEL);
 
 	if (!bss) {
@@ -2480,7 +2473,7 @@ static s32 brcmf_init_iscan(struct brcmf_cfg80211_priv *cfg_priv)
 	return err;
 }
 
-static void brcmf_delay(u32 ms)
+static __always_inline void brcmf_delay(u32 ms)
 {
 	if (ms < 1000 / HZ) {
 		cond_resched();
@@ -2788,7 +2781,7 @@ static struct wireless_dev *brcmf_alloc_wdev(s32 sizeof_iface,
 	    wiphy_new(&wl_cfg80211_ops,
 		      sizeof(struct brcmf_cfg80211_priv) + sizeof_iface);
 	if (!wdev->wiphy) {
-		WL_ERR("Couldn not allocate wiphy device\n");
+		WL_ERR("Could not allocate wiphy device\n");
 		err = -ENOMEM;
 		goto wiphy_new_out;
 	}
@@ -2814,7 +2807,7 @@ static struct wireless_dev *brcmf_alloc_wdev(s32 sizeof_iface,
 								 */
 	err = wiphy_register(wdev->wiphy);
 	if (err < 0) {
-		WL_ERR("Couldn not register wiphy device (%d)\n", err);
+		WL_ERR("Could not register wiphy device (%d)\n", err);
 		goto wiphy_register_out;
 	}
 	return wdev;
@@ -3300,7 +3293,9 @@ static struct brcmf_cfg80211_event_q *brcmf_deq_event(
 }
 
 /*
-** push event to tail of the queue
+*	push event to tail of the queue
+*
+*	remark: this function may not sleep as it is called in atomic context.
 */
 
 static s32
@@ -3309,17 +3304,18 @@ brcmf_enq_event(struct brcmf_cfg80211_priv *cfg_priv, u32 event,
 {
 	struct brcmf_cfg80211_event_q *e;
 	s32 err = 0;
+	ulong flags;
 
-	e = kzalloc(sizeof(struct brcmf_cfg80211_event_q), GFP_KERNEL);
+	e = kzalloc(sizeof(struct brcmf_cfg80211_event_q), GFP_ATOMIC);
 	if (!e)
 		return -ENOMEM;
 
 	e->etype = event;
 	memcpy(&e->emsg, msg, sizeof(struct brcmf_event_msg));
 
-	spin_lock_irq(&cfg_priv->evt_q_lock);
+	spin_lock_irqsave(&cfg_priv->evt_q_lock, flags);
 	list_add_tail(&e->evt_q_list, &cfg_priv->evt_q_list);
-	spin_unlock_irq(&cfg_priv->evt_q_lock);
+	spin_unlock_irqrestore(&cfg_priv->evt_q_lock, flags);
 
 	return err;
 }

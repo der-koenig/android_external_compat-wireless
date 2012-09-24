@@ -1159,17 +1159,9 @@ static struct usb_driver carl9170_driver = {
 	.resume = carl9170_usb_resume,
 	.reset_resume = carl9170_usb_resume,
 #endif /* CONFIG_PM */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
+	.disable_hub_initiated_lpm = 1,
+#endif
 };
 
-static int __init carl9170_usb_init(void)
-{
-	return usb_register(&carl9170_driver);
-}
-
-static void __exit carl9170_usb_exit(void)
-{
-	usb_deregister(&carl9170_driver);
-}
-
-module_init(carl9170_usb_init);
-module_exit(carl9170_usb_exit);
+module_usb_driver(carl9170_driver);

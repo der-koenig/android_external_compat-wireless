@@ -6,8 +6,10 @@
  *
  */
 
+#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/printk.h>
 #include <linux/hardirq.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
@@ -103,7 +105,7 @@ static const u32 cipher_suites[] = {
  * Convert NL80211's auth_type to the one from Libertas, see chapter 5.9.1
  * in the firmware spec
  */
-static u8 lbs_auth_to_authtype(enum nl80211_auth_type auth_type)
+static int lbs_auth_to_authtype(enum nl80211_auth_type auth_type)
 {
 	int ret = -ENOTSUPP;
 
@@ -435,24 +437,40 @@ static int lbs_add_wpa_tlv(u8 *tlv, const u8 *ie, u8 ie_len)
  * Set Channel
  */
 
-static int lbs_cfg_set_channel(struct wiphy *wiphy,
-	struct net_device *netdev,
-	struct ieee80211_channel *channel,
-	enum nl80211_channel_type channel_type)
+static int lbs_cfg_set_monitor_channel(struct wiphy *wiphy,
+				       struct ieee80211_channel *channel,
+				       enum nl80211_channel_type channel_type)
 {
 	struct lbs_private *priv = wiphy_priv(wiphy);
 	int ret = -ENOTSUPP;
 
-	lbs_deb_enter_args(LBS_DEB_CFG80211, "iface %s freq %d, type %d",
-			   netdev_name(netdev), channel->center_freq, channel_type);
+	lbs_deb_enter_args(LBS_DEB_CFG80211, "freq %d, type %d",
+			   channel->center_freq, channel_type);
 
 	if (channel_type != NL80211_CHAN_NO_HT)
 		goto out;
 
-	if (netdev == priv->mesh_dev)
-		ret = lbs_mesh_set_channel(priv, channel->hw_value);
-	else
-		ret = lbs_set_channel(priv, channel->hw_value);
+	ret = lbs_set_channel(priv, channel->hw_value);
+
+ out:
+	lbs_deb_leave_args(LBS_DEB_CFG80211, "ret %d", ret);
+	return ret;
+}
+
+static int lbs_cfg_set_mesh_channel(struct wiphy *wiphy,
+				    struct net_device *netdev,
+				    struct ieee80211_channel *channel)
+{
+	struct lbs_private *priv = wiphy_priv(wiphy);
+	int ret = -ENOTSUPP;
+
+	lbs_deb_enter_args(LBS_DEB_CFG80211, "iface %s freq %d",
+			   netdev_name(netdev), channel->center_freq);
+
+	if (netdev != priv->mesh_dev)
+		goto out;
+
+	ret = lbs_mesh_set_channel(priv, channel->hw_value);
 
  out:
 	lbs_deb_leave_args(LBS_DEB_CFG80211, "ret %d", ret);
@@ -731,9 +749,11 @@ static void lbs_scan_worker(struct work_struct *work)
 		le16_to_cpu(scan_cmd->hdr.size),
 		lbs_ret_scan, 0);
 
-	if (priv->scan_channel >= priv->scan_req->n_channels)
+	if (priv->scan_channel >= priv->scan_req->n_channels) {
 		/* Mark scan done */
+		cancel_delayed_work(&priv->scan_work);
 		lbs_scan_done(priv);
+	}
 
 	/* Restart network */
 	if (carrier)
@@ -762,11 +782,11 @@ static void _internal_start_scan(struct lbs_private *priv, bool internal,
 		request->n_ssids, request->n_channels, request->ie_len);
 
 	priv->scan_channel = 0;
-	queue_delayed_work(priv->work_thread, &priv->scan_work,
-		msecs_to_jiffies(50));
-
 	priv->scan_req = request;
 	priv->internal_scan = internal;
+
+	queue_delayed_work(priv->work_thread, &priv->scan_work,
+		msecs_to_jiffies(50));
 
 	lbs_deb_leave(LBS_DEB_CFG80211);
 }
@@ -1409,7 +1429,12 @@ static int lbs_cfg_connect(struct wiphy *wiphy, struct net_device *dev,
 		goto done;
 	}
 
-	lbs_set_authtype(priv, sme);
+	ret = lbs_set_authtype(priv, sme);
+	if (ret == -ENOTSUPP) {
+		wiphy_err(wiphy, "unsupported authtype 0x%x\n", sme->auth_type);
+		goto done;
+	}
+
 	lbs_set_radio(priv, preamble, 1);
 
 	/* Do the actual association */
@@ -1623,42 +1648,6 @@ static int lbs_cfg_get_station(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	return 0;
-}
-
-
-
-
-/*
- * "Site survey", here just current channel and noise level
- */
-
-static int lbs_get_survey(struct wiphy *wiphy, struct net_device *dev,
-	int idx, struct survey_info *survey)
-{
-	struct lbs_private *priv = wiphy_priv(wiphy);
-	s8 signal, noise;
-	int ret;
-
-	if (dev == priv->mesh_dev)
-		return -EOPNOTSUPP;
-
-	if (idx != 0)
-		ret = -ENOENT;
-
-	lbs_deb_enter(LBS_DEB_CFG80211);
-
-	survey->channel = ieee80211_get_channel(wiphy,
-		ieee80211_channel_to_frequency(priv->channel,
-					       IEEE80211_BAND_2GHZ));
-
-	ret = lbs_get_rssi(priv, &signal, &noise);
-	if (ret == 0) {
-		survey->filled = SURVEY_INFO_NOISE_DBM;
-		survey->noise = noise;
-	}
-
-	lbs_deb_leave_args(LBS_DEB_CFG80211, "ret %d", ret);
-	return ret;
 }
 
 
@@ -2058,7 +2047,8 @@ static int lbs_leave_ibss(struct wiphy *wiphy, struct net_device *dev)
  */
 
 static struct cfg80211_ops lbs_cfg80211_ops = {
-	.set_channel = lbs_cfg_set_channel,
+	.set_monitor_channel = lbs_cfg_set_monitor_channel,
+	.libertas_set_mesh_channel = lbs_cfg_set_mesh_channel,
 	.scan = lbs_cfg_scan,
 	.connect = lbs_cfg_connect,
 	.disconnect = lbs_cfg_disconnect,
@@ -2066,7 +2056,6 @@ static struct cfg80211_ops lbs_cfg80211_ops = {
 	.del_key = lbs_cfg_del_key,
 	.set_default_key = lbs_cfg_set_default_key,
 	.get_station = lbs_cfg_get_station,
-	.dump_survey = lbs_get_survey,
 	.change_virtual_intf = lbs_change_intf,
 	.join_ibss = lbs_join_ibss,
 	.leave_ibss = lbs_leave_ibss,

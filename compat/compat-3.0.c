@@ -12,6 +12,29 @@
 #include <linux/compat.h>
 #include <linux/if_ether.h>
 
+/* This pulls-in a lot of non-exported symbol backports
+ * on kernels older than 2.6.32. There's no harm for not
+ * making this available on kernels < 2.6.32. */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32))
+#include <linux/pagemap.h>
+
+/* This backports:
+ *
+ * commit d9d90e5eb70e09903dadff42099b6c948f814050
+ * Author: Hugh Dickins <hughd@google.com>
+ * Date:   Mon Jun 27 16:18:04 2011 -0700
+ *
+ *	tmpfs: add shmem_read_mapping_page_gfp
+ */
+
+struct page *shmem_read_mapping_page_gfp(struct address_space *mapping,
+                                        pgoff_t index, gfp_t gfp)
+{
+       return read_cache_page_gfp(mapping, index, gfp);
+}
+EXPORT_SYMBOL_GPL(shmem_read_mapping_page_gfp);
+#endif
+
 int mac_pton(const char *s, u8 *mac)
 {
 	int i;
@@ -34,7 +57,7 @@ int mac_pton(const char *s, u8 *mac)
 	}
 	return 1;
 }
-EXPORT_SYMBOL(mac_pton);
+EXPORT_SYMBOL_GPL(mac_pton);
 
 #define kstrto_from_user(f, g, type)					\
 int f(const char __user *s, size_t count, unsigned int base, type *res)	\
@@ -48,7 +71,7 @@ int f(const char __user *s, size_t count, unsigned int base, type *res)	\
 	buf[count] = '\0';						\
 	return g(buf, base, res);					\
 }									\
-EXPORT_SYMBOL(f)
+EXPORT_SYMBOL_GPL(f)
 
 kstrto_from_user(kstrtoull_from_user,	kstrtoull,	unsigned long long);
 kstrto_from_user(kstrtoll_from_user,	kstrtoll,	long long);

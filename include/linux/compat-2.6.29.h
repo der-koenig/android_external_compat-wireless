@@ -17,6 +17,13 @@
 #include <linux/skbuff.h>
 #include <linux/usb.h>
 #include <linux/types.h>
+#include <linux/pci_regs.h>
+
+/* backports  */
+static inline void usb_autopm_put_interface_async(struct usb_interface *intf)
+{ }
+static inline int usb_autopm_get_interface_async(struct usb_interface *intf)
+{ return 0; }
 
 #if \
 	defined(CONFIG_ALPHA) || defined(CONFIG_AVR32) || \
@@ -28,7 +35,8 @@
 	defined(CONFIG_SUPERH) || defined(CONFIG_SPARC) || \
 	defined(CONFIG_FRV) || defined(CONFIG_X86) || \
 	defined(CONFIG_M32R) || defined(CONFIG_M68K) || \
-	defined(CONFIG_MN10300) || defined(CONFIG_XTENSA)
+	defined(CONFIG_MN10300) || defined(CONFIG_XTENSA) || \
+	defined(CONFIG_ARM)
 #include <asm/atomic.h>
 #else
 typedef struct {
@@ -178,6 +186,11 @@ struct net_device_ops {
 						   struct neigh_parms *);
 	void			(*ndo_tx_timeout) (struct net_device *dev);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+	struct rtnl_link_stats64* (*ndo_get_stats64)(struct net_device *dev,
+						     struct rtnl_link_stats64 *storage);
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)) */
+
 	struct net_device_stats* (*ndo_get_stats)(struct net_device *dev);
 
 	void			(*ndo_vlan_rx_register)(struct net_device *dev,
@@ -219,6 +232,16 @@ struct net_device_ops {
 						    u64 *wwn, int type);
 #endif
 };
+
+static inline int ndo_do_ioctl(struct net_device *dev,
+			       struct ifreq *ifr,
+			       int cmd)
+{
+	if (dev->do_ioctl)
+		return dev->do_ioctl(dev, ifr, cmd);
+	return -EOPNOTSUPP;
+}
+
 
 void netdev_attach_ops(struct net_device *dev,
 		       const struct net_device_ops *ops);
@@ -304,6 +327,30 @@ static inline struct net *read_pnet(struct net * const *pnet)
 
 extern int		init_dummy_netdev(struct net_device *dev);
 
+#else /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29)) */
+
+/* Kernels >= 2.6.29 follows */
+
+/* XXX: this can probably just go upstream ! */
+static inline void netdev_attach_ops(struct net_device *dev,
+		       const struct net_device_ops *ops)
+{
+	dev->netdev_ops = ops;
+}
+
+/* XXX: this can probably just go upstream! */
+static inline int ndo_do_ioctl(struct net_device *dev,
+			       struct ifreq *ifr,
+			       int cmd)
+{
+	if (dev->netdev_ops && dev->netdev_ops->ndo_do_ioctl)
+		return dev->netdev_ops->ndo_do_ioctl(dev, ifr, cmd);
+	return -EOPNOTSUPP;
+}
+
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29)) */
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29)
 #define compat_pci_suspend(fn)						\
 	int fn##_compat(struct pci_dev *pdev, pm_message_t state) 	\
 	{								\
@@ -333,18 +380,43 @@ extern int		init_dummy_netdev(struct net_device *dev);
 									\
 		return fn(&pdev->dev);					\
 	}
+#elif LINUX_VERSION_CODE == KERNEL_VERSION(2,6,29)
+#define compat_pci_suspend(fn)						\
+	int fn##_compat(struct device *dev)			 	\
+	{								\
+		struct pci_dev *pdev = to_pci_dev(dev);			\
+		int r;							\
+									\
+		r = fn(&pdev->dev);					\
+		if (r)							\
+			return r;					\
+									\
+		pci_save_state(pdev);					\
+		pci_disable_device(pdev);				\
+		pci_set_power_state(pdev, PCI_D3hot);			\
+									\
+		return 0;						\
+	}
 
+#define compat_pci_resume(fn)						\
+	int fn##_compat(struct device *dev)				\
+	{								\
+		struct pci_dev *pdev = to_pci_dev(dev);			\
+		int r;							\
+									\
+		pci_set_power_state(pdev, PCI_D0);			\
+		r = pci_enable_device(pdev);				\
+		if (r)							\
+			return r;					\
+		pci_restore_state(pdev);				\
+									\
+		return fn(&pdev->dev);					\
+	}
 #else
-
-static inline void netdev_attach_ops(struct net_device *dev,
-		       const struct net_device_ops *ops)
-{
-	dev->netdev_ops = ops;
-}
-
 #define compat_pci_suspend(fn)
 #define compat_pci_resume(fn)
+#endif
 
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29)) */
+#define  PCI_EXP_SLTSTA_PDS	0x0040  /* Presence Detect State */
 
 #endif /*  LINUX_26_29_COMPAT_H */

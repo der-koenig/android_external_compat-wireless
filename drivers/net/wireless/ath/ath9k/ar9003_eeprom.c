@@ -30,11 +30,6 @@
 #define CTL_11A_EXT (CTL_11A | EXT_ADDITIVE)
 #define CTL_11G_EXT (CTL_11G | EXT_ADDITIVE)
 #define CTL_11B_EXT (CTL_11B | EXT_ADDITIVE)
-#define REDUCE_SCALED_POWER_BY_TWO_CHAIN     6  /* 10*log10(2)*2 */
-#define REDUCE_SCALED_POWER_BY_THREE_CHAIN   9  /* 10*log10(3)*2 */
-#define PWRINCR_3_TO_1_CHAIN      9             /* 10*log(3)*2 */
-#define PWRINCR_3_TO_2_CHAIN      3             /* floor(10*log(3/2)*2) */
-#define PWRINCR_2_TO_1_CHAIN      6             /* 10*log(2)*2 */
 
 #define SUB_NUM_CTL_MODES_AT_5G_40 2    /* excluding HT40, EXT-OFDM */
 #define SUB_NUM_CTL_MODES_AT_2G_40 3    /* excluding HT40, EXT-OFDM, EXT-CCK */
@@ -2936,15 +2931,6 @@ static const struct ar9300_eeprom *ar9003_eeprom_struct_find_by_id(int id)
 #undef N_LOOP
 }
 
-
-static u16 ath9k_hw_fbin2freq(u8 fbin, bool is2GHz)
-{
-	if (fbin == AR5416_BCHAN_UNUSED)
-		return fbin;
-
-	return (u16) ((is2GHz) ? (2300 + fbin) : (4800 + 5 * fbin));
-}
-
 static int ath9k_hw_ar9300_check_eeprom(struct ath_hw *ah)
 {
 	return 0;
@@ -3043,8 +3029,7 @@ static bool ar9300_read_eeprom(struct ath_hw *ah, int address, u8 *buffer,
 	int i;
 
 	if ((address < 0) || ((address + count) / 2 > AR9300_EEPROM_SIZE - 1)) {
-		ath_dbg(common, ATH_DBG_EEPROM,
-			"eeprom address not in range\n");
+		ath_dbg(common, EEPROM, "eeprom address not in range\n");
 		return false;
 	}
 
@@ -3075,8 +3060,8 @@ static bool ar9300_read_eeprom(struct ath_hw *ah, int address, u8 *buffer,
 	return true;
 
 error:
-	ath_dbg(common, ATH_DBG_EEPROM,
-		"unable to read eeprom region at offset %d\n", address);
+	ath_dbg(common, EEPROM, "unable to read eeprom region at offset %d\n",
+		address);
 	return false;
 }
 
@@ -3160,13 +3145,13 @@ static bool ar9300_uncompress_block(struct ath_hw *ah,
 		length &= 0xff;
 
 		if (length > 0 && spot >= 0 && spot+length <= mdataSize) {
-			ath_dbg(common, ATH_DBG_EEPROM,
+			ath_dbg(common, EEPROM,
 				"Restore at %d: spot=%d offset=%d length=%d\n",
 				it, spot, offset, length);
 			memcpy(&mptr[spot], &block[it+2], length);
 			spot += length;
 		} else if (length > 0) {
-			ath_dbg(common, ATH_DBG_EEPROM,
+			ath_dbg(common, EEPROM,
 				"Bad restore at %d: spot=%d offset=%d length=%d\n",
 				it, spot, offset, length);
 			return false;
@@ -3188,13 +3173,13 @@ static int ar9300_compress_decision(struct ath_hw *ah,
 	switch (code) {
 	case _CompressNone:
 		if (length != mdata_size) {
-			ath_dbg(common, ATH_DBG_EEPROM,
+			ath_dbg(common, EEPROM,
 				"EEPROM structure size mismatch memory=%d eeprom=%d\n",
 				mdata_size, length);
 			return -1;
 		}
 		memcpy(mptr, (u8 *) (word + COMP_HDR_LEN), length);
-		ath_dbg(common, ATH_DBG_EEPROM,
+		ath_dbg(common, EEPROM,
 			"restored eeprom %d: uncompressed, length %d\n",
 			it, length);
 		break;
@@ -3203,22 +3188,21 @@ static int ar9300_compress_decision(struct ath_hw *ah,
 		} else {
 			eep = ar9003_eeprom_struct_find_by_id(reference);
 			if (eep == NULL) {
-				ath_dbg(common, ATH_DBG_EEPROM,
+				ath_dbg(common, EEPROM,
 					"can't find reference eeprom struct %d\n",
 					reference);
 				return -1;
 			}
 			memcpy(mptr, eep, mdata_size);
 		}
-		ath_dbg(common, ATH_DBG_EEPROM,
+		ath_dbg(common, EEPROM,
 			"restore eeprom %d: block, reference %d, length %d\n",
 			it, reference, length);
 		ar9300_uncompress_block(ah, mptr, mdata_size,
 					(u8 *) (word + COMP_HDR_LEN), length);
 		break;
 	default:
-		ath_dbg(common, ATH_DBG_EEPROM,
-			"unknown compression code %d\n", code);
+		ath_dbg(common, EEPROM, "unknown compression code %d\n", code);
 		return -1;
 	}
 	return 0;
@@ -3294,34 +3278,32 @@ static int ar9300_eeprom_restore_internal(struct ath_hw *ah,
 		cptr = AR9300_BASE_ADDR_512;
 	else
 		cptr = AR9300_BASE_ADDR;
-	ath_dbg(common, ATH_DBG_EEPROM,
-		"Trying EEPROM access at Address 0x%04x\n", cptr);
+	ath_dbg(common, EEPROM, "Trying EEPROM access at Address 0x%04x\n",
+		cptr);
 	if (ar9300_check_eeprom_header(ah, read, cptr))
 		goto found;
 
 	cptr = AR9300_BASE_ADDR_512;
-	ath_dbg(common, ATH_DBG_EEPROM,
-		"Trying EEPROM access at Address 0x%04x\n", cptr);
+	ath_dbg(common, EEPROM, "Trying EEPROM access at Address 0x%04x\n",
+		cptr);
 	if (ar9300_check_eeprom_header(ah, read, cptr))
 		goto found;
 
 	read = ar9300_read_otp;
 	cptr = AR9300_BASE_ADDR;
-	ath_dbg(common, ATH_DBG_EEPROM,
-		"Trying OTP access at Address 0x%04x\n", cptr);
+	ath_dbg(common, EEPROM, "Trying OTP access at Address 0x%04x\n", cptr);
 	if (ar9300_check_eeprom_header(ah, read, cptr))
 		goto found;
 
 	cptr = AR9300_BASE_ADDR_512;
-	ath_dbg(common, ATH_DBG_EEPROM,
-		"Trying OTP access at Address 0x%04x\n", cptr);
+	ath_dbg(common, EEPROM, "Trying OTP access at Address 0x%04x\n", cptr);
 	if (ar9300_check_eeprom_header(ah, read, cptr))
 		goto found;
 
 	goto fail;
 
 found:
-	ath_dbg(common, ATH_DBG_EEPROM, "Found valid EEPROM data\n");
+	ath_dbg(common, EEPROM, "Found valid EEPROM data\n");
 
 	for (it = 0; it < MSTATE; it++) {
 		if (!read(ah, cptr, word, COMP_HDR_LEN))
@@ -3332,13 +3314,12 @@ found:
 
 		ar9300_comp_hdr_unpack(word, &code, &reference,
 				       &length, &major, &minor);
-		ath_dbg(common, ATH_DBG_EEPROM,
+		ath_dbg(common, EEPROM,
 			"Found block at %x: code=%d ref=%d length=%d major=%d minor=%d\n",
 			cptr, code, reference, length, major, minor);
 		if ((!AR_SREV_9485(ah) && length >= 1024) ||
 		    (AR_SREV_9485(ah) && length > EEPROM_DATA_LEN_9485)) {
-			ath_dbg(common, ATH_DBG_EEPROM,
-				"Skipping bad header\n");
+			ath_dbg(common, EEPROM, "Skipping bad header\n");
 			cptr -= COMP_HDR_LEN;
 			continue;
 		}
@@ -3347,13 +3328,13 @@ found:
 		read(ah, cptr, word, COMP_HDR_LEN + osize + COMP_CKSUM_LEN);
 		checksum = ar9300_comp_cksum(&word[COMP_HDR_LEN], length);
 		mchecksum = get_unaligned_le16(&word[COMP_HDR_LEN + osize]);
-		ath_dbg(common, ATH_DBG_EEPROM,
-			"checksum %x %x\n", checksum, mchecksum);
+		ath_dbg(common, EEPROM, "checksum %x %x\n",
+			checksum, mchecksum);
 		if (checksum == mchecksum) {
 			ar9300_compress_decision(ah, it, code, reference, mptr,
 						 word, length, mdata_size);
 		} else {
-			ath_dbg(common, ATH_DBG_EEPROM,
+			ath_dbg(common, EEPROM,
 				"skipping block with bad checksum\n");
 		}
 		cptr -= (COMP_HDR_LEN + osize + COMP_CKSUM_LEN);
@@ -3431,11 +3412,11 @@ static u32 ath9k_hw_ar9003_dump_eeprom(struct ath_hw *ah, bool dump_base_hdr,
 	if (!dump_base_hdr) {
 		len += snprintf(buf + len, size - len,
 				"%20s :\n", "2GHz modal Header");
-		len += ar9003_dump_modal_eeprom(buf, len, size,
+		len = ar9003_dump_modal_eeprom(buf, len, size,
 						&eep->modalHeader2G);
 		len += snprintf(buf + len, size - len,
 				"%20s :\n", "5GHz modal Header");
-		len += ar9003_dump_modal_eeprom(buf, len, size,
+		len = ar9003_dump_modal_eeprom(buf, len, size,
 						&eep->modalHeader5G);
 		goto out;
 	}
@@ -3528,7 +3509,7 @@ static void ar9003_hw_xpa_bias_level_apply(struct ath_hw *ah, bool is2ghz)
 
 	if (AR_SREV_9485(ah) || AR_SREV_9330(ah) || AR_SREV_9340(ah))
 		REG_RMW_FIELD(ah, AR_CH0_TOP2, AR_CH0_TOP2_XPABIASLVL, bias);
-	else if (AR_SREV_9462(ah))
+	else if (AR_SREV_9462(ah) || AR_SREV_9550(ah))
 		REG_RMW_FIELD(ah, AR_CH0_TOP, AR_CH0_TOP_XPABIASLVL, bias);
 	else {
 		REG_RMW_FIELD(ah, AR_CH0_TOP, AR_CH0_TOP_XPABIASLVL, bias);
@@ -3543,13 +3524,13 @@ static void ar9003_hw_xpa_bias_level_apply(struct ath_hw *ah, bool is2ghz)
 static u16 ar9003_switch_com_spdt_get(struct ath_hw *ah, bool is_2ghz)
 {
 	struct ar9300_eeprom *eep = &ah->eeprom.ar9300_eep;
-	__le32 val;
+	__le16 val;
 
 	if (is_2ghz)
 		val = eep->modalHeader2G.switchcomspdt;
 	else
 		val = eep->modalHeader5G.switchcomspdt;
-	return le32_to_cpu(val);
+	return le16_to_cpu(val);
 }
 
 
@@ -3608,12 +3589,11 @@ static void ar9003_hw_ant_ctrl_apply(struct ath_hw *ah, bool is2ghz)
 	u32 value = ar9003_hw_ant_ctrl_common_get(ah, is2ghz);
 
 	if (AR_SREV_9462(ah)) {
-		if (AR_SREV_9462_10(ah)) {
-			value &= ~AR_SWITCH_TABLE_COM_SPDT;
-			value |= 0x00100000;
-		}
 		REG_RMW_FIELD(ah, AR_PHY_SWITCH_COM,
 				AR_SWITCH_TABLE_COM_AR9462_ALL, value);
+	} else if (AR_SREV_9550(ah)) {
+		REG_RMW_FIELD(ah, AR_PHY_SWITCH_COM,
+				AR_SWITCH_TABLE_COM_AR9550_ALL, value);
 	} else
 		REG_RMW_FIELD(ah, AR_PHY_SWITCH_COM,
 			      AR_SWITCH_TABLE_COM_ALL, value);
@@ -3636,6 +3616,7 @@ static void ar9003_hw_ant_ctrl_apply(struct ath_hw *ah, bool is2ghz)
 		value = ar9003_switch_com_spdt_get(ah, is2ghz);
 		REG_RMW_FIELD(ah, AR_PHY_GLB_CONTROL,
 				AR_SWITCH_TABLE_COM_SPDT_ALL, value);
+		REG_SET_BIT(ah, AR_PHY_GLB_CONTROL, AR_BTCOEX_CTRL_SPDT_ENABLE);
 	}
 
 	value = ar9003_hw_ant_ctrl_common_2_get(ah, is2ghz);
@@ -3832,7 +3813,7 @@ static bool is_pmu_set(struct ath_hw *ah, u32 pmu_reg, int pmu_set)
 	return true;
 }
 
-static void ar9003_hw_internal_regulator_apply(struct ath_hw *ah)
+void ar9003_hw_internal_regulator_apply(struct ath_hw *ah)
 {
 	int internal_regulator =
 		ath9k_hw_ar9300_get_eeprom(ah, EEP_INTERNAL_REGULATOR);
@@ -3979,7 +3960,7 @@ static void ath9k_hw_ar9300_set_board_values(struct ath_hw *ah,
 	ar9003_hw_drive_strength_apply(ah);
 	ar9003_hw_atten_apply(ah, chan);
 	ar9003_hw_quick_drop_apply(ah, chan->channel);
-	if (!AR_SREV_9330(ah) && !AR_SREV_9340(ah))
+	if (!AR_SREV_9330(ah) && !AR_SREV_9340(ah) && !AR_SREV_9550(ah))
 		ar9003_hw_internal_regulator_apply(ah);
 	if (AR_SREV_9485(ah) || AR_SREV_9330(ah) || AR_SREV_9340(ah))
 		ar9003_hw_apply_tuning_caps(ah);
@@ -4079,7 +4060,7 @@ static u8 ar9003_hw_eeprom_get_tgt_pwr(struct ath_hw *ah,
 	 * targetpower piers stored on eeprom
 	 */
 	for (i = 0; i < numPiers; i++) {
-		freqArray[i] = FBIN2FREQ(pFreqBin[i], is2GHz);
+		freqArray[i] = ath9k_hw_fbin2freq(pFreqBin[i], is2GHz);
 		targetPowerArray[i] = pEepromTargetPwr[i].tPow2x[rateIndex];
 	}
 
@@ -4115,7 +4096,7 @@ static u8 ar9003_hw_eeprom_get_ht20_tgt_pwr(struct ath_hw *ah,
 	 * from targetpower piers stored on eeprom
 	 */
 	for (i = 0; i < numPiers; i++) {
-		freqArray[i] = FBIN2FREQ(pFreqBin[i], is2GHz);
+		freqArray[i] = ath9k_hw_fbin2freq(pFreqBin[i], is2GHz);
 		targetPowerArray[i] = pEepromTargetPwr[i].tPow2x[rateIndex];
 	}
 
@@ -4151,7 +4132,7 @@ static u8 ar9003_hw_eeprom_get_ht40_tgt_pwr(struct ath_hw *ah,
 	 * targetpower piers stored on eeprom
 	 */
 	for (i = 0; i < numPiers; i++) {
-		freqArray[i] = FBIN2FREQ(pFreqBin[i], is2GHz);
+		freqArray[i] = ath9k_hw_fbin2freq(pFreqBin[i], is2GHz);
 		targetPowerArray[i] = pEepromTargetPwr[i].tPow2x[rateIndex];
 	}
 
@@ -4176,7 +4157,7 @@ static u8 ar9003_hw_eeprom_get_cck_tgt_pwr(struct ath_hw *ah,
 	 * targetpower piers stored on eeprom
 	 */
 	for (i = 0; i < numPiers; i++) {
-		freqArray[i] = FBIN2FREQ(pFreqBin[i], 1);
+		freqArray[i] = ath9k_hw_fbin2freq(pFreqBin[i], 1);
 		targetPowerArray[i] = pEepromTargetPwr[i].tPow2x[rateIndex];
 	}
 
@@ -4304,18 +4285,10 @@ static int ar9003_hw_tx_power_regwrite(struct ath_hw *ah, u8 * pPwrArray)
 #undef POW_SM
 }
 
-static void ar9003_hw_set_target_power_eeprom(struct ath_hw *ah, u16 freq,
-					      u8 *targetPowerValT2)
+static void ar9003_hw_get_legacy_target_powers(struct ath_hw *ah, u16 freq,
+					       u8 *targetPowerValT2,
+					       bool is2GHz)
 {
-	/* XXX: hard code for now, need to get from eeprom struct */
-	u8 ht40PowerIncForPdadc = 0;
-	bool is2GHz = false;
-	unsigned int i = 0;
-	struct ath_common *common = ath9k_hw_common(ah);
-
-	if (freq < 4000)
-		is2GHz = true;
-
 	targetPowerValT2[ALL_TARGET_LEGACY_6_24] =
 	    ar9003_hw_eeprom_get_tgt_pwr(ah, LEGACY_TARGET_RATE_6_24, freq,
 					 is2GHz);
@@ -4328,6 +4301,11 @@ static void ar9003_hw_set_target_power_eeprom(struct ath_hw *ah, u16 freq,
 	targetPowerValT2[ALL_TARGET_LEGACY_54] =
 	    ar9003_hw_eeprom_get_tgt_pwr(ah, LEGACY_TARGET_RATE_54, freq,
 					 is2GHz);
+}
+
+static void ar9003_hw_get_cck_target_powers(struct ath_hw *ah, u16 freq,
+					    u8 *targetPowerValT2)
+{
 	targetPowerValT2[ALL_TARGET_LEGACY_1L_5L] =
 	    ar9003_hw_eeprom_get_cck_tgt_pwr(ah, LEGACY_TARGET_RATE_1L_5L,
 					     freq);
@@ -4337,6 +4315,11 @@ static void ar9003_hw_set_target_power_eeprom(struct ath_hw *ah, u16 freq,
 	    ar9003_hw_eeprom_get_cck_tgt_pwr(ah, LEGACY_TARGET_RATE_11L, freq);
 	targetPowerValT2[ALL_TARGET_LEGACY_11S] =
 	    ar9003_hw_eeprom_get_cck_tgt_pwr(ah, LEGACY_TARGET_RATE_11S, freq);
+}
+
+static void ar9003_hw_get_ht20_target_powers(struct ath_hw *ah, u16 freq,
+					     u8 *targetPowerValT2, bool is2GHz)
+{
 	targetPowerValT2[ALL_TARGET_HT20_0_8_16] =
 	    ar9003_hw_eeprom_get_ht20_tgt_pwr(ah, HT_TARGET_RATE_0_8_16, freq,
 					      is2GHz);
@@ -4379,6 +4362,16 @@ static void ar9003_hw_set_target_power_eeprom(struct ath_hw *ah, u16 freq,
 	targetPowerValT2[ALL_TARGET_HT20_23] =
 	    ar9003_hw_eeprom_get_ht20_tgt_pwr(ah, HT_TARGET_RATE_23, freq,
 					      is2GHz);
+}
+
+static void ar9003_hw_get_ht40_target_powers(struct ath_hw *ah,
+						   u16 freq,
+						   u8 *targetPowerValT2,
+						   bool is2GHz)
+{
+	/* XXX: hard code for now, need to get from eeprom struct */
+	u8 ht40PowerIncForPdadc = 0;
+
 	targetPowerValT2[ALL_TARGET_HT40_0_8_16] =
 	    ar9003_hw_eeprom_get_ht40_tgt_pwr(ah, HT_TARGET_RATE_0_8_16, freq,
 					      is2GHz) + ht40PowerIncForPdadc;
@@ -4422,10 +4415,30 @@ static void ar9003_hw_set_target_power_eeprom(struct ath_hw *ah, u16 freq,
 	targetPowerValT2[ALL_TARGET_HT40_23] =
 	    ar9003_hw_eeprom_get_ht40_tgt_pwr(ah, HT_TARGET_RATE_23, freq,
 					      is2GHz) + ht40PowerIncForPdadc;
+}
+
+static void ar9003_hw_get_target_power_eeprom(struct ath_hw *ah,
+					      struct ath9k_channel *chan,
+					      u8 *targetPowerValT2)
+{
+	bool is2GHz = IS_CHAN_2GHZ(chan);
+	unsigned int i = 0;
+	struct ath_common *common = ath9k_hw_common(ah);
+	u16 freq = chan->channel;
+
+	if (is2GHz)
+		ar9003_hw_get_cck_target_powers(ah, freq, targetPowerValT2);
+
+	ar9003_hw_get_legacy_target_powers(ah, freq, targetPowerValT2, is2GHz);
+	ar9003_hw_get_ht20_target_powers(ah, freq, targetPowerValT2, is2GHz);
+
+	if (IS_CHAN_HT40(chan))
+		ar9003_hw_get_ht40_target_powers(ah, freq, targetPowerValT2,
+						 is2GHz);
 
 	for (i = 0; i < ar9300RateSize; i++) {
-		ath_dbg(common, ATH_DBG_EEPROM,
-			"TPC[%02d] 0x%08x\n", i, targetPowerValT2[i]);
+		ath_dbg(common, EEPROM, "TPC[%02d] 0x%08x\n",
+			i, targetPowerValT2[i]);
 	}
 }
 
@@ -4444,7 +4457,7 @@ static int ar9003_hw_cal_pier_get(struct ath_hw *ah,
 	struct ath_common *common = ath9k_hw_common(ah);
 
 	if (ichain >= AR9300_MAX_CHAINS) {
-		ath_dbg(common, ATH_DBG_EEPROM,
+		ath_dbg(common, EEPROM,
 			"Invalid chain index, must be less than %d\n",
 			AR9300_MAX_CHAINS);
 		return -1;
@@ -4452,7 +4465,7 @@ static int ar9003_hw_cal_pier_get(struct ath_hw *ah,
 
 	if (mode) {		/* 5GHz */
 		if (ipier >= AR9300_NUM_5G_CAL_PIERS) {
-			ath_dbg(common, ATH_DBG_EEPROM,
+			ath_dbg(common, EEPROM,
 				"Invalid 5GHz cal pier index, must be less than %d\n",
 				AR9300_NUM_5G_CAL_PIERS);
 			return -1;
@@ -4462,7 +4475,7 @@ static int ar9003_hw_cal_pier_get(struct ath_hw *ah,
 		is2GHz = 0;
 	} else {
 		if (ipier >= AR9300_NUM_2G_CAL_PIERS) {
-			ath_dbg(common, ATH_DBG_EEPROM,
+			ath_dbg(common, EEPROM,
 				"Invalid 2GHz cal pier index, must be less than %d\n",
 				AR9300_NUM_2G_CAL_PIERS);
 			return -1;
@@ -4473,7 +4486,7 @@ static int ar9003_hw_cal_pier_get(struct ath_hw *ah,
 		is2GHz = 1;
 	}
 
-	*pfrequency = FBIN2FREQ(*pCalPier, is2GHz);
+	*pfrequency = ath9k_hw_fbin2freq(*pCalPier, is2GHz);
 	*pcorrection = pCalPierStruct->refPower;
 	*ptemperature = pCalPierStruct->tempMeas;
 	*pvoltage = pCalPierStruct->voltMeas;
@@ -4624,8 +4637,7 @@ static int ar9003_hw_calibration_apply(struct ath_hw *ah, int frequency)
 
 	/* interpolate  */
 	for (ichain = 0; ichain < AR9300_MAX_CHAINS; ichain++) {
-		ath_dbg(common, ATH_DBG_EEPROM,
-			"ch=%d f=%d low=%d %d h=%d %d\n",
+		ath_dbg(common, EEPROM, "ch=%d f=%d low=%d %d h=%d %d\n",
 			ichain, frequency, lfrequency[ichain],
 			lcorrection[ichain], hfrequency[ichain],
 			hcorrection[ichain]);
@@ -4680,7 +4692,7 @@ static int ar9003_hw_calibration_apply(struct ath_hw *ah, int frequency)
 	ar9003_hw_power_control_override(ah, frequency, correction, voltage,
 					 temperature);
 
-	ath_dbg(common, ATH_DBG_EEPROM,
+	ath_dbg(common, EEPROM,
 		"for frequency=%d, calibration correction = %d %d %d\n",
 		frequency, correction[0], correction[1], correction[2]);
 
@@ -4779,7 +4791,7 @@ static void ar9003_hw_set_power_per_rate_table(struct ath_hw *ah,
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ar9300_eeprom *pEepData = &ah->eeprom.ar9300_eep;
-	u16 twiceMaxEdgePower = MAX_RATE_POWER;
+	u16 twiceMaxEdgePower;
 	int i;
 	u16 scaledPower = 0, minCtlPower;
 	static const u16 ctlModesFor11a[] = {
@@ -4799,34 +4811,9 @@ static void ar9003_hw_set_power_per_rate_table(struct ath_hw *ah,
 	bool is2ghz = IS_CHAN_2GHZ(chan);
 
 	ath9k_hw_get_channel_centers(ah, chan, &centers);
-	scaledPower = powerLimit - antenna_reduction;
+	scaledPower = ath9k_hw_get_scaled_power(ah, powerLimit,
+						antenna_reduction);
 
-	/*
-	 * Reduce scaled Power by number of chains active to get
-	 * to per chain tx power level
-	 */
-	switch (ar5416_get_ntxchains(ah->txchainmask)) {
-	case 1:
-		break;
-	case 2:
-		if (scaledPower > REDUCE_SCALED_POWER_BY_TWO_CHAIN)
-			scaledPower -= REDUCE_SCALED_POWER_BY_TWO_CHAIN;
-		else
-			scaledPower = 0;
-		break;
-	case 3:
-		if (scaledPower > REDUCE_SCALED_POWER_BY_THREE_CHAIN)
-			scaledPower -= REDUCE_SCALED_POWER_BY_THREE_CHAIN;
-		else
-			scaledPower = 0;
-		break;
-	}
-
-	scaledPower = max((u16)0, scaledPower);
-
-	/*
-	 * Get target powers from EEPROM - our baseline for TX Power
-	 */
 	if (is2ghz) {
 		/* Setup for CTL modes */
 		/* CTL_11B, CTL_11G, CTL_2GHT20 */
@@ -4866,7 +4853,7 @@ static void ar9003_hw_set_power_per_rate_table(struct ath_hw *ah,
 		else
 			freq = centers.ctl_center;
 
-		ath_dbg(common, ATH_DBG_REGULATORY,
+		ath_dbg(common, REGULATORY,
 			"LOOP-Mode ctlMode %d < %d, isHt40CtlMode %d, EXT_ADDITIVE %d\n",
 			ctlMode, numCtlModes, isHt40CtlMode,
 			(pCtlMode[ctlMode] & EXT_ADDITIVE));
@@ -4880,8 +4867,9 @@ static void ar9003_hw_set_power_per_rate_table(struct ath_hw *ah,
 			ctlNum = AR9300_NUM_CTLS_5G;
 		}
 
+		twiceMaxEdgePower = MAX_RATE_POWER;
 		for (i = 0; (i < ctlNum) && ctlIndex[i]; i++) {
-			ath_dbg(common, ATH_DBG_REGULATORY,
+			ath_dbg(common, REGULATORY,
 				"LOOP-Ctlidx %d: cfgCtl 0x%2.2x pCtlMode 0x%2.2x ctlIndex 0x%2.2x chan %d\n",
 				i, cfgCtl, pCtlMode[ctlMode], ctlIndex[i],
 				chan->channel);
@@ -4923,7 +4911,7 @@ static void ar9003_hw_set_power_per_rate_table(struct ath_hw *ah,
 
 			minCtlPower = (u8)min(twiceMaxEdgePower, scaledPower);
 
-			ath_dbg(common, ATH_DBG_REGULATORY,
+			ath_dbg(common, REGULATORY,
 				"SEL-Min ctlMode %d pCtlMode %d 2xMaxEdge %d sP %d minCtlPwr %d\n",
 				ctlMode, pCtlMode[ctlMode], twiceMaxEdgePower,
 				scaledPower, minCtlPower);
@@ -4997,7 +4985,12 @@ static void ath9k_hw_ar9300_set_txpower(struct ath_hw *ah,
 	unsigned int i = 0, paprd_scale_factor = 0;
 	u8 pwr_idx, min_pwridx = 0;
 
-	ar9003_hw_set_target_power_eeprom(ah, chan->channel, targetPowerValT2);
+	memset(targetPowerValT2, 0 , sizeof(targetPowerValT2));
+
+	/*
+	 * Get target powers from EEPROM - our baseline for TX Power
+	 */
+	ar9003_hw_get_target_power_eeprom(ah, chan, targetPowerValT2);
 
 	if (ah->eep_ops->get_eeprom(ah, EEP_PAPRD)) {
 		if (IS_CHAN_2GHZ(chan))
@@ -5047,7 +5040,7 @@ static void ath9k_hw_ar9300_set_txpower(struct ath_hw *ah,
 				target_power_val_t2_eep[i]) >
 			    paprd_scale_factor)) {
 				ah->paprd_ratemask &= ~(1 << i);
-				ath_dbg(common, ATH_DBG_EEPROM,
+				ath_dbg(common, EEPROM,
 					"paprd disabled for mcs %d\n", i);
 			}
 		}
@@ -5065,11 +5058,9 @@ static void ath9k_hw_ar9300_set_txpower(struct ath_hw *ah,
 		return;
 
 	for (i = 0; i < ar9300RateSize; i++) {
-		ath_dbg(common, ATH_DBG_EEPROM,
-			"TPC[%02d] 0x%08x\n", i, targetPowerValT2[i]);
+		ath_dbg(common, EEPROM, "TPC[%02d] 0x%08x\n",
+			i, targetPowerValT2[i]);
 	}
-
-	ah->txpower_limit = regulatory->max_power_level;
 
 	/* Write target power array to registers */
 	ar9003_hw_tx_power_regwrite(ah, targetPowerValT2);

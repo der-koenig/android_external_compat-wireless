@@ -10,9 +10,11 @@
  * Distribute under GPL.
  */
 
+#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
+#include <linux/printk.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/types.h>
@@ -608,7 +610,7 @@ static void b44_tx(struct b44 *bp)
 				 skb->len,
 				 DMA_TO_DEVICE);
 		rp->skb = NULL;
-		dev_kfree_skb(skb);
+		dev_kfree_skb_irq(skb);
 	}
 
 	bp->tx_cons = cons;
@@ -1687,11 +1689,7 @@ static int __b44_load_mcast(struct b44 *bp, struct net_device *dev)
 	netdev_for_each_mc_addr(ha, dev) {
 		if (i == num_ents)
 			break;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 		__b44_cam_write(bp, ha->addr, i++ + 1);
-#else
-		__b44_cam_write(bp, ha->dmi_addr, i++ + 1);
-#endif
 	}
 	return i+1;
 }
@@ -2142,7 +2140,6 @@ static int __devinit b44_init_one(struct ssb_device *sdev,
 
 	dev = alloc_etherdev(sizeof(*bp));
 	if (!dev) {
-		dev_err(sdev->dev, "Etherdev alloc failed, aborting\n");
 		err = -ENOMEM;
 		goto out;
 	}
@@ -2164,7 +2161,7 @@ static int __devinit b44_init_one(struct ssb_device *sdev,
 	bp->rx_pending = B44_DEF_RX_RING_PENDING;
 	bp->tx_pending = B44_DEF_TX_RING_PENDING;
 
-	netdev_attach_ops(dev, &b44_netdev_ops);
+	dev->netdev_ops = &b44_netdev_ops;
 	netif_napi_add(dev, &bp->napi, b44_poll, 64);
 	dev->watchdog_timeo = B44_TX_TIMEOUT;
 	dev->irq = sdev->irq;
@@ -2343,7 +2340,7 @@ static inline int __init b44_pci_init(void)
 	return err;
 }
 
-static inline void __exit b44_pci_exit(void)
+static inline void b44_pci_exit(void)
 {
 #ifdef CONFIG_B44_PCI
 	ssb_pcihost_unregister(&b44_pci_driver);

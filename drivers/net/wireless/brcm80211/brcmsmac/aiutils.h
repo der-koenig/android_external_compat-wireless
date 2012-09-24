@@ -17,6 +17,8 @@
 #ifndef	_BRCM_AIUTILS_H_
 #define	_BRCM_AIUTILS_H_
 
+#include <linux/bcma/bcma.h>
+
 #include "types.h"
 
 /*
@@ -86,16 +88,6 @@
 #define	CLKD_OTP		0x000f0000
 #define	CLKD_OTP_SHIFT		16
 
-/* Package IDs */
-#define	BCM4717_PKG_ID		9	/* 4717 package id */
-#define	BCM4718_PKG_ID		10	/* 4718 package id */
-#define BCM43224_FAB_SMIC	0xa	/* the chip is manufactured by SMIC */
-
-/* these are router chips */
-#define	BCM4716_CHIP_ID		0x4716	/* 4716 chipcommon chipid */
-#define	BCM47162_CHIP_ID	47162	/* 47162 chipcommon chipid */
-#define	BCM4748_CHIP_ID		0x4748	/* 4716 chipcommon chipid (OTP, RBBU) */
-
 /* dynamic clock control defines */
 #define	LPOMINFREQ		25000	/* low power oscillator min */
 #define	LPOMAXFREQ		43000	/* low power oscillator max */
@@ -110,10 +102,6 @@
 /* clkctl xtal what flags */
 #define	XTAL			0x1	/* primary crystal oscillator (2050) */
 #define	PLL			0x2	/* main chip pll */
-
-/* clkctl clk mode */
-#define	CLK_FAST		0	/* force fast (pll) clock */
-#define	CLK_DYNAMIC		2	/* enable dynamic clock control */
 
 /* GPIO usage priorities */
 #define GPIO_DRV_PRIORITY	0	/* Driver */
@@ -144,26 +132,15 @@
  *   public (read-only) portion of aiutils handle returned by si_attach()
  */
 struct si_pub {
-	uint buscoretype;	/* PCI_CORE_ID, PCIE_CORE_ID, PCMCIA_CORE_ID */
-	uint buscorerev;	/* buscore rev */
-	uint buscoreidx;	/* buscore index */
 	int ccrev;		/* chip common core rev */
 	u32 cccaps;		/* chip common capabilities */
-	u32 cccaps_ext;	/* chip common capabilities extension */
 	int pmurev;		/* pmu core rev */
 	u32 pmucaps;		/* pmu capabilities */
 	uint boardtype;		/* board type */
 	uint boardvendor;	/* board vendor */
-	uint boardflags;	/* board flags */
-	uint boardflags2;	/* board flags2 */
 	uint chip;		/* chip number */
 	uint chiprev;		/* chip revision */
 	uint chippkg;		/* chip package option */
-	u32 chipst;		/* chip status */
-	bool issim;		/* chip is in simulation or emulation */
-	uint socirev;		/* SOC interconnect rev */
-	bool pci_pr32414;
-
 };
 
 struct pci_dev;
@@ -179,38 +156,10 @@ struct gpioh_item {
 /* misc si info needed by some of the routines */
 struct si_info {
 	struct si_pub pub;	/* back plane public state (must be first) */
-	struct pci_dev *pbus;	/* handle to pci bus */
-	uint dev_coreid;	/* the core provides driver functions */
-	void *intr_arg;		/* interrupt callback function arg */
-	u32 (*intrsoff_fn) (void *intr_arg); /* turns chip interrupts off */
-	/* restore chip interrupts */
-	void (*intrsrestore_fn) (void *intr_arg, u32 arg);
-	/* check if interrupts are enabled */
-	bool (*intrsenabled_fn) (void *intr_arg);
+	struct bcma_bus *icbus;	/* handle to soc interconnect bus */
+	struct pci_dev *pcibus;	/* handle to pci bus */
 
-	struct pcicore_info *pch; /* PCI/E core handle */
-
-	struct list_head var_list; /* list of srom variables */
-
-	void __iomem *curmap;			/* current regs va */
-	void __iomem *regs[SI_MAXCORES];	/* other regs va */
-
-	uint curidx;		/* current core index */
-	uint numcores;		/* # discovered cores */
-	uint coreid[SI_MAXCORES]; /* id of each core */
-	u32 coresba[SI_MAXCORES]; /* backplane address of each core */
-	void *regs2[SI_MAXCORES]; /* 2nd virtual address per core (usbh20) */
-	u32 coresba2[SI_MAXCORES]; /* 2nd phys address per core (usbh20) */
-	u32 coresba_size[SI_MAXCORES]; /* backplane address space size */
-	u32 coresba2_size[SI_MAXCORES];	/* second address space size */
-
-	void *curwrap;		/* current wrapper va */
-	void *wrappers[SI_MAXCORES];	/* other cores wrapper va */
-	u32 wrapba[SI_MAXCORES];	/* address of controlling wrapper */
-
-	u32 cia[SI_MAXCORES];	/* erom cia entry for each core */
-	u32 cib[SI_MAXCORES];	/* erom cia entry for each core */
-	u32 oob_router;	/* oob router registers for axi */
+	u32 chipst;		/* chip status */
 };
 
 /*
@@ -223,80 +172,61 @@ struct si_info {
 
 
 /* AMBA Interconnect exported externs */
-extern uint ai_flag(struct si_pub *sih);
-extern void ai_setint(struct si_pub *sih, int siflag);
-extern uint ai_coreidx(struct si_pub *sih);
-extern uint ai_corevendor(struct si_pub *sih);
-extern uint ai_corerev(struct si_pub *sih);
-extern bool ai_iscoreup(struct si_pub *sih);
-extern u32 ai_core_cflags(struct si_pub *sih, u32 mask, u32 val);
-extern void ai_core_cflags_wo(struct si_pub *sih, u32 mask, u32 val);
-extern u32 ai_core_sflags(struct si_pub *sih, u32 mask, u32 val);
-extern uint ai_corereg(struct si_pub *sih, uint coreidx, uint regoff, uint mask,
-		       uint val);
-extern void ai_core_reset(struct si_pub *sih, u32 bits, u32 resetbits);
-extern void ai_core_disable(struct si_pub *sih, u32 bits);
-extern int ai_numaddrspaces(struct si_pub *sih);
-extern u32 ai_addrspace(struct si_pub *sih, uint asidx);
-extern u32 ai_addrspacesize(struct si_pub *sih, uint asidx);
-extern void ai_write_wrap_reg(struct si_pub *sih, u32 offset, u32 val);
+extern u32 ai_core_cflags(struct bcma_device *core, u32 mask, u32 val);
 
 /* === exported functions === */
-extern struct si_pub *ai_attach(void __iomem *regs, struct pci_dev *sdh);
+extern struct si_pub *ai_attach(struct bcma_bus *pbus);
 extern void ai_detach(struct si_pub *sih);
-extern uint ai_coreid(struct si_pub *sih);
-extern uint ai_corerev(struct si_pub *sih);
-extern uint ai_corereg(struct si_pub *sih, uint coreidx, uint regoff, uint mask,
-		uint val);
-extern void ai_write_wrapperreg(struct si_pub *sih, u32 offset, u32 val);
-extern u32 ai_core_cflags(struct si_pub *sih, u32 mask, u32 val);
-extern u32 ai_core_sflags(struct si_pub *sih, u32 mask, u32 val);
-extern bool ai_iscoreup(struct si_pub *sih);
-extern uint ai_findcoreidx(struct si_pub *sih, uint coreid, uint coreunit);
-extern void __iomem *ai_setcoreidx(struct si_pub *sih, uint coreidx);
-extern void __iomem *ai_setcore(struct si_pub *sih, uint coreid, uint coreunit);
-extern void __iomem *ai_switch_core(struct si_pub *sih, uint coreid,
-				    uint *origidx, uint *intr_val);
-extern void ai_restore_core(struct si_pub *sih, uint coreid, uint intr_val);
-extern void ai_core_reset(struct si_pub *sih, u32 bits, u32 resetbits);
-extern void ai_core_disable(struct si_pub *sih, u32 bits);
-extern u32 ai_alp_clock(struct si_pub *sih);
-extern u32 ai_ilp_clock(struct si_pub *sih);
-extern void ai_pci_setup(struct si_pub *sih, uint coremask);
-extern void ai_setint(struct si_pub *sih, int siflag);
-extern bool ai_backplane64(struct si_pub *sih);
-extern void ai_register_intr_callback(struct si_pub *sih, void *intrsoff_fn,
-				      void *intrsrestore_fn,
-				      void *intrsenabled_fn, void *intr_arg);
-extern void ai_deregister_intr_callback(struct si_pub *sih);
+extern uint ai_cc_reg(struct si_pub *sih, uint regoff, u32 mask, u32 val);
 extern void ai_clkctl_init(struct si_pub *sih);
 extern u16 ai_clkctl_fast_pwrup_delay(struct si_pub *sih);
-extern bool ai_clkctl_cc(struct si_pub *sih, uint mode);
-extern int ai_clkctl_xtal(struct si_pub *sih, uint what, bool on);
+extern bool ai_clkctl_cc(struct si_pub *sih, enum bcma_clkmode mode);
 extern bool ai_deviceremoved(struct si_pub *sih);
-extern u32 ai_gpiocontrol(struct si_pub *sih, u32 mask, u32 val,
-			     u8 priority);
 
-/* OTP status */
-extern bool ai_is_otp_disabled(struct si_pub *sih);
-
-/* SPROM availability */
-extern bool ai_is_sprom_available(struct si_pub *sih);
-
-/*
- * Build device path. Path size must be >= SI_DEVPATH_BUFSZ.
- * The returned path is NULL terminated and has trailing '/'.
- * Return 0 on success, nonzero otherwise.
- */
-extern int ai_devpath(struct si_pub *sih, char *path, int size);
-
-extern void ai_pci_sleep(struct si_pub *sih);
 extern void ai_pci_down(struct si_pub *sih);
 extern void ai_pci_up(struct si_pub *sih);
-extern int ai_pci_fixcfg(struct si_pub *sih);
 
-extern void ai_chipcontrl_epa4331(struct si_pub *sih, bool on);
 /* Enable Ex-PA for 4313 */
 extern void ai_epa_4313war(struct si_pub *sih);
+
+static inline u32 ai_get_cccaps(struct si_pub *sih)
+{
+	return sih->cccaps;
+}
+
+static inline int ai_get_pmurev(struct si_pub *sih)
+{
+	return sih->pmurev;
+}
+
+static inline u32 ai_get_pmucaps(struct si_pub *sih)
+{
+	return sih->pmucaps;
+}
+
+static inline uint ai_get_boardtype(struct si_pub *sih)
+{
+	return sih->boardtype;
+}
+
+static inline uint ai_get_boardvendor(struct si_pub *sih)
+{
+	return sih->boardvendor;
+}
+
+static inline uint ai_get_chip_id(struct si_pub *sih)
+{
+	return sih->chip;
+}
+
+static inline uint ai_get_chiprev(struct si_pub *sih)
+{
+	return sih->chiprev;
+}
+
+static inline uint ai_get_chippkg(struct si_pub *sih)
+{
+	return sih->chippkg;
+}
 
 #endif				/* _BRCM_AIUTILS_H_ */

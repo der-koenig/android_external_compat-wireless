@@ -16,6 +16,7 @@
 #include <linux/input.h>
 
 #if defined(CONFIG_COMPAT_FIRMWARE_CLASS)
+#if defined(CONFIG_FW_LOADER) || defined(CONFIG_FW_LOADER_MODULE)
 #define release_firmware compat_release_firmware
 #define request_firmware compat_request_firmware
 #define request_firmware_nowait compat_request_firmware_nowait
@@ -37,7 +38,7 @@ static inline int compat_request_firmware(const struct firmware **fw,
 {
 	return -EINVAL;
 }
-static inline int request_firmware_nowait(
+static inline int compat_request_firmware_nowait(
 	struct module *module, int uevent,
 	const char *name, struct device *device, gfp_t gfp, void *context,
 	void (*cont)(const struct firmware *fw, void *context))
@@ -49,17 +50,24 @@ static inline void compat_release_firmware(const struct firmware *fw)
 {
 }
 #endif
+#endif
 
 /* mask KEY_RFKILL as RHEL6 backports this */
 #if !defined(KEY_RFKILL)
 #define KEY_RFKILL		247	/* Key that controls all radios */
 #endif
 
+/* mask IFF_DONT_BRIDGE as RHEL6 backports this */
+#if !defined(IFF_DONT_BRIDGE)
 #define IFF_DONT_BRIDGE 0x800		/* disallow bridging this ether dev */
 /* source: include/linux/if.h */
+#endif
 
+/* mask NETDEV_POST_INIT as RHEL6 backports this */
 /* this will never happen on older kernels */
+#if !defined(NETDEV_POST_INIT)
 #define NETDEV_POST_INIT 0xffff
+#endif
 
 /* mask netdev_alloc_skb_ip_align as debian squeeze also backports this */
 #define netdev_alloc_skb_ip_align(a, b) compat_netdev_alloc_skb_ip_align(a, b)
@@ -166,6 +174,19 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 {
 	return !ptr || IS_ERR_VALUE((unsigned long)ptr);
 }
+
+#if (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,32))
+#undef SIMPLE_DEV_PM_OPS
+#define SIMPLE_DEV_PM_OPS(name, suspend_fn, resume_fn) \
+const struct dev_pm_ops name = { \
+	.suspend = suspend_fn, \
+	.resume = resume_fn, \
+	.freeze = suspend_fn, \
+	.thaw = resume_fn, \
+	.poweroff = suspend_fn, \
+	.restore = resume_fn, \
+}
+#endif /* (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,32)) */
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)) */
 

@@ -17,8 +17,10 @@
  * (at your option) any later version.
  */
 
+#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/printk.h>
 #include <linux/hardirq.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
@@ -1064,9 +1066,8 @@ static int if_spi_init_card(struct if_spi_card *card)
 			goto out;
 		}
 
-		err = lbs_get_firmware(&card->spi->dev, NULL, NULL,
-					card->card_id, &fw_table[0], &helper,
-					&mainfw);
+		err = lbs_get_firmware(&card->spi->dev, card->card_id,
+					&fw_table[0], &helper, &mainfw);
 		if (err) {
 			netdev_err(priv->dev, "failed to find firmware (%d)\n",
 				   err);
@@ -1095,10 +1096,8 @@ static int if_spi_init_card(struct if_spi_card *card)
 		goto out;
 
 out:
-	if (helper)
-		release_firmware(helper);
-	if (mainfw)
-		release_firmware(mainfw);
+	release_firmware(helper);
+	release_firmware(mainfw);
 
 	lbs_deb_leave_args(LBS_DEB_SPI, "err %d\n", err);
 
@@ -1252,7 +1251,6 @@ static int __devexit libertas_spi_remove(struct spi_device *spi)
 	return 0;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
 static int if_spi_suspend(struct device *dev)
 {
 	struct spi_device *spi = to_spi_device(dev);
@@ -1286,18 +1284,14 @@ static const struct dev_pm_ops if_spi_pm_ops = {
 	.suspend	= if_spi_suspend,
 	.resume		= if_spi_resume,
 };
-#endif
 
 static struct spi_driver libertas_spi_driver = {
 	.probe	= if_spi_probe,
 	.remove = __devexit_p(libertas_spi_remove),
 	.driver = {
 		.name	= "libertas_spi",
-		.bus	= &spi_bus_type,
 		.owner	= THIS_MODULE,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
 		.pm	= &if_spi_pm_ops,
-#endif
 	},
 };
 

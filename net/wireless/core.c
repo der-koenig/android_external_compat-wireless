@@ -4,8 +4,10 @@
  * Copyright 2006-2010		Johannes Berg <johannes@sipsolutions.net>
  */
 
-//#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#undef pr_fmt
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/printk.h>
 #include <linux/if.h>
 #include <linux/module.h>
 #include <linux/err.h>
@@ -94,69 +96,6 @@ struct wiphy *wiphy_idx_to_wiphy(int wiphy_idx)
 	if (!rdev)
 		return NULL;
 	return &rdev->wiphy;
-}
-
-/* requires cfg80211_mutex to be held! */
-struct cfg80211_registered_device *
-__cfg80211_rdev_from_info(struct genl_info *info)
-{
-	int ifindex;
-	struct cfg80211_registered_device *bywiphyidx = NULL, *byifidx = NULL;
-	struct net_device *dev;
-	int err = -EINVAL;
-
-	assert_cfg80211_lock();
-
-	if (info->attrs[NL80211_ATTR_WIPHY]) {
-		bywiphyidx = cfg80211_rdev_by_wiphy_idx(
-				nla_get_u32(info->attrs[NL80211_ATTR_WIPHY]));
-		err = -ENODEV;
-	}
-
-	if (info->attrs[NL80211_ATTR_IFINDEX]) {
-		ifindex = nla_get_u32(info->attrs[NL80211_ATTR_IFINDEX]);
-		dev = dev_get_by_index(genl_info_net(info), ifindex);
-		if (dev) {
-			if (dev->ieee80211_ptr)
-				byifidx =
-					wiphy_to_dev(dev->ieee80211_ptr->wiphy);
-			dev_put(dev);
-		}
-		err = -ENODEV;
-	}
-
-	if (bywiphyidx && byifidx) {
-		if (bywiphyidx != byifidx)
-			return ERR_PTR(-EINVAL);
-		else
-			return bywiphyidx; /* == byifidx */
-	}
-	if (bywiphyidx)
-		return bywiphyidx;
-
-	if (byifidx)
-		return byifidx;
-
-	return ERR_PTR(err);
-}
-
-struct cfg80211_registered_device *
-cfg80211_get_dev_from_info(struct genl_info *info)
-{
-	struct cfg80211_registered_device *rdev;
-
-	mutex_lock(&cfg80211_mutex);
-	rdev = __cfg80211_rdev_from_info(info);
-
-	/* if it is not an error we grab the lock on
-	 * it to assure it won't be going away while
-	 * we operate on it */
-	if (!IS_ERR(rdev))
-		mutex_lock(&rdev->mtx);
-
-	mutex_unlock(&cfg80211_mutex);
-
-	return rdev;
 }
 
 struct cfg80211_registered_device *
@@ -433,10 +372,6 @@ static int wiphy_verify_combinations(struct wiphy *wiphy)
 	const struct ieee80211_iface_combination *c;
 	int i, j;
 
-	/* If we have combinations enforce them */
-	if (wiphy->n_iface_combinations)
-		wiphy->flags |= WIPHY_FLAG_ENFORCE_COMBINATIONS;
-
 	for (i = 0; i < wiphy->n_iface_combinations; i++) {
 		u32 cnt = 0;
 		u16 all_iftypes = 0;
@@ -449,6 +384,14 @@ static int wiphy_verify_combinations(struct wiphy *wiphy)
 
 		/* Need at least one channel */
 		if (WARN_ON(!c->num_different_channels))
+			return -EINVAL;
+
+		/*
+		 * Put a sane limit on maximum number of different
+		 * channels to simplify channel accounting code.
+		 */
+		if (WARN_ON(c->num_different_channels >
+				CFG80211_MAX_NUM_DIFFERENT_CHANNELS))
 			return -EINVAL;
 
 		if (WARN_ON(!c->n_limits))
@@ -499,9 +442,11 @@ int wiphy_register(struct wiphy *wiphy)
 	int i;
 	u16 ifmodes = wiphy->interface_modes;
 
+#ifdef CONFIG_PM
 	if (WARN_ON((wiphy->wowlan.flags & WIPHY_WOWLAN_GTK_REKEY_FAILURE) &&
 		    !(wiphy->wowlan.flags & WIPHY_WOWLAN_SUPPORTS_GTK_REKEY)))
 		return -EINVAL;
+#endif
 
 	if (WARN_ON(wiphy->ap_sme_capa &&
 		    !(wiphy->flags & WIPHY_FLAG_HAVE_AP_SME)))
@@ -536,8 +481,14 @@ int wiphy_register(struct wiphy *wiphy)
 			continue;
 
 		sband->band = band;
-
-		if (WARN_ON(!sband->n_channels || !sband->n_bitrates))
+		if (WARN_ON(!sband->n_channels))
+			return -EINVAL;
+		/*
+		 * on 60gHz band, there are no legacy rates, so
+		 * n_bitrates is 0
+		 */
+		if (WARN_ON(band != IEEE80211_BAND_60GHZ &&
+			    !sband->n_bitrates))
 			return -EINVAL;
 
 		/*
@@ -578,12 +529,14 @@ int wiphy_register(struct wiphy *wiphy)
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_PM
 	if (rdev->wiphy.wowlan.n_patterns) {
 		if (WARN_ON(!rdev->wiphy.wowlan.pattern_min_len ||
 			    rdev->wiphy.wowlan.pattern_min_len >
 			    rdev->wiphy.wowlan.pattern_max_len))
 			return -EINVAL;
 	}
+#endif
 
 	/* check and set up bitrates */
 	ieee80211_set_bitrate_flags(wiphy);
@@ -679,7 +632,7 @@ void wiphy_unregister(struct wiphy *wiphy)
 		mutex_lock(&rdev->devlist_mtx);
 		__count = rdev->opencount;
 		mutex_unlock(&rdev->devlist_mtx);
-		__count == 0;}));
+		__count == 0; }));
 
 	mutex_lock(&rdev->devlist_mtx);
 	BUG_ON(!list_empty(&rdev->netdev_list));
@@ -719,6 +672,10 @@ void wiphy_unregister(struct wiphy *wiphy)
 	flush_work(&rdev->scan_done_wk);
 	cancel_work_sync(&rdev->conn_work);
 	flush_work(&rdev->event_work);
+
+	if (rdev->wowlan && rdev->ops->set_wakeup)
+		rdev->ops->set_wakeup(&rdev->wiphy, false);
+	cfg80211_rdev_free_wowlan(rdev);
 }
 EXPORT_SYMBOL(wiphy_unregister);
 
@@ -731,7 +688,6 @@ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
 	mutex_destroy(&rdev->sched_scan_mtx);
 	list_for_each_entry_safe(scan, tmp, &rdev->bss_list, list)
 		cfg80211_put_bss(&scan->pub);
-	cfg80211_rdev_free_wowlan(rdev);
 	kfree(rdev);
 }
 
@@ -790,7 +746,62 @@ static struct device_type wiphy_type = {
 };
 #endif
 
-static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
+static struct ieee80211_channel *
+cfg80211_get_any_chan(struct cfg80211_registered_device *rdev)
+{
+	struct ieee80211_supported_band *sband;
+	int i;
+
+	for (i = 0; i < IEEE80211_NUM_BANDS; i++) {
+		sband = rdev->wiphy.bands[i];
+		if (sband && sband->n_channels > 0)
+			return &sband->channels[0];
+	}
+
+	return NULL;
+}
+
+static void cfg80211_init_mon_chan(struct cfg80211_registered_device *rdev)
+{
+	struct ieee80211_channel *chan;
+
+	chan = cfg80211_get_any_chan(rdev);
+	if (WARN_ON(!chan))
+		return;
+
+	mutex_lock(&rdev->devlist_mtx);
+	WARN_ON(cfg80211_set_monitor_channel(rdev, chan->center_freq,
+					     NL80211_CHAN_NO_HT));
+	mutex_unlock(&rdev->devlist_mtx);
+}
+
+void cfg80211_update_iface_num(struct cfg80211_registered_device *rdev,
+			       enum nl80211_iftype iftype, int num)
+{
+	bool has_monitors_only_old = cfg80211_has_monitors_only(rdev);
+	bool has_monitors_only_new;
+
+	ASSERT_RTNL();
+
+	rdev->num_running_ifaces += num;
+	if (iftype == NL80211_IFTYPE_MONITOR)
+		rdev->num_running_monitor_ifaces += num;
+
+	has_monitors_only_new = cfg80211_has_monitors_only(rdev);
+	if (has_monitors_only_new != has_monitors_only_old) {
+		rdev->ops->set_monitor_enabled(&rdev->wiphy,
+					       has_monitors_only_new);
+
+		if (!has_monitors_only_new) {
+			rdev->monitor_channel = NULL;
+			rdev->monitor_channel_type = NL80211_CHAN_NO_HT;
+		} else {
+			cfg80211_init_mon_chan(rdev);
+		}
+	}
+}
+
+static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 					 unsigned long state,
 					 void *ndev)
 {
@@ -894,12 +905,16 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		case NL80211_IFTYPE_MESH_POINT:
 			cfg80211_leave_mesh(rdev, dev);
 			break;
+		case NL80211_IFTYPE_AP:
+			cfg80211_stop_ap(rdev, dev);
+			break;
 		default:
 			break;
 		}
 		wdev->beacon_interval = 0;
 		break;
 	case NETDEV_DOWN:
+		cfg80211_update_iface_num(rdev, wdev->iftype, -1);
 		dev_hold(dev);
 		queue_work(cfg80211_wq, &wdev->cleanup_work);
 		break;
@@ -1005,9 +1020,12 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 			return notifier_from_errno(-EOPNOTSUPP);
 		if (rfkill_blocked(rdev->rfkill))
 			return notifier_from_errno(-ERFKILL);
+		mutex_lock(&rdev->devlist_mtx);
 		ret = cfg80211_can_add_interface(rdev, wdev->iftype);
+		mutex_unlock(&rdev->devlist_mtx);
 		if (ret)
 			return notifier_from_errno(ret);
+		cfg80211_update_iface_num(rdev, wdev->iftype, 1);
 		break;
 	}
 

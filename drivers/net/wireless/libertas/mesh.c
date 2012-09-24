@@ -1,5 +1,7 @@
+#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/printk.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
 #include <linux/hardirq.h>
@@ -131,16 +133,13 @@ static int lbs_mesh_config(struct lbs_private *priv, uint16_t action,
 
 int lbs_mesh_set_channel(struct lbs_private *priv, u8 channel)
 {
+	priv->mesh_channel = channel;
 	return lbs_mesh_config(priv, CMD_ACT_MESH_CONFIG_START, channel);
 }
 
 static uint16_t lbs_mesh_get_channel(struct lbs_private *priv)
 {
-	struct wireless_dev *mesh_wdev = priv->mesh_dev->ieee80211_ptr;
-	if (mesh_wdev->channel)
-		return mesh_wdev->channel->hw_value;
-	else
-		return 1;
+	return priv->mesh_channel ?: 1;
 }
 
 /***************************************************************************
@@ -1018,7 +1017,7 @@ static int lbs_add_mesh(struct lbs_private *priv)
 	mesh_dev->ieee80211_ptr = mesh_wdev;
 	priv->mesh_dev = mesh_dev;
 
-	netdev_attach_ops(mesh_dev, &mesh_netdev_ops);
+	mesh_dev->netdev_ops = &mesh_netdev_ops;
 	mesh_dev->ethtool_ops = &lbs_ethtool_ops;
 	memcpy(mesh_dev->dev_addr, priv->dev->dev_addr, ETH_ALEN);
 

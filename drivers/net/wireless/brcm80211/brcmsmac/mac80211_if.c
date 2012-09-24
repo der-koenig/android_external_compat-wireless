@@ -15,16 +15,18 @@
  */
 
 #define __UNDEF_NO_VERSION__
+#undef pr_fmt
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/printk.h>
 #include <linux/etherdevice.h>
-#include <linux/pci.h>
 #include <linux/sched.h>
 #include <linux/firmware.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/bcma/bcma.h>
 #include <net/mac80211.h>
 #include <defs.h>
-#include "nicpci.h"
 #include "phy/phy_int.h"
 #include "d11.h"
 #include "channel.h"
@@ -40,10 +42,10 @@
 #define MAC_FILTERS (FIF_PROMISC_IN_BSS | \
 	FIF_ALLMULTI | \
 	FIF_FCSFAIL | \
-	FIF_PLCPFAIL | \
 	FIF_CONTROL | \
 	FIF_OTHER_BSS | \
-	FIF_BCN_PRBRESP_PROMISC)
+	FIF_BCN_PRBRESP_PROMISC | \
+	FIF_PSPOLL)
 
 #define CHAN2GHZ(channel, freqency, chflags)  { \
 	.band = IEEE80211_BAND_2GHZ, \
@@ -87,21 +89,19 @@ MODULE_DESCRIPTION("Broadcom 802.11n wireless LAN driver.");
 MODULE_SUPPORTED_DEVICE("Broadcom 802.11n WLAN cards");
 MODULE_LICENSE("Dual BSD/GPL");
 
-/* recognized PCI IDs */
-static DEFINE_PCI_DEVICE_TABLE(brcms_pci_id_table) = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4357) }, /* 43225 2G */
-	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4353) }, /* 43224 DUAL */
-	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4727) }, /* 4313 DUAL */
-	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x0576) }, /* 43224 Ven */
-	{0}
+
+/* recognized BCMA Core IDs */
+static struct bcma_device_id brcms_coreid_table[] = {
+	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 23, BCMA_ANY_CLASS),
+	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 24, BCMA_ANY_CLASS),
+	BCMA_CORETABLE_END
 };
+MODULE_DEVICE_TABLE(bcma, brcms_coreid_table);
 
-MODULE_DEVICE_TABLE(pci, brcms_pci_id_table);
-
-#ifdef BCMDBG
+#ifdef DEBUG
 static int msglevel = 0xdeadbeef;
 module_param(msglevel, int, 0);
-#endif				/* BCMDBG */
+#endif				/* DEBUG */
 
 static struct ieee80211_channel brcms_2ghz_chantable[] = {
 	CHAN2GHZ(1, 2412, IEEE80211_CHAN_NO_HT40MINUS),
@@ -321,8 +321,7 @@ static void brcms_ops_stop(struct ieee80211_hw *hw)
 		return;
 
 	spin_lock_bh(&wl->lock);
-	status = brcms_c_chipmatch(wl->wlc->hw->vendorid,
-				   wl->wlc->hw->deviceid);
+	status = brcms_c_chipmatch(wl->wlc->hw->d11core);
 	spin_unlock_bh(&wl->lock);
 	if (!status) {
 		wiphy_err(wl->wiphy,
@@ -373,7 +372,7 @@ static int brcms_ops_config(struct ieee80211_hw *hw, u32 changed)
 						   conf->listen_interval);
 	}
 	if (changed & IEEE80211_CONF_CHANGE_MONITOR)
-		wiphy_err(wiphy, "%s: change monitor mode: %s (implement)\n",
+		wiphy_dbg(wiphy, "%s: change monitor mode: %s\n",
 			  __func__, conf->flags & IEEE80211_CONF_MONITOR ?
 			  "true" : "false");
 	if (changed & IEEE80211_CONF_CHANGE_PS)
@@ -550,29 +549,25 @@ brcms_ops_configure_filter(struct ieee80211_hw *hw,
 
 	changed_flags &= MAC_FILTERS;
 	*total_flags &= MAC_FILTERS;
+
 	if (changed_flags & FIF_PROMISC_IN_BSS)
-		wiphy_err(wiphy, "FIF_PROMISC_IN_BSS\n");
+		wiphy_dbg(wiphy, "FIF_PROMISC_IN_BSS\n");
 	if (changed_flags & FIF_ALLMULTI)
-		wiphy_err(wiphy, "FIF_ALLMULTI\n");
+		wiphy_dbg(wiphy, "FIF_ALLMULTI\n");
 	if (changed_flags & FIF_FCSFAIL)
-		wiphy_err(wiphy, "FIF_FCSFAIL\n");
-	if (changed_flags & FIF_PLCPFAIL)
-		wiphy_err(wiphy, "FIF_PLCPFAIL\n");
+		wiphy_dbg(wiphy, "FIF_FCSFAIL\n");
 	if (changed_flags & FIF_CONTROL)
-		wiphy_err(wiphy, "FIF_CONTROL\n");
+		wiphy_dbg(wiphy, "FIF_CONTROL\n");
 	if (changed_flags & FIF_OTHER_BSS)
-		wiphy_err(wiphy, "FIF_OTHER_BSS\n");
-	if (changed_flags & FIF_BCN_PRBRESP_PROMISC) {
-		spin_lock_bh(&wl->lock);
-		if (*total_flags & FIF_BCN_PRBRESP_PROMISC) {
-			wl->pub->mac80211_state |= MAC80211_PROMISC_BCNS;
-			brcms_c_mac_bcn_promisc_change(wl->wlc, 1);
-		} else {
-			brcms_c_mac_bcn_promisc_change(wl->wlc, 0);
-			wl->pub->mac80211_state &= ~MAC80211_PROMISC_BCNS;
-		}
-		spin_unlock_bh(&wl->lock);
-	}
+		wiphy_dbg(wiphy, "FIF_OTHER_BSS\n");
+	if (changed_flags & FIF_PSPOLL)
+		wiphy_dbg(wiphy, "FIF_PSPOLL\n");
+	if (changed_flags & FIF_BCN_PRBRESP_PROMISC)
+		wiphy_dbg(wiphy, "FIF_BCN_PRBRESP_PROMISC\n");
+
+	spin_lock_bh(&wl->lock);
+	brcms_c_mac_promisc(wl->wlc, *total_flags);
+	spin_unlock_bh(&wl->lock);
 	return;
 }
 
@@ -727,14 +722,6 @@ static const struct ieee80211_ops brcms_ops = {
 	.flush = brcms_ops_flush,
 };
 
-/*
- * is called in brcms_pci_probe() context, therefore no locking required.
- */
-static int brcms_set_hint(struct brcms_info *wl, char *abbrev)
-{
-	return regulatory_hint(wl->pub->ieee_hw->wiphy, abbrev);
-}
-
 void brcms_dpc(unsigned long data)
 {
 	struct brcms_info *wl;
@@ -775,7 +762,7 @@ void brcms_dpc(unsigned long data)
  * Precondition: Since this function is called in brcms_pci_probe() context,
  * no locking is required.
  */
-static int brcms_request_fw(struct brcms_info *wl, struct pci_dev *pdev)
+static int brcms_request_fw(struct brcms_info *wl, struct bcma_device *pdev)
 {
 	int status;
 	struct device *device = &pdev->dev;
@@ -863,30 +850,20 @@ static void brcms_free(struct brcms_info *wl)
 	/* free timers */
 	for (t = wl->timers; t; t = next) {
 		next = t->next;
-#ifdef BCMDBG
+#ifdef DEBUG
 		kfree(t->name);
 #endif
 		kfree(t);
 	}
-
-	/*
-	 * unregister_netdev() calls get_stats() which may read chip
-	 * registers so we cannot unmap the chip registers until
-	 * after calling unregister_netdev() .
-	 */
-	if (wl->regsva)
-		iounmap(wl->regsva);
-
-	wl->regsva = NULL;
 }
 
 /*
 * called from both kernel as from this kernel module (error flow on attach)
 * precondition: perimeter lock is not acquired.
 */
-static void brcms_remove(struct pci_dev *pdev)
+static void brcms_remove(struct bcma_device *pdev)
 {
-	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
+	struct ieee80211_hw *hw = bcma_get_drvdata(pdev);
 	struct brcms_info *wl = hw->priv;
 
 	if (wl->wlc) {
@@ -894,11 +871,10 @@ static void brcms_remove(struct pci_dev *pdev)
 		wiphy_rfkill_stop_polling(wl->pub->ieee_hw->wiphy);
 		ieee80211_unregister_hw(hw);
 	}
-	pci_disable_device(pdev);
 
 	brcms_free(wl);
 
-	pci_set_drvdata(pdev, NULL);
+	bcma_set_drvdata(pdev, NULL);
 	ieee80211_free_hw(hw);
 }
 
@@ -1006,11 +982,9 @@ static int ieee_hw_init(struct ieee80211_hw *hw)
  * it as static.
  *
  *
- * is called in brcms_pci_probe() context, therefore no locking required.
+ * is called in brcms_bcma_probe() context, therefore no locking required.
  */
-static struct brcms_info *brcms_attach(u16 vendor, u16 device,
-				       resource_size_t regs,
-				       struct pci_dev *btparam, uint irq)
+static struct brcms_info *brcms_attach(struct bcma_device *pdev)
 {
 	struct brcms_info *wl = NULL;
 	int unit, err;
@@ -1024,7 +998,7 @@ static struct brcms_info *brcms_attach(u16 vendor, u16 device,
 		return NULL;
 
 	/* allocate private info */
-	hw = pci_get_drvdata(btparam);	/* btparam == pdev */
+	hw = bcma_get_drvdata(pdev);
 	if (hw != NULL)
 		wl = hw->priv;
 	if (WARN_ON(hw == NULL) || WARN_ON(wl == NULL))
@@ -1036,26 +1010,20 @@ static struct brcms_info *brcms_attach(u16 vendor, u16 device,
 	/* setup the bottom half handler */
 	tasklet_init(&wl->tasklet, brcms_dpc, (unsigned long) wl);
 
-	wl->regsva = ioremap_nocache(regs, PCI_BAR0_WINSZ);
-	if (wl->regsva == NULL) {
-		wiphy_err(wl->wiphy, "wl%d: ioremap() failed\n", unit);
-		goto fail;
-	}
 	spin_lock_init(&wl->lock);
 	spin_lock_init(&wl->isr_lock);
 
 	/* prepare ucode */
-	if (brcms_request_fw(wl, btparam) < 0) {
+	if (brcms_request_fw(wl, pdev) < 0) {
 		wiphy_err(wl->wiphy, "%s: Failed to find firmware usually in "
 			  "%s\n", KBUILD_MODNAME, "/lib/firmware/brcm");
 		brcms_release_fw(wl);
-		brcms_remove(btparam);
+		brcms_remove(pdev);
 		return NULL;
 	}
 
 	/* common load-time initialization */
-	wl->wlc = brcms_c_attach(wl, vendor, device, unit, false,
-				 wl->regsva, btparam, &err);
+	wl->wlc = brcms_c_attach((void *)wl, pdev, unit, false, &err);
 	brcms_release_fw(wl);
 	if (!wl->wlc) {
 		wiphy_err(wl->wiphy, "%s: attach() failed with code %d\n",
@@ -1067,11 +1035,12 @@ static struct brcms_info *brcms_attach(u16 vendor, u16 device,
 	wl->pub->ieee_hw = hw;
 
 	/* register our interrupt handler */
-	if (request_irq(irq, brcms_isr, IRQF_SHARED, KBUILD_MODNAME, wl)) {
+	if (request_irq(pdev->irq, brcms_isr,
+			IRQF_SHARED, KBUILD_MODNAME, wl)) {
 		wiphy_err(wl->wiphy, "wl%d: request_irq() failed\n", unit);
 		goto fail;
 	}
-	wl->irq = irq;
+	wl->irq = pdev->irq;
 
 	/* register module */
 	brcms_c_module_register(wl->pub, "linux", wl, NULL);
@@ -1081,6 +1050,8 @@ static struct brcms_info *brcms_attach(u16 vendor, u16 device,
 			  __func__);
 		goto fail;
 	}
+
+	brcms_c_regd_init(wl->wlc);
 
 	memcpy(perm, &wl->pub->cur_etheraddr, ETH_ALEN);
 	if (WARN_ON(!is_valid_ether_addr(perm)))
@@ -1092,13 +1063,9 @@ static struct brcms_info *brcms_attach(u16 vendor, u16 device,
 		wiphy_err(wl->wiphy, "%s: ieee80211_register_hw failed, status"
 			  "%d\n", __func__, err);
 
-	if (wl->pub->srom_ccode[0])
-		err = brcms_set_hint(wl, wl->pub->srom_ccode);
-	else
-		err = brcms_set_hint(wl, "US");
-	if (err)
-		wiphy_err(wl->wiphy, "%s: regulatory_hint failed, status %d\n",
-			  __func__, err);
+	if (wl->pub->srom_ccode[0] &&
+	    regulatory_hint(wl->wiphy, wl->pub->srom_ccode))
+		wiphy_err(wl->wiphy, "%s: regulatory hint failed\n", __func__);
 
 	n_adapters_found++;
 	return wl;
@@ -1118,37 +1085,18 @@ fail:
  *
  * Perimeter lock is initialized in the course of this function.
  */
-static int __devinit
-brcms_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+static int __devinit brcms_bcma_probe(struct bcma_device *pdev)
 {
-	int rc;
 	struct brcms_info *wl;
 	struct ieee80211_hw *hw;
-	u32 val;
 
-	dev_info(&pdev->dev, "bus %d slot %d func %d irq %d\n",
-	       pdev->bus->number, PCI_SLOT(pdev->devfn),
-	       PCI_FUNC(pdev->devfn), pdev->irq);
+	dev_info(&pdev->dev, "mfg %x core %x rev %d class %d irq %d\n",
+		 pdev->id.manuf, pdev->id.id, pdev->id.rev, pdev->id.class,
+		 pdev->irq);
 
-	if ((pdev->vendor != PCI_VENDOR_ID_BROADCOM) ||
-	    ((pdev->device != 0x0576) &&
-	     ((pdev->device & 0xff00) != 0x4300) &&
-	     ((pdev->device & 0xff00) != 0x4700) &&
-	     ((pdev->device < 43000) || (pdev->device > 43999))))
+	if ((pdev->id.manuf != BCMA_MANUF_BCM) ||
+	    (pdev->id.id != BCMA_CORE_80211))
 		return -ENODEV;
-
-	rc = pci_enable_device(pdev);
-	if (rc) {
-		pr_err("%s: Cannot enable device %d-%d_%d\n",
-		       __func__, pdev->bus->number, PCI_SLOT(pdev->devfn),
-		       PCI_FUNC(pdev->devfn));
-		return -ENODEV;
-	}
-	pci_set_master(pdev);
-
-	pci_read_config_dword(pdev, 0x40, &val);
-	if ((val & 0x0000ff00) != 0)
-		pci_write_config_dword(pdev, 0x40, val & 0xffff00ff);
 
 	hw = ieee80211_alloc_hw(sizeof(struct brcms_info), &brcms_ops);
 	if (!hw) {
@@ -1158,32 +1106,28 @@ brcms_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	SET_IEEE80211_DEV(hw, &pdev->dev);
 
-	pci_set_drvdata(pdev, hw);
+	bcma_set_drvdata(pdev, hw);
 
 	memset(hw->priv, 0, sizeof(*wl));
 
-	wl = brcms_attach(pdev->vendor, pdev->device,
-			  pci_resource_start(pdev, 0), pdev,
-			  pdev->irq);
-
+	wl = brcms_attach(pdev);
 	if (!wl) {
-		pr_err("%s: %s: brcms_attach failed!\n", KBUILD_MODNAME,
-		       __func__);
+		pr_err("%s: brcms_attach failed!\n", __func__);
 		return -ENODEV;
 	}
 	return 0;
 }
 
-static int brcms_suspend(struct pci_dev *pdev, pm_message_t state)
+static int brcms_suspend(struct bcma_device *pdev)
 {
 	struct brcms_info *wl;
 	struct ieee80211_hw *hw;
 
-	hw = pci_get_drvdata(pdev);
+	hw = bcma_get_drvdata(pdev);
 	wl = hw->priv;
 	if (!wl) {
-		wiphy_err(wl->wiphy,
-			  "brcms_suspend: pci_get_drvdata failed\n");
+		pr_err("%s: %s: no driver private struct!\n", KBUILD_MODNAME,
+		       __func__);
 		return -ENODEV;
 	}
 
@@ -1192,94 +1136,67 @@ static int brcms_suspend(struct pci_dev *pdev, pm_message_t state)
 	wl->pub->hw_up = false;
 	spin_unlock_bh(&wl->lock);
 
-	pci_save_state(pdev);
-	pci_disable_device(pdev);
-	return pci_set_power_state(pdev, PCI_D3hot);
+	pr_debug("brcms_suspend ok\n");
+
+	return 0;
 }
 
-static int brcms_resume(struct pci_dev *pdev)
+static int brcms_resume(struct bcma_device *pdev)
 {
-	struct brcms_info *wl;
-	struct ieee80211_hw *hw;
-	int err = 0;
-	u32 val;
-
-	hw = pci_get_drvdata(pdev);
-	wl = hw->priv;
-	if (!wl) {
-		wiphy_err(wl->wiphy,
-			  "wl: brcms_resume: pci_get_drvdata failed\n");
-		return -ENODEV;
-	}
-
-	err = pci_set_power_state(pdev, PCI_D0);
-	if (err)
-		return err;
-
-	pci_restore_state(pdev);
-
-	err = pci_enable_device(pdev);
-	if (err)
-		return err;
-
-	pci_set_master(pdev);
-
-	pci_read_config_dword(pdev, 0x40, &val);
-	if ((val & 0x0000ff00) != 0)
-		pci_write_config_dword(pdev, 0x40, val & 0xffff00ff);
-
-	/*
-	*  done. driver will be put in up state
-	*  in brcms_ops_add_interface() call.
-	*/
-	return err;
+	pr_debug("brcms_resume ok\n");
+	return 0;
 }
 
-static struct pci_driver brcms_pci_driver = {
+static struct bcma_driver brcms_bcma_driver = {
 	.name     = KBUILD_MODNAME,
-	.probe    = brcms_pci_probe,
+	.probe    = brcms_bcma_probe,
 	.suspend  = brcms_suspend,
 	.resume   = brcms_resume,
 	.remove   = __devexit_p(brcms_remove),
-	.id_table = brcms_pci_id_table,
+	.id_table = brcms_coreid_table,
 };
 
 /**
- * This is the main entry point for the WL driver.
+ * This is the main entry point for the brcmsmac driver.
  *
- * This function determines if a device pointed to by pdev is a WL device,
- * and if so, performs a brcms_attach() on it.
- *
+ * This function is scheduled upon module initialization and
+ * does the driver registration, which result in brcms_bcma_probe()
+ * call resulting in the driver bringup.
  */
+static void brcms_driver_init(struct work_struct *work)
+{
+	int error;
+
+	error = bcma_driver_register(&brcms_bcma_driver);
+	if (error)
+		pr_err("%s: register returned %d\n", __func__, error);
+}
+
+static DECLARE_WORK(brcms_driver_work, brcms_driver_init);
+
 static int __init brcms_module_init(void)
 {
-	int error = -ENODEV;
-
-#ifdef BCMDBG
+#ifdef DEBUG
 	if (msglevel != 0xdeadbeef)
 		brcm_msg_level = msglevel;
-#endif				/* BCMDBG */
+#endif
+	if (!schedule_work(&brcms_driver_work))
+		return -EBUSY;
 
-	error = pci_register_driver(&brcms_pci_driver);
-	if (!error)
-		return 0;
-
-
-
-	return error;
+	return 0;
 }
 
 /**
- * This function unloads the WL driver from the system.
+ * This function unloads the brcmsmac driver from the system.
  *
- * This function unconditionally unloads the WL driver module from the
+ * This function unconditionally unloads the brcmsmac driver module from the
  * system.
  *
  */
 static void __exit brcms_module_exit(void)
 {
-	pci_unregister_driver(&brcms_pci_driver);
-
+	cancel_work_sync(&brcms_driver_work);
+	bcma_driver_unregister(&brcms_bcma_driver);
 }
 
 module_init(brcms_module_init);
@@ -1313,7 +1230,7 @@ uint brcms_reset(struct brcms_info *wl)
 	brcms_c_reset(wl->wlc);
 
 	/* dpc will not be rescheduled */
-	wl->resched = 0;
+	wl->resched = false;
 
 	return 0;
 }
@@ -1447,7 +1364,7 @@ struct brcms_timer *brcms_init_timer(struct brcms_info *wl,
 	t->next = wl->timers;
 	wl->timers = t;
 
-#ifdef BCMDBG
+#ifdef DEBUG
 	t->name = kmalloc(strlen(name) + 1, GFP_ATOMIC);
 	if (t->name)
 		strcpy(t->name, name);
@@ -1466,7 +1383,7 @@ void brcms_add_timer(struct brcms_timer *t, uint ms, int periodic)
 {
 	struct ieee80211_hw *hw = t->wl->pub->ieee_hw;
 
-#ifdef BCMDBG
+#ifdef DEBUG
 	if (t->set)
 		wiphy_err(hw->wiphy, "%s: Already set. Name: %s, per %d\n",
 			  __func__, t->name, periodic);
@@ -1511,7 +1428,7 @@ void brcms_free_timer(struct brcms_timer *t)
 
 	if (wl->timers == t) {
 		wl->timers = wl->timers->next;
-#ifdef BCMDBG
+#ifdef DEBUG
 		kfree(t->name);
 #endif
 		kfree(t);
@@ -1523,7 +1440,7 @@ void brcms_free_timer(struct brcms_timer *t)
 	while (tmp) {
 		if (tmp->next == t) {
 			tmp->next = t->next;
-#ifdef BCMDBG
+#ifdef DEBUG
 			kfree(t->name);
 #endif
 			kfree(t);
@@ -1550,11 +1467,10 @@ int brcms_ucode_init_buf(struct brcms_info *wl, void **pbuf, u32 idx)
 			if (le32_to_cpu(hdr->idx) == idx) {
 				pdata = wl->fw.fw_bin[i]->data +
 					le32_to_cpu(hdr->offset);
-				*pbuf = kmalloc(len, GFP_ATOMIC);
+				*pbuf = kmemdup(pdata, len, GFP_ATOMIC);
 				if (*pbuf == NULL)
 					goto fail;
 
-				memcpy(*pbuf, pdata, len);
 				return 0;
 			}
 		}
@@ -1567,7 +1483,7 @@ fail:
 }
 
 /*
- * Precondition: Since this function is called in brcms_pci_probe() context,
+ * Precondition: Since this function is called in brcms_bcma_probe() context,
  * no locking is required.
  */
 int brcms_ucode_init_uint(struct brcms_info *wl, size_t *n_bytes, u32 idx)
@@ -1607,7 +1523,7 @@ void brcms_ucode_free_buf(void *p)
 /*
  * checks validity of all firmware images loaded from user space
  *
- * Precondition: Since this function is called in brcms_pci_probe() context,
+ * Precondition: Since this function is called in brcms_bcma_probe() context,
  * no locking is required.
  */
 int brcms_check_firmwares(struct brcms_info *wl)

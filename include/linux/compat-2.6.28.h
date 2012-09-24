@@ -9,12 +9,17 @@
 #include <linux/if_ether.h>
 #include <linux/usb.h>
 #include <linux/types.h>
+#include <linux/types.h>
+#include <linux/cpumask.h>
 
 #ifndef ETH_P_PAE
 #define ETH_P_PAE 0x888E      /* Port Access Entity (IEEE 802.1X) */
 #endif
 
 #include <linux/pci.h>
+#include <linux/pci_regs.h>
+
+typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } compat_cpumask_t;
 
 #if defined(CONFIG_X86) || defined(CONFIG_X86_64) || defined(CONFIG_PPC)
 /*
@@ -210,6 +215,10 @@ static inline void skb_queue_splice_tail(const struct sk_buff_head *list,
 	}
 }
 
+#define skb_queue_walk_from(queue, skb)						\
+		for (; skb != (struct sk_buff *)(queue);			\
+		     skb = skb->next)
+
 #ifndef DECLARE_TRACE
 
 #define TP_PROTO(args...)	args
@@ -242,7 +251,7 @@ static inline void skb_queue_splice_tail(const struct sk_buff_head *list,
 
 unsigned long round_jiffies_up(unsigned long j);
 
-extern void skb_add_rx_frag(struct sk_buff *skb, int i, struct page *page,
+extern void v2_6_28_skb_add_rx_frag(struct sk_buff *skb, int i, struct page *page,
 			    int off, int size);
 
 #define wake_up_interruptible_poll(x, m)			\
@@ -258,6 +267,11 @@ int pci_wake_from_d3(struct pci_dev *dev, bool enable);
 #ifndef pr_fmt
 #define pr_fmt(fmt) fmt
 #endif
+
+#define PCI_EXP_DEVCAP2		36      /* Device Capabilities 2 */
+#define  PCI_EXP_DEVCAP2_ARI  	0x20    /* Alternative Routing-ID */
+#define PCI_EXP_DEVCTL2		40      /* Device Control 2 */
+#define  PCI_EXP_DEVCTL2_ARI	0x20    /* Alternative Routing-ID */
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)) */
 

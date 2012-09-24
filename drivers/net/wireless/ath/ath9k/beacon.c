@@ -48,7 +48,10 @@ int ath_beaconq_config(struct ath_softc *sc)
 		txq = sc->tx.txq_map[WME_AC_BE];
 		ath9k_hw_get_txq_props(ah, txq->axq_qnum, &qi_be);
 		qi.tqi_aifs = qi_be.tqi_aifs;
-		qi.tqi_cwmin = 4*qi_be.tqi_cwmin;
+		if (ah->slottime == ATH9K_SLOT_TIME_20)
+			qi.tqi_cwmin = 2*qi_be.tqi_cwmin;
+		else
+			qi.tqi_cwmin = 4*qi_be.tqi_cwmin;
 		qi.tqi_cwmax = qi_be.tqi_cwmax;
 	}
 
@@ -67,7 +70,7 @@ int ath_beaconq_config(struct ath_softc *sc)
  *  up rate codes, and channel flags. Beacons are always sent out at the
  *  lowest rate, and are not retried.
 */
-static void ath_beacon_setup(struct ath_softc *sc, struct ath_vif *avp,
+static void ath_beacon_setup(struct ath_softc *sc, struct ieee80211_vif *vif,
 			     struct ath_buf *bf, int rateidx)
 {
 	struct sk_buff *skb = bf->bf_mpdu;
@@ -82,7 +85,7 @@ static void ath_beacon_setup(struct ath_softc *sc, struct ath_vif *avp,
 
 	sband = &sc->sbands[common->hw->conf.channel->band];
 	rate = sband->bitrates[rateidx].hw_value;
-	if (sc->sc_flags & SC_OP_PREAMBLE_SHORT)
+	if (vif->bss_conf.use_short_preamble)
 		rate |= sband->bitrates[rateidx].hw_value_short;
 
 	memset(&info, 0, sizeof(info));
@@ -91,7 +94,7 @@ static void ath_beacon_setup(struct ath_softc *sc, struct ath_vif *avp,
 	info.txpower = MAX_RATE_POWER;
 	info.keyix = ATH9K_TXKEYIX_INVALID;
 	info.keytype = ATH9K_KEY_TYPE_CLEAR;
-	info.flags = ATH9K_TXDESC_NOACK;
+	info.flags = ATH9K_TXDESC_NOACK | ATH9K_TXDESC_CLRDMASK;
 
 	info.buf_addr[0] = bf->bf_buf_addr;
 	info.buf_len[0] = roundup(skb->len, 4);
@@ -117,11 +120,10 @@ static void ath_tx_cabq(struct ieee80211_hw *hw, struct sk_buff *skb)
 	memset(&txctl, 0, sizeof(struct ath_tx_control));
 	txctl.txq = sc->beacon.cabq;
 
-	ath_dbg(common, ATH_DBG_XMIT,
-		"transmitting CABQ packet, skb: %p\n", skb);
+	ath_dbg(common, XMIT, "transmitting CABQ packet, skb: %p\n", skb);
 
 	if (ath_tx_start(hw, skb, &txctl) != 0) {
-		ath_dbg(common, ATH_DBG_XMIT, "CABQ TX failed\n");
+		ath_dbg(common, XMIT, "CABQ TX failed\n");
 		dev_kfree_skb_any(skb);
 	}
 }
@@ -204,13 +206,13 @@ static struct ath_buf *ath_beacon_generate(struct ieee80211_hw *hw,
 
 	if (skb && cabq_depth) {
 		if (sc->nvifs > 1) {
-			ath_dbg(common, ATH_DBG_BEACON,
+			ath_dbg(common, BEACON,
 				"Flushing previous cabq traffic\n");
 			ath_draintxq(sc, cabq, false);
 		}
 	}
 
-	ath_beacon_setup(sc, avp, bf, info->control.rates[0].idx);
+	ath_beacon_setup(sc, vif, bf, info->control.rates[0].idx);
 
 	while (skb) {
 		ath_tx_cabq(hw, skb);
@@ -297,7 +299,7 @@ int ath_beacon_alloc(struct ath_softc *sc, struct ieee80211_vif *vif)
 		tsfadjust = TU_TO_USEC(intval * avp->av_bslot) / ATH_BCBUF;
 		avp->tsf_adjust = cpu_to_le64(tsfadjust);
 
-		ath_dbg(common, ATH_DBG_BEACON,
+		ath_dbg(common, BEACON,
 			"stagger beacons, bslot %d intval %u tsfadjust %llu\n",
 			avp->av_bslot, intval, (unsigned long long)tsfadjust);
 
@@ -356,10 +358,15 @@ void ath_beacon_tasklet(unsigned long data)
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath_buf *bf = NULL;
 	struct ieee80211_vif *vif;
-	struct ath_tx_status ts;
+	bool edma = !!(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA);
 	int slot;
 	u32 bfaddr, bc = 0;
 
+	if (work_pending(&sc->hw_reset_work)) {
+		ath_dbg(common, RESET,
+			"reset work is pending, skip beaconing now\n");
+		return;
+	}
 	/*
 	 * Check if the previous beacon has gone out.  If
 	 * not don't try to post another, skip this period
@@ -370,17 +377,20 @@ void ath_beacon_tasklet(unsigned long data)
 	if (ath9k_hw_numtxpending(ah, sc->beacon.beaconq) != 0) {
 		sc->beacon.bmisscnt++;
 
+		if (!ath9k_hw_check_alive(ah))
+			ieee80211_queue_work(sc->hw, &sc->hw_check_work);
+
 		if (sc->beacon.bmisscnt < BSTUCK_THRESH * sc->nbcnvifs) {
-			ath_dbg(common, ATH_DBG_BSTUCK,
+			ath_dbg(common, BSTUCK,
 				"missed %u consecutive beacons\n",
 				sc->beacon.bmisscnt);
 			ath9k_hw_stop_dma_queue(ah, sc->beacon.beaconq);
 			if (sc->beacon.bmisscnt > 3)
 				ath9k_hw_bstuck_nfcal(ah);
 		} else if (sc->beacon.bmisscnt >= BSTUCK_THRESH) {
-			ath_dbg(common, ATH_DBG_BSTUCK,
-				"beacon is officially stuck\n");
-			sc->sc_flags |= SC_OP_TSF_RESET;
+			ath_dbg(common, BSTUCK, "beacon is officially stuck\n");
+			sc->beacon.bmisscnt = 0;
+			set_bit(SC_OP_TSF_RESET, &sc->sc_flags);
 			ieee80211_queue_work(sc->hw, &sc->hw_reset_work);
 		}
 
@@ -406,7 +416,7 @@ void ath_beacon_tasklet(unsigned long data)
 		slot = (tsftu % (intval * ATH_BCBUF)) / intval;
 		vif = sc->beacon.bslot[slot];
 
-		ath_dbg(common, ATH_DBG_BEACON,
+		ath_dbg(common, BEACON,
 			"slot %d [tsf %llu tsftu %u intval %u] vif %p\n",
 			slot, tsf, tsftu / ATH_BCBUF, intval, vif);
 	} else {
@@ -424,7 +434,7 @@ void ath_beacon_tasklet(unsigned long data)
 		}
 
 		if (sc->beacon.bmisscnt != 0) {
-			ath_dbg(common, ATH_DBG_BSTUCK,
+			ath_dbg(common, BSTUCK,
 				"resume beacon xmit after %u misses\n",
 				sc->beacon.bmisscnt);
 			sc->beacon.bmisscnt = 0;
@@ -458,14 +468,11 @@ void ath_beacon_tasklet(unsigned long data)
 	if (bfaddr != 0) {
 		/* NB: cabq traffic should already be queued and primed */
 		ath9k_hw_puttxbuf(ah, sc->beacon.beaconq, bfaddr);
-		ath9k_hw_txstart(ah, sc->beacon.beaconq);
+
+		if (!edma)
+			ath9k_hw_txstart(ah, sc->beacon.beaconq);
 
 		sc->beacon.ast_be_xmit += bc;     /* XXX per-vif? */
-		if (ah->caps.hw_caps & ATH9K_HW_CAP_EDMA) {
-			spin_lock_bh(&sc->sc_pcu_lock);
-			ath9k_hw_txprocdesc(ah, bf->bf_desc, (void *)&ts);
-			spin_unlock_bh(&sc->sc_pcu_lock);
-		}
 	}
 }
 
@@ -473,16 +480,16 @@ static void ath9k_beacon_init(struct ath_softc *sc,
 			      u32 next_beacon,
 			      u32 beacon_period)
 {
-	if (sc->sc_flags & SC_OP_TSF_RESET) {
+	if (test_bit(SC_OP_TSF_RESET, &sc->sc_flags)) {
 		ath9k_ps_wakeup(sc);
 		ath9k_hw_reset_tsf(sc->sc_ah);
 	}
 
 	ath9k_hw_beaconinit(sc->sc_ah, next_beacon, beacon_period);
 
-	if (sc->sc_flags & SC_OP_TSF_RESET) {
+	if (test_bit(SC_OP_TSF_RESET, &sc->sc_flags)) {
 		ath9k_ps_restore(sc);
-		sc->sc_flags &= ~SC_OP_TSF_RESET;
+		clear_bit(SC_OP_TSF_RESET, &sc->sc_flags);
 	}
 }
 
@@ -512,7 +519,7 @@ static void ath_beacon_config_ap(struct ath_softc *sc,
 	/* Set the computed AP beacon timers */
 
 	ath9k_hw_disable_interrupts(ah);
-	sc->sc_flags |= SC_OP_TSF_RESET;
+	set_bit(SC_OP_TSF_RESET, &sc->sc_flags);
 	ath9k_beacon_init(sc, nexttbtt, intval);
 	sc->beacon.bmisscnt = 0;
 	ath9k_hw_set_interrupts(ah);
@@ -541,7 +548,7 @@ static void ath_beacon_config_sta(struct ath_softc *sc,
 
 	/* No need to configure beacon if we are not associated */
 	if (!common->curaid) {
-		ath_dbg(common, ATH_DBG_BEACON,
+		ath_dbg(common, BEACON,
 			"STA is not yet associated..skipping beacon config\n");
 		return;
 	}
@@ -631,8 +638,8 @@ static void ath_beacon_config_sta(struct ath_softc *sc,
 	/* TSF out of range threshold fixed at 1 second */
 	bs.bs_tsfoor_threshold = ATH9K_TSFOOR_THRESHOLD;
 
-	ath_dbg(common, ATH_DBG_BEACON, "tsf: %llu tsftu: %u\n", tsf, tsftu);
-	ath_dbg(common, ATH_DBG_BEACON,
+	ath_dbg(common, BEACON, "tsf: %llu tsftu: %u\n", tsf, tsftu);
+	ath_dbg(common, BEACON,
 		"bmiss: %u sleep: %u cfp-period: %u maxdur: %u next: %u\n",
 		bs.bs_bmissthreshold, bs.bs_sleepduration,
 		bs.bs_cfpperiod, bs.bs_cfpmaxduration, bs.bs_cfpnext);
@@ -655,13 +662,14 @@ static void ath_beacon_config_adhoc(struct ath_softc *sc,
 	u32 tsf, intval, nexttbtt;
 
 	ath9k_reset_beacon_status(sc);
+	if (!test_bit(SC_OP_BEACONS, &sc->sc_flags))
+		ath9k_hw_settsf64(ah, sc->beacon.bc_tstamp);
 
 	intval = TU_TO_USEC(conf->beacon_interval);
 	tsf = roundup(ath9k_hw_gettsf32(ah) + TU_TO_USEC(FUDGE), intval);
 	nexttbtt = tsf + intval;
 
-	ath_dbg(common, ATH_DBG_BEACON,
-		"IBSS nexttbtt %u intval %u (%u)\n",
+	ath_dbg(common, BEACON, "IBSS nexttbtt %u intval %u (%u)\n",
 		nexttbtt, intval, conf->beacon_interval);
 
 	/*
@@ -699,9 +707,8 @@ static bool ath9k_allow_beacon_config(struct ath_softc *sc,
 	    (sc->nbcnvifs > 1) &&
 	    (vif->type == NL80211_IFTYPE_AP) &&
 	    (cur_conf->beacon_interval != bss_conf->beacon_int)) {
-		ath_dbg(common, ATH_DBG_CONFIG,
-			"Changing beacon interval of multiple \
-			AP interfaces !\n");
+		ath_dbg(common, CONFIG,
+			"Changing beacon interval of multiple AP interfaces !\n");
 		return false;
 	}
 	/*
@@ -710,7 +717,7 @@ static bool ath9k_allow_beacon_config(struct ath_softc *sc,
 	 */
 	if ((sc->sc_ah->opmode == NL80211_IFTYPE_AP) &&
 	    (vif->type != NL80211_IFTYPE_AP)) {
-		ath_dbg(common, ATH_DBG_CONFIG,
+		ath_dbg(common, CONFIG,
 			"STA vif's beacon not allowed on AP mode\n");
 		return false;
 	}
@@ -720,9 +727,9 @@ static bool ath9k_allow_beacon_config(struct ath_softc *sc,
 	 */
 	if ((sc->sc_ah->opmode == NL80211_IFTYPE_STATION) &&
 	    (vif->type == NL80211_IFTYPE_STATION) &&
-	    (sc->sc_flags & SC_OP_BEACONS) &&
+	    test_bit(SC_OP_BEACONS, &sc->sc_flags) &&
 	    !avp->primary_sta_vif) {
-		ath_dbg(common, ATH_DBG_CONFIG,
+		ath_dbg(common, CONFIG,
 			"Beacon already configured for a station interface\n");
 		return false;
 	}
@@ -802,20 +809,21 @@ void ath_set_beacon(struct ath_softc *sc)
 		ath_beacon_config_sta(sc, cur_conf);
 		break;
 	default:
-		ath_dbg(common, ATH_DBG_CONFIG,
-			"Unsupported beaconing mode\n");
+		ath_dbg(common, CONFIG, "Unsupported beaconing mode\n");
 		return;
 	}
 
-	sc->sc_flags |= SC_OP_BEACONS;
+	set_bit(SC_OP_BEACONS, &sc->sc_flags);
 }
 
 void ath9k_set_beaconing_status(struct ath_softc *sc, bool status)
 {
 	struct ath_hw *ah = sc->sc_ah;
 
-	if (!ath_has_valid_bslot(sc))
+	if (!ath_has_valid_bslot(sc)) {
+		clear_bit(SC_OP_BEACONS, &sc->sc_flags);
 		return;
+	}
 
 	ath9k_ps_wakeup(sc);
 	if (status) {

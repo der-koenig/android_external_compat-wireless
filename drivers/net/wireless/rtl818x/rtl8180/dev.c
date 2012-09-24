@@ -47,6 +47,8 @@ static DEFINE_PCI_DEVICE_TABLE(rtl8180_table) = {
 	{ PCI_DEVICE(0x1799, 0x6001) },
 	{ PCI_DEVICE(0x1799, 0x6020) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_DLINK, 0x3300) },
+	{ PCI_DEVICE(0x1186, 0x3301) },
+	{ PCI_DEVICE(0x1432, 0x7106) },
 	{ }
 };
 
@@ -814,19 +816,10 @@ static void rtl8180_bss_info_changed(struct ieee80211_hw *dev,
 	}
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 static u64 rtl8180_prepare_multicast(struct ieee80211_hw *dev,
 				     struct netdev_hw_addr_list *mc_list)
-#else
-static u64 rtl8180_prepare_multicast(struct ieee80211_hw *dev, int mc_count,
-				     struct dev_addr_list *mc_list)
-#endif
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	return netdev_hw_addr_list_count(mc_list);
-#else
-	return mc_count;
-#endif
 }
 
 static void rtl8180_configure_filter(struct ieee80211_hw *dev,
@@ -1182,15 +1175,4 @@ static struct pci_driver rtl8180_driver = {
 #endif /* CONFIG_PM */
 };
 
-static int __init rtl8180_init(void)
-{
-	return pci_register_driver(&rtl8180_driver);
-}
-
-static void __exit rtl8180_exit(void)
-{
-	pci_unregister_driver(&rtl8180_driver);
-}
-
-module_init(rtl8180_init);
-module_exit(rtl8180_exit);
+module_pci_driver(rtl8180_driver);

@@ -159,11 +159,7 @@ static void atl2_set_multi(struct net_device *netdev)
 
 	/* comoute mc addresses' hash value ,and put it into hash table */
 	netdev_for_each_mc_addr(ha, netdev) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 		hash_value = atl2_hash_mc_addr(hw, ha->addr);
-#else
-		hash_value = atl2_hash_mc_addr(hw, ha->dmi_addr);
-#endif
 		atl2_hash_set(hw, hash_value);
 	}
 }
@@ -365,7 +361,7 @@ static inline void atl2_irq_disable(struct atl2_adapter *adapter)
     synchronize_irq(adapter->pdev->irq);
 }
 
-static void __atl2_vlan_mode(u32 features, u32 *ctrl)
+static void __atl2_vlan_mode(netdev_features_t features, u32 *ctrl)
 {
 	if (features & NETIF_F_HW_VLAN_RX) {
 		/* enable VLAN tag insert/strip */
@@ -376,7 +372,8 @@ static void __atl2_vlan_mode(u32 features, u32 *ctrl)
 	}
 }
 
-static void atl2_vlan_mode(struct net_device *netdev, u32 features)
+static void atl2_vlan_mode(struct net_device *netdev,
+	netdev_features_t features)
 {
 	struct atl2_adapter *adapter = netdev_priv(netdev);
 	u32 ctrl;
@@ -395,7 +392,9 @@ static void atl2_restore_vlan(struct atl2_adapter *adapter)
 	atl2_vlan_mode(adapter->netdev, adapter->netdev->features);
 }
 
-static u32 atl2_fix_features(struct net_device *netdev, u32 features)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+static netdev_features_t atl2_fix_features(struct net_device *netdev,
+	netdev_features_t features)
 {
 	/*
 	 * Since there is no support for separate rx/tx vlan accel
@@ -409,9 +408,10 @@ static u32 atl2_fix_features(struct net_device *netdev, u32 features)
 	return features;
 }
 
-static int atl2_set_features(struct net_device *netdev, u32 features)
+static int atl2_set_features(struct net_device *netdev,
+	netdev_features_t features)
 {
-	u32 changed = netdev->features ^ features;
+	netdev_features_t changed = netdev->features ^ features;
 
 	if (changed & NETIF_F_HW_VLAN_RX)
 		atl2_vlan_mode(netdev, features);
@@ -1418,7 +1418,7 @@ static int __devinit atl2_probe(struct pci_dev *pdev,
 
 	atl2_setup_pcicmd(pdev);
 
-	netdev_attach_ops(netdev, &atl2_netdev_ops);
+	netdev->netdev_ops = &atl2_netdev_ops;
 	atl2_set_ethtool_ops(netdev);
 	netdev->watchdog_timeo = 5 * HZ;
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
@@ -2067,10 +2067,12 @@ static void atl2_get_drvinfo(struct net_device *netdev,
 {
 	struct atl2_adapter *adapter = netdev_priv(netdev);
 
-	strncpy(drvinfo->driver,  atl2_driver_name, 32);
-	strncpy(drvinfo->version, atl2_driver_version, 32);
-	strncpy(drvinfo->fw_version, "L2", 32);
-	strncpy(drvinfo->bus_info, pci_name(adapter->pdev), 32);
+	strlcpy(drvinfo->driver,  atl2_driver_name, sizeof(drvinfo->driver));
+	strlcpy(drvinfo->version, atl2_driver_version,
+		sizeof(drvinfo->version));
+	strlcpy(drvinfo->fw_version, "L2", sizeof(drvinfo->fw_version));
+	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
+		sizeof(drvinfo->bus_info));
 	drvinfo->n_stats = 0;
 	drvinfo->testinfo_len = 0;
 	drvinfo->regdump_len = atl2_get_regs_len(netdev);
@@ -2279,7 +2281,7 @@ static int get_permanent_address(struct atl2_hw *hw)
 	u32 Addr[2];
 	u32 i, Control;
 	u16 Register;
-	u8  EthAddr[NODE_ADDRESS_SIZE];
+	u8  EthAddr[ETH_ALEN];
 	bool KeyValid;
 
 	if (is_valid_ether_addr(hw->perm_mac_addr))
@@ -2320,7 +2322,7 @@ static int get_permanent_address(struct atl2_hw *hw)
 		*(u16 *) &EthAddr[0] = SHORTSWAP(*(u16 *) &Addr[1]);
 
 		if (is_valid_ether_addr(EthAddr)) {
-			memcpy(hw->perm_mac_addr, EthAddr, NODE_ADDRESS_SIZE);
+			memcpy(hw->perm_mac_addr, EthAddr, ETH_ALEN);
 			return 0;
 		}
 		return 1;
@@ -2355,7 +2357,7 @@ static int get_permanent_address(struct atl2_hw *hw)
 	*(u32 *) &EthAddr[2] = LONGSWAP(Addr[0]);
 	*(u16 *) &EthAddr[0] = SHORTSWAP(*(u16 *)&Addr[1]);
 	if (is_valid_ether_addr(EthAddr)) {
-		memcpy(hw->perm_mac_addr, EthAddr, NODE_ADDRESS_SIZE);
+		memcpy(hw->perm_mac_addr, EthAddr, ETH_ALEN);
 		return 0;
 	}
 	/* maybe MAC-address is from BIOS */
@@ -2365,7 +2367,7 @@ static int get_permanent_address(struct atl2_hw *hw)
 	*(u16 *) &EthAddr[0] = SHORTSWAP(*(u16 *) &Addr[1]);
 
 	if (is_valid_ether_addr(EthAddr)) {
-		memcpy(hw->perm_mac_addr, EthAddr, NODE_ADDRESS_SIZE);
+		memcpy(hw->perm_mac_addr, EthAddr, ETH_ALEN);
 		return 0;
 	}
 
@@ -2379,8 +2381,6 @@ static int get_permanent_address(struct atl2_hw *hw)
  */
 static s32 atl2_read_mac_addr(struct atl2_hw *hw)
 {
-	u16 i;
-
 	if (get_permanent_address(hw)) {
 		/* for test */
 		/* FIXME: shouldn't we use random_ether_addr() here? */
@@ -2392,8 +2392,7 @@ static s32 atl2_read_mac_addr(struct atl2_hw *hw)
 		hw->perm_mac_addr[5] = 0x38;
 	}
 
-	for (i = 0; i < NODE_ADDRESS_SIZE; i++)
-		hw->mac_addr[i] = hw->perm_mac_addr[i];
+	memcpy(hw->mac_addr, hw->perm_mac_addr, ETH_ALEN);
 
 	return 0;
 }
