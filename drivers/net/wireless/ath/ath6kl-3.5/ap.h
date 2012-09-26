@@ -20,34 +20,21 @@
 /* Time defines */
 #define ATH6KL_AP_KA_INTERVAL_DEFAULT		(15 * 1000)	/* in ms. */
 #define ATH6KL_AP_KA_INTERVAL_MIN		(5 * 1000)	/* in ms. */
-
-/* ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT: Reclaim STA after 60 sec. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT	(4)
-
-/* ATH6KL_AP_KA_RECLAIM_TIME_MAX: in ms., means
-   (ap_ka_interval * ap_ka_reclaim_cycle) */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT	(4)		/* 1 min. */
 #define ATH6KL_AP_KA_RECLAIM_TIME_MAX		((15 * 60) * 1000)
 
-/* ATH6KL_AP_KA_PRELOAD_STAT_TIME: in ms., equal to WMI_TIMEOUT */
-#define ATH6KL_AP_KA_PRELOAD_STAT_TIME		(2 * 1000)
+/* At least WMI_TIMEOUT */
+#define ATH6KL_AP_KA_PRELOAD_LEADTIME		(2 * 1000)
 
 /* For P2P case, use the lower values for Android platform. */
 #define ATH6KL_AP_KA_INTERVAL_DEFAULT_P2P	(10 * 1000)	/* in ms. */
-
-/* ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P: Reclaim STA after 20 sec.*/
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P	(2)
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P	(2)		/* 20 sec. */
 
 /* flags */
 #define ATH6KL_AP_KA_FLAGS_ENABLED		BIT(0)
-
-/* ATH6KL_AP_KA_FLAGS_BY_SUPP: Offload to supplicant/hostapd,
-   decided when loading module. */
-#define ATH6KL_AP_KA_FLAGS_BY_SUPP		BIT(1)
+#define ATH6KL_AP_KA_FLAGS_BY_SUPP		BIT(1)	/* offload to user */
 #define ATH6KL_AP_KA_FLAGS_START		BIT(2)
-
-/* ATH6KL_AP_KA_FLAGS_PRELOAD_STAT: means this fired timer is for
-   preload stat purpose. */
-#define ATH6KL_AP_KA_FLAGS_PRELOAD_STAT		BIT(3)
+#define ATH6KL_AP_KA_FLAGS_PRELOAD_STAT		BIT(3)	/* for preload state */
 
 /* Next action */
 #define AP_KA_ACTION_NONE			(0)

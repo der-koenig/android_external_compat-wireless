@@ -806,6 +806,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "AP mode started on %u MHz\n", channel);
 
+	vif->bss_ch = channel;
+
 	switch (vif->auth_mode) {
 	case NONE_AUTH:
 		if (vif->prwise_crypto == WEP_CRYPT)
@@ -1409,6 +1411,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		}
 
 		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
+			vif->bss_ch = 0;
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
 		}
@@ -1835,6 +1838,21 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 
 	if (down_interruptible(&ar->sem))
 		return -EBUSY;
+
+#ifdef CONFIG_ANDROID
+	/*
+	 * WAR : Framework always use p2p0 to query linkspeed and here transfer
+	 *       to correct P2P-GO/P2P-Client interface.
+	 */
+	if ((ar->p2p) &&
+	    (!ar->p2p_compat) &&
+	    (ar->p2p_concurrent) &&
+	    (ar->p2p_dedicate)) {
+		vif = ath6kl_get_vif_by_index(ar, ar->vif_max - 2);
+		if (!vif)
+			return -EFAULT;
+	}
+#endif
 
 	set_bit(STATS_UPDATE_PEND, &vif->flags);
 

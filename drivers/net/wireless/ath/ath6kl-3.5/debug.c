@@ -145,6 +145,7 @@ static const struct ath6kl_diag_reg_info diag_reg[] = {
 	{ 0x1C000, 0x1C748, "Analog" },
 	{ 0x5000, 0x5160, "WLAN RTC" },
 	{ 0x14000, 0x14170, "GPIO" },
+	{ 0x7000, 0x7090, "BTC" },
 };
 
 void ath6kl_dump_registers(struct ath6kl_device *dev,
@@ -236,6 +237,8 @@ static void dump_cred_dist(struct htc_endpoint_credit_dist *ep_dist)
 		   ep_dist->cred_per_msg);
 	ath6kl_dbg(ATH6KL_DBG_CREDIT, " cred_to_dist   : %d\n",
 		   ep_dist->cred_to_dist);
+	ath6kl_dbg(ATH6KL_DBG_CREDIT, " cred_alloc_max : %d\n",
+		   ep_dist->cred_alloc_max);
 	ath6kl_dbg(ATH6KL_DBG_CREDIT, " txq_depth      : %d\n",
 		   get_queue_depth(&ep_dist->htc_ep->txq));
 	ath6kl_dbg(ATH6KL_DBG_CREDIT,
@@ -804,7 +807,7 @@ static ssize_t read_file_credit_dist_stats(struct file *file,
 	len += scnprintf(buf + len, buf_len - len,
 			 " Epid  Flags    Cred_norm  Cred_min  Credits  Cred_assngd"
 			 "  Seek_cred  Cred_sz  Cred_per_msg  Cred_to_dist"
-			 "  qdepth\n");
+			 "  Cred_alloc_max qdepth\n");
 
 	list_for_each_entry(ep_list, &target->cred_dist_list, list) {
 		print_credit_info("  %2d", endpoint);
@@ -817,6 +820,7 @@ static ssize_t read_file_credit_dist_stats(struct file *file,
 		print_credit_info("%12d", cred_sz);
 		print_credit_info("%9d", cred_per_msg);
 		print_credit_info("%14d", cred_to_dist);
+		print_credit_info("%17d", cred_alloc_max);
 		len += scnprintf(buf + len, buf_len - len, "%12d\n",
 				 get_queue_depth(&ep_list->htc_ep->txq));
 	}
@@ -3868,6 +3872,21 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 					chan->center_freq,
 					flag_string);
 		}
+	}
+
+	len += scnprintf(p + len, buf_len - len,
+			"\nCurrent operation channel\n");
+
+	for (i = 0; i < ar->vif_max; i++) {
+		struct ath6kl_vif *vif = ath6kl_get_vif_by_index(ar, i);
+
+		if (vif)
+			len += scnprintf(p + len, buf_len - len,
+					" VIF%d [%s] - %d\n",
+					i,
+					(test_bit(CONNECTED, &vif->flags) ?
+						"CONN" : "IDLE"),
+					vif->bss_ch);
 	}
 
 	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);

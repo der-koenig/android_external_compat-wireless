@@ -429,6 +429,9 @@ struct htc_endpoint_credit_dist {
 	 * that has non-zero credits to recover.
 	 */
 	int txq_depth;
+
+	/* maximum credits the ep can allocate */
+	int cred_alloc_max;
 };
 
 /*
@@ -578,6 +581,8 @@ struct ath6kl_htc_ops {
 	int (*get_stat)(struct htc_target *target,
 						 u8 *buf, int buf_len);
 	int (*stop_netif_queue_full)(struct htc_target *target);
+	int (*indicate_wmm_schedule_change)(struct htc_target *target,
+		bool change);
 };
 
 struct ath6kl_device;

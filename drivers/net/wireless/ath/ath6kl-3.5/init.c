@@ -39,6 +39,7 @@ static unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
 unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
+unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -62,6 +63,7 @@ module_param(testmode, uint, 0644);
 module_param(ath6kl_wow_ext, uint, 0644);
 module_param(ath6kl_wow_gpio, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
+module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
 
 static const struct ath6kl_hw hw_list[] = {
@@ -228,10 +230,10 @@ static const struct ath6kl_hw hw_list[] = {
 	{
 		.id				= AR6004_HW_1_6_VERSION,
 		.name				= "ar6004 hw 1.6",
-		.dataset_patch_addr		= 0x57e884,
+		.dataset_patch_addr		= 0,
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
-		.reserved_ram_size		= 11264,
+		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
 		.testscript_addr		= 0x43d400,
 
@@ -1610,11 +1612,9 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 				 (unsigned char *) &param, 4);
 	}
 
-	/* AR6006 or AR6004_hw1.6 are loading fake board data,
+	/* AR6006 are loading fake board data,
 	   ignore checking */
-	if (!((ar->target_type == TARGET_TYPE_AR6006) ||
-		  ((ar->target_type == TARGET_TYPE_AR6004) &&
-		   (ar->version.target_ver == AR6004_HW_1_6_VERSION)))) {
+	if (!(ar->target_type == TARGET_TYPE_AR6006)) {
 		if (ar->fw_board_len < board_data_size) {
 			ath6kl_err("Too small board file: %zu, need: %zu\n",
 				ar->fw_board_len, board_data_size);
@@ -1855,9 +1855,7 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		status = ath6kl_bmi_reg_write(ar, address, param);
 		if (status)
 			return status;
-	} else if ((ar->target_type == TARGET_TYPE_AR6006) ||
-		   ((ar->target_type == TARGET_TYPE_AR6004) &&
-		    (ar->version.target_ver == AR6004_HW_1_6_VERSION))) {
+	} else if ((ar->target_type == TARGET_TYPE_AR6006)) {
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "FPGA is running at 40/44MHz\n");
 		param = 0;
 		address = RTC_BASE_ADDRESS + CPU_CLOCK_ADDRESS;

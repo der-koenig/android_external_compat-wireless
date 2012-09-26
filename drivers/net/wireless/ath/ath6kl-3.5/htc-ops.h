@@ -105,4 +105,11 @@ static inline int ath6kl_htc_stop_netif_queue_full(struct htc_target *target)
 	return target->dev->ar->htc_ops->stop_netif_queue_full(target);
 }
 
+static inline int ath6kl_htc_wmm_schedule_change(struct htc_target *target,
+		bool change)
+{
+	return target->dev->ar->htc_ops->indicate_wmm_schedule_change(target,
+			change);
+}
+
 #endif

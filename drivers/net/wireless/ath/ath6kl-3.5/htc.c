@@ -230,9 +230,15 @@ static void ath6kl_credit_seek(struct ath6kl_htc_credit_info *cred_info,
 	 * If VO don't seek credit from VI,
 	 * VO throughput can't pass the criterion.
 	 */
-	if (ep_dist->svc_id == WMI_DATA_VI_SVC)
+	if (ep_dist->svc_id == WMI_DATA_VI_SVC) {
+		if (ep_dist->cred_alloc_max != 0) {
+			if (ep_dist->cred_assngd >= ep_dist->cred_alloc_max)
+				goto out;
+		}
+
 		if ((ep_dist->cred_assngd >= ep_dist->cred_norm))
 			goto out;
+	}
 
 	/*
 	 * For all other services, we follow a simple algorithm of:
@@ -2908,6 +2914,33 @@ int ath6kl_htc_mbox_stop_netif_queue_full(struct htc_target *target)
 	return 0;
 }
 
+int ath6kl_htc_mbox_wmm_schedule_change(struct htc_target *target,
+		bool change)
+{
+	struct list_head *ep_list = &target->cred_dist_list;
+	struct htc_endpoint_credit_dist *cur_ep_dist;
+
+	list_for_each_entry(cur_ep_dist, ep_list, list) {
+		cur_ep_dist->cred_alloc_max = 0;
+
+		if (cur_ep_dist->svc_id == WMI_DATA_VI_SVC) {
+			struct htc_endpoint *endpoint = cur_ep_dist->htc_ep;
+
+			if (change == true) {
+				cur_ep_dist->cred_alloc_max =
+						cur_ep_dist->cred_norm - 2;
+				endpoint->tx_drop_packet_threshold =
+						MAX_DEF_COOKIE_NUM / 4;
+			} else {
+				endpoint->tx_drop_packet_threshold =
+						MAX_DEF_COOKIE_NUM / 6;
+			}
+		}
+	}
+
+	return 1;
+}
+
 static const struct ath6kl_htc_ops ath6kl_htc_mbox_ops = {
 	.create = ath6kl_htc_mbox_create,
 	.wait_target = ath6kl_htc_mbox_wait_target,
@@ -2924,6 +2957,7 @@ static const struct ath6kl_htc_ops ath6kl_htc_mbox_ops = {
 	.credit_setup = ath6kl_htc_mbox_credit_setup,
 	.get_stat = ath6kl_htc_mbox_stat,
 	.stop_netif_queue_full = ath6kl_htc_mbox_stop_netif_queue_full,
+	.indicate_wmm_schedule_change = ath6kl_htc_mbox_wmm_schedule_change,
 };
 
 void ath6kl_htc_mbox_attach(struct ath6kl *ar)

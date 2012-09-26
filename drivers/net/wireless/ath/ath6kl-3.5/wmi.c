@@ -3700,6 +3700,33 @@ static int ath6kl_wmi_disc_peer_event_rx(u8 *datap,
 }
 #endif
 
+static int ath6kl_wmi_wmm_params_event_rx(struct wmi *wmi, u8 *datap,
+		int len)
+{
+	int i;
+	struct wmi_report_wmm_params *wmm_params =
+		(struct wmi_report_wmm_params *) datap;
+	bool change = false;
+
+	for (i = 0; i < WMM_NUM_AC; i++) {
+		ath6kl_dbg(ATH6KL_DBG_WMI, "(%d): acm: %d, aifsn: %d, "
+			"cwmin: %d, cwmax: %d, txop: %d\n",
+			i, wmm_params->wmm_params[i].acm,
+			wmm_params->wmm_params[i].aifsn,
+			wmm_params->wmm_params[i].logcwmin,
+			wmm_params->wmm_params[i].logcwmax,
+			wmm_params->wmm_params[i].txopLimit);
+	}
+
+	if (wmm_params->wmm_params[WMM_AC_BE].aifsn <
+			wmm_params->wmm_params[WMM_AC_VI].aifsn)
+		change = true;
+
+	ath6kl_indicate_wmm_schedule_change(wmi->parent_dev, change);
+
+	return 0;
+}
+
 /* Control Path */
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 {
@@ -3990,6 +4017,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ret = ath6kl_wmi_disc_peer_event_rx(datap, len, vif);
 		break;
 #endif
+	case WMI_REPORT_WMM_PARAMS_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_REPORT_WMM_PARAMS_EVENTID\n");
+		ret = ath6kl_wmi_wmm_params_event_rx(wmi, datap, len);
+		break;
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
 		ret = -EINVAL;

@@ -66,6 +66,9 @@ struct p2p_ps_info {
 	u8 *go_last_noa_ie;
 	u16 go_last_noa_ie_len;
 	u8 *go_working_buffer;
+
+	/* counter */
+	u32 go_noa_notif_cnt;
 };
 
 /* P2P Flowctrl */
@@ -114,6 +117,8 @@ struct ath6kl_p2p_flowctrl {
 
 	enum p2p_flowctrl_sche_type sche_type;
 	struct ath6kl_fw_conn_list fw_conn_list[NUM_CONN];
+
+	u32 p2p_flowctrl_event_cnt;
 };
 
 struct p2p_ps_info *ath6kl_p2p_ps_init(struct ath6kl_vif *vif);

@@ -192,7 +192,7 @@ static const struct ieee80211_iface_limit ath6kl_limits_p2p_concurrent2[] = {
 		.types = BIT(NL80211_IFTYPE_STATION),
 	},
 	{
-		.max = ATH6KL_VIF_MAX - 1,
+		.max = 1,
 		.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				BIT(NL80211_IFTYPE_P2P_GO),
 	},
@@ -202,7 +202,7 @@ static struct ieee80211_iface_combination
 	ath6kl_iface_combinations_p2p_concurrent2[] = {
 	{
 		.num_different_channels = 1,
-		.max_interfaces = ATH6KL_VIF_MAX,
+		.max_interfaces = 2,
 		.limits = ath6kl_limits_p2p_concurrent2,
 		.n_limits = ARRAY_SIZE(ath6kl_limits_p2p_concurrent2),
 	},
@@ -225,7 +225,7 @@ static struct ieee80211_iface_combination
 	ath6kl_iface_combinations_p2p_concurrent3[] = {
 	{
 		.num_different_channels = 1,
-		.max_interfaces = ATH6KL_VIF_MAX,
+		.max_interfaces = 3,
 		.limits = ath6kl_limits_p2p_concurrent3,
 		.n_limits = ARRAY_SIZE(ath6kl_limits_p2p_concurrent3),
 	},
@@ -866,8 +866,7 @@ static struct cfg80211_bss *ath6kl_add_bss_if_needed(struct ath6kl_vif *vif,
 				   "cfg80211\n", bssid);
 		kfree(ie);
 	} else
-
-		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "cfg80211 already has a bss\n ");
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "cfg80211 already has a bss\n");
 
 	return bss;
 }
@@ -1916,6 +1915,11 @@ static int ath6kl_cfg80211_del_iface(struct wiphy *wiphy,
 		ath6kl_err("busy, couldn't get access\n");
 		return -ERESTARTSYS;
 	}
+
+	/* fix EV110820 */
+	clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
+	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx,
+				NONE_BSS_FILTER, 0);
 
 	spin_lock_bh(&ar->list_lock);
 	list_del(&vif->list);
@@ -4278,6 +4282,116 @@ static void ath6kl_reset_cfg80211_ops(struct cfg80211_ops *cfg80211_ops)
 	return;
 }
 
+static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
+{
+	ar->p2p = !!p2p_config;
+
+	ar->p2p_concurrent =
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE) ||
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_NO_DEDICATE) ||
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN) ||
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
+
+	ar->p2p_dedicate =
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE) ||
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
+
+	ar->p2p_multichan_concurrent =
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN);
+
+	ar->p2p_compat =
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
+
+	ar->p2p_concurrent_ap =
+		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_AP);
+
+	WARN_ON((!ar->p2p_concurrent) && (ar->p2p_multichan_concurrent));
+	WARN_ON((ar->p2p_concurrent_ap) &&
+		((!ar->p2p_concurrent) || (!ar->p2p_dedicate)));
+
+	if (ar->p2p_concurrent) {
+		if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_MAX_FW_VIF))
+			ar->vif_max = TARGET_VIF_MAX;	/* TODO */
+		else {
+			if (ar->p2p_dedicate)
+				ar->vif_max = 3;
+			else
+				ar->vif_max = 2; /*currently we only support 2*/
+
+		}
+	} else
+		ar->vif_max = 1;
+
+	/*
+	 * P2P-Concurrent w/ softAP:
+	 *  STA + AP       : vif_max == 3 && ar->p2p_concurrent_ap
+	 *  STA + P2P + AP : vif_max >= 4 && ar->p2p_concurrent_ap (not yet)
+	 *  w/ MCC         : (not yet)
+	 */
+	WARN_ON((ar->p2p_concurrent_ap) && (ar->vif_max >= TARGET_VIF_MAX));
+	WARN_ON((ar->p2p_concurrent_ap) && (ar->p2p_multichan_concurrent));
+
+	ar->max_norm_iface = 1;
+	if (ar->p2p_concurrent_ap)
+		ar->max_norm_iface++;
+
+	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
+		" %s dedicate p2p-device,"
+		" multi-channel-concurrent %s, p2p-compat %s\n",
+		ar->vif_max,
+		ar->max_norm_iface,
+		(ar->p2p ? "enable" : "disable"),
+		(ar->p2p_concurrent ? "on" : "off"),
+		(ar->p2p_concurrent_ap ? "with softAP" : ""),
+		(ar->p2p_dedicate ? "with" : "without"),
+		(ar->p2p_multichan_concurrent ? "enable" : "disable"),
+		(ar->p2p_compat ? "enable (ignore p2p_dedicate)" : "disable"));
+
+	return;
+}
+
+static void _judge_vap_framework(struct ath6kl *ar, unsigned int vap_config)
+{
+	int i;
+	int ap_num = 0, sta_num = 0;
+
+	/*
+	 * TODO : To replace older ath6kl_p2p, in case of vap_config have
+	 *        P2P related VAP mode and transfer vap_config to XXX here
+	 *        then feed to _judge_p2p_framework() to configure P2P's
+	 *        framework.
+	 */
+
+	for (i = 0; i < ATH6KL_VIF_MAX; i++) {
+		ar->next_mode[i] = (vap_config >>
+					(i * ATH6KL_VAPMODE_OFFSET)) &
+				   ATH6KL_VAPMODE_MASK;
+
+		if (ar->next_mode[i] == ATH6KL_VAPMODE_DISABLED)
+			break;
+
+		if (ar->next_mode[i] == ATH6KL_VAPMODE_STA)
+			sta_num++;
+		else if (ar->next_mode[i] == ATH6KL_VAPMODE_AP)
+			ap_num++;
+	}
+
+	/* Now, only support 1STA+1AP or 2AP */
+	WARN_ON((sta_num > 1) ||
+		(ap_num > 2) ||
+		(sta_num + ap_num > 2));
+
+	ar->vif_max = i;
+	ar->max_norm_iface = i;
+
+	ath6kl_info("%dVAP/%d, NO P2P, vapmode %d, %d, %d, %d\n",
+		ar->vif_max,
+		ar->max_norm_iface,
+		ar->next_mode[0], ar->next_mode[1],
+		ar->next_mode[2], ar->next_mode[3]);
+
+}
+
 struct ath6kl *ath6kl_core_alloc(struct device *dev)
 {
 	struct ath6kl *ar;
@@ -4300,72 +4414,19 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	ar = wiphy_priv(wiphy);
 	ar->mod_debug_quirks = debug_quirks;
 
-	ar->p2p = !!ath6kl_p2p;
-
-	ar->p2p_concurrent =
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE) ||
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_NO_DEDICATE) ||
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN) ||
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
-
-	ar->p2p_dedicate =
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE) ||
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
-
-	ar->p2p_multichan_concurrent =
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN);
-
-	ar->p2p_compat =
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_COMPAT);
-
-	ar->p2p_concurrent_ap =
-		!!(ath6kl_p2p & ATH6KL_MODULEP2P_CONCURRENT_AP);
-
-	WARN_ON((!ar->p2p_concurrent) && (ar->p2p_multichan_concurrent));
-	WARN_ON((ar->p2p_concurrent_ap) &&
-		((!ar->p2p_concurrent) || (!ar->p2p_dedicate)));
-
 	ar->wiphy = wiphy;
 	ar->dev = dev;
 
-	if (ar->p2p_concurrent) {
-		if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_MAX_FW_VIF))
-			ar->vif_max = 4;
-		else {
-			if (ar->p2p_dedicate)
-				ar->vif_max = ATH6KL_VIF_MAX;
-			else
-				ar->vif_max = 2; /*currently we only support 2*/
+	BUG_ON((ath6kl_p2p && ath6kl_vap));
 
-		}
-	} else
+	if (ath6kl_p2p)
+		_judge_p2p_framework(ar, ath6kl_p2p);
+	else if (ath6kl_vap)
+		_judge_vap_framework(ar, ath6kl_vap);
+	else {
 		ar->vif_max = 1;
-
-	/*
-	 * P2P-Concurrent w/ softAP:
-	 *  STA + AP       : vif_max == 3 && ar->p2p_concurrent_ap
-	 *  STA + P2P + AP : vif_max >= 4 && ar->p2p_concurrent_ap (not yet)
-	 *  w/ MCC         : (not yet)
-	 */
-	WARN_ON((ar->p2p_concurrent_ap) && (ar->vif_max >= 4));
-	WARN_ON((ar->p2p_concurrent_ap) && (ar->p2p_multichan_concurrent));
-
-	ar->max_norm_iface = 1;
-	if (ar->p2p_concurrent_ap)
-		ar->max_norm_iface++;
-
-	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
-		" %s dedicate p2p-device,"
-		" multi-channel-concurrent %s, p2p-compat %s\n",
-		ar->vif_max,
-		ar->max_norm_iface,
-		(ar->p2p ? "enable" : "disable"),
-		(ar->p2p_concurrent ? "on" : "off"),
-		(ar->p2p_concurrent_ap ? "with softAP" : ""),
-		(ar->p2p_dedicate ? "with" : "without"),
-		(ar->p2p_multichan_concurrent ? "enable" : "disable"),
-		(ar->p2p_compat ? "enable (ignore p2p_dedicate)" : "disable"));
-
+		ar->max_norm_iface = 1;
+	}
 
 	spin_lock_init(&ar->lock);
 	spin_lock_init(&ar->list_lock);
@@ -4516,13 +4577,11 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 	wiphy->cipher_suites = cipher_suites;
 	wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);
 
-	if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO) {
-		wiphy->flags |= WIPHY_FLAG_AP_UAPSD |
-					WIPHY_FLAG_SUPPORTS_FW_ROAM;
-	} else {
-		wiphy->flags |= WIPHY_FLAG_AP_UAPSD;
-	}
+	wiphy->flags |= WIPHY_FLAG_AP_UAPSD;
 
+	if ((ar->hif_type == ATH6KL_HIF_TYPE_SDIO) &&
+	    (!ar->sche_scan))
+		wiphy->flags |= WIPHY_FLAG_SUPPORTS_FW_ROAM;
 
 	wiphy->wowlan.flags = WIPHY_WOWLAN_ANY |
 				WIPHY_WOWLAN_MAGIC_PKT |
@@ -4812,6 +4871,36 @@ void ath6kl_core_init_defer(struct work_struct *wk)
 							NULL,
 							&params) == NULL) {
 				ath6kl_err("Create concurrent ap interface fail!\n");
+			}
+			rtnl_unlock();
+		}
+	}
+
+	/* Automatically create virtual interface. */
+	if (!ath6kl_mod_debug_quirks(ar,
+		ATH6KL_MODULE_DISABLE_AUTO_ADD_INF) &&
+	    (!ar->p2p)) {
+		for (i = 1; i < ATH6KL_VIF_MAX; i++) {
+			rtnl_lock();
+			params.use_4addr = 0;
+			if (ar->next_mode[i] == ATH6KL_VAPMODE_STA) {
+				if (ath6kl_cfg80211_add_iface(
+							ar->wiphy,
+							ATH6KL_DEVNAME_DEF_STA,
+							NL80211_IFTYPE_STATION,
+							NULL,
+							&params) == NULL) {
+					ath6kl_err("Create sta interface fail!\n");
+				}
+			} else if (ar->next_mode[i] == ATH6KL_VAPMODE_AP) {
+				if (ath6kl_cfg80211_add_iface(
+							ar->wiphy,
+							ATH6KL_DEVNAME_DEF_AP,
+							NL80211_IFTYPE_AP,
+							NULL,
+							&params) == NULL) {
+					ath6kl_err("Create ap interface fail!\n");
+				}
 			}
 			rtnl_unlock();
 		}

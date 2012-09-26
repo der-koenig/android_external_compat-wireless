@@ -935,7 +935,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 	int status;
 	enum htc_endpoint_id eid;
 	bool wake_event = false;
-	bool flushing[4] = {false};	/* larger than ar->vif_max. */
+	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
 	struct ath6kl_vif *vif;
 
@@ -1208,8 +1208,11 @@ void ath6kl_rx_refill(struct htc_target *target, enum htc_endpoint_id endpoint)
 			break;
 
 		packet = (struct htc_packet *) skb->head;
-		if (!IS_ALIGNED((unsigned long) skb->data, 4))
+		if (!IS_ALIGNED((unsigned long) skb->data, 4)) {
+			size_t len = skb_headlen(skb);
 			skb->data = PTR_ALIGN(skb->data - 4, 4);
+			skb_set_tail_pointer(skb, len);
+		}
 		set_htc_rxpkt_info(packet, skb, skb->data,
 				ATH6KL_BUFFER_SIZE, endpoint);
 		packet->skb = skb;
@@ -1232,8 +1235,11 @@ void ath6kl_refill_amsdu_rxbufs(struct ath6kl *ar, int count)
 			return;
 
 		packet = (struct htc_packet *) skb->head;
-		if (!IS_ALIGNED((unsigned long) skb->data, 4))
+		if (!IS_ALIGNED((unsigned long) skb->data, 4)) {
+			size_t len = skb_headlen(skb);
 			skb->data = PTR_ALIGN(skb->data - 4, 4);
+			skb_set_tail_pointer(skb, len);
+		}
 		set_htc_rxpkt_info(packet, skb, skb->data,
 				   ATH6KL_AMSDU_BUFFER_SIZE, 0);
 		packet->skb = skb;
@@ -2939,4 +2945,24 @@ void aggr_module_destroy_conn(struct aggr_conn_info *aggr_conn)
 	}
 
 	kfree(aggr_conn);
+}
+
+void ath6kl_indicate_wmm_schedule_change(void *devt, bool change)
+{
+	struct ath6kl *ar = devt;
+	int change_for_stream_pri = 0;
+
+	change_for_stream_pri =
+		ath6kl_htc_wmm_schedule_change(ar->htc_target, change);
+
+	if (change_for_stream_pri != 0) {
+		if (change == true) {
+			/* change the priority order for BE and VI */
+			ar->ac_stream_pri_map[WMM_AC_BE] = 2;
+			ar->ac_stream_pri_map[WMM_AC_VI] = 1;
+		} else {
+			ar->ac_stream_pri_map[WMM_AC_BE] = 1;
+			ar->ac_stream_pri_map[WMM_AC_VI] = 2;
+		}
+	}
 }

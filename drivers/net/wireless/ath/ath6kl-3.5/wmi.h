@@ -2863,6 +2863,18 @@ struct wmi_ap_poll_sta_cmd {
 	u8 reserved[7];
 } __packed;
 
+struct wmm_params {
+	u8 acm;
+	u8 aifsn;
+	u8 logcwmin;
+	u8 logcwmax;
+	u16 txopLimit;
+};
+
+struct wmi_report_wmm_params {
+	struct wmm_params wmm_params[WMM_NUM_AC];
+} __packed;
+
 /* AP ACL */
 #define AP_ACL_SIZE             10
 

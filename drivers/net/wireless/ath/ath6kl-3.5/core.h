@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.132
+#define __BUILD_VERSION_ 3.5.0.145
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -96,6 +96,10 @@
 #define ATH6KL_MODULEP2P_DEF_MODE	(0)
 #endif
 
+#ifndef ATH6KL_MODULEVAP_DEF_MODE
+#define ATH6KL_MODULEVAP_DEF_MODE	(0)
+#endif
+
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
 #endif
@@ -106,6 +110,10 @@
 
 #ifndef ATH6KL_DEVNAME_DEF_AP
 #define ATH6KL_DEVNAME_DEF_AP		"ap%d"
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_STA
+#define ATH6KL_DEVNAME_DEF_STA		"sta%d"
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -343,7 +351,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
 
 /* AR6006 1.0 definitions */
-#define AR6006_HW_1_0_VERSION                 0x31c8097a
+#define AR6006_HW_1_0_VERSION                 0x31c80997
 #define AR6006_HW_1_0_FW_DIR			"ath6k/AR6006/hw1.0"
 #define AR6006_HW_1_0_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_0_FIRMWARE_FILE           "fw.ram.bin"
@@ -794,7 +802,7 @@ enum ath6kl_chan_type {
  * Driver's maximum limit, note that some firmwares support only one vif
  * and the runtime (current) limit must be checked from ar->vif_max.
  */
-#define ATH6KL_VIF_MAX	3
+#define ATH6KL_VIF_MAX	8
 
 /* vif flags info */
 enum ath6kl_vif_state {
@@ -918,6 +926,23 @@ enum ath6kl_state {
 	ATH6KL_STATE_WOW,
 };
 
+#define ATH6KL_VAPMODE_MASK	(0xf)	/* each VAP use 4 bits */
+#define ATH6KL_VAPMODE_OFFSET	(4)
+
+enum ath6kl_vap_mode {
+	ATH6KL_VAPMODE_DISABLED = 0x0,
+	ATH6KL_VAPMODE_STA,
+	ATH6KL_VAPMODE_AP,	/* w/o 4 address */
+
+	/* NOT YET */
+	ATH6KL_VAPMODE_ADHOC,
+	ATH6KL_VAPMODE_WDS,	/* AP w/ 4 address */
+	ATH6KL_VAPMODE_P2PDEV,	/* Dedicaded P2P-Device */
+	ATH6KL_VAPMODE_P2P,	/* P2P-GO or P2P-Client */
+
+	ATH6KL_VAPMODE_LAST = 0xf,
+};
+
 struct ath6kl {
 	struct device *dev;
 	struct wiphy *wiphy;
@@ -942,6 +967,7 @@ struct ath6kl {
 	unsigned int vif_max;
 	u8 max_norm_iface;
 	u8 avail_idx_map;
+	enum ath6kl_vap_mode next_mode[ATH6KL_VIF_MAX];
 	spinlock_t lock;
 	struct semaphore sem;
 	struct semaphore wmi_evt_sem;
@@ -1058,7 +1084,7 @@ struct ath6kl {
 	 * At least 4VAPs to support STA(1) + P2P(2) + AP(1) mode.
 	 */
 #define IS_STA_AP_ONLY(_ar)					\
-	((_ar)->p2p_concurrent_ap && ((_ar)->vif_max < 4))
+	((_ar)->p2p_concurrent_ap && ((_ar)->vif_max < TARGET_VIF_MAX))
 
 	/* Support P2P-Concurrent with softAP or not */
 	bool p2p_concurrent_ap;
@@ -1329,6 +1355,7 @@ void ath6kl_sdio_exit_msm(void);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
+void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
 
 extern unsigned int htc_bundle_recv;

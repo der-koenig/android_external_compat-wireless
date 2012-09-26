@@ -138,6 +138,14 @@
 #define TARGET_TYPE_AR6006      6
 
 /*
+ * Only for AR6004v4 or later & AR6006
+ *
+ * It's better not to use this define in code.
+ * Instead, using ATH6KL_VIF_MAX in the host driver scope.
+ */
+#define TARGET_VIF_MAX		(4)
+
+/*
  * BIT0 : Single or Dual
  * BIT1 : 1SS or 2SS
  * BIT2 : HT20-Only or HT20/40

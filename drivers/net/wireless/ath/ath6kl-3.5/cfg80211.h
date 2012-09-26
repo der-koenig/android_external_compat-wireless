@@ -25,6 +25,7 @@ enum ath6kl_cfg_suspend_mode {
 
 
 extern unsigned int ath6kl_p2p;
+extern unsigned int ath6kl_vap;
 extern unsigned int ath6kl_wow_ext;
 
 struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,

@@ -36,8 +36,11 @@
 	(40 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME     \
 	(70 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
+#define BTCOEX_APMODE_A2DP_MAX_BLUETOOTH_TIME     \
+	(30 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
 #define BTCOEX_A2DP_WLAN_MAX_DUR			   25
+#define BTCOEX_APMODE_A2DP_WLAN_MAX_DUR	       70
 
 #define WMI_SCO_CONFIG_FLAG_ALLOW_OPTIMIZATION   (1 << 0)
 #define WMI_SCO_CONFIG_FLAG_IS_EDR_CAPABLE       (1 << 1)
@@ -169,6 +172,7 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 		struct btcoex_a2dp_config *a2dp_config = &cmd->a2dp_config;
 		struct btcoex_pspoll_a2dp_config *pspoll_config =
 							&cmd->pspoll_config;
+		struct ath6kl_vif *vif;
 
 		if (ar->btcoex_info.bt_vendor == BT_DEVICE_TYPE_QCOM) {
 			a2dp_config->a2dp_flags |= cpu_to_le32(
@@ -194,6 +198,21 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 		}
 
 		pspoll_config->a2dp_wlan_max_dur = BTCOEX_A2DP_WLAN_MAX_DUR;
+
+		/* change A2DP parameters for AP mode*/
+		vif = ath6kl_vif_first(ar);
+		if (!vif)
+			return;
+
+		if (vif->nw_type == AP_NETWORK) {
+			if (a2dp_config->a2dp_flags &
+				WMI_A2DP_CONFIG_FLAG_IS_EDR_CAPABLE) {
+				pspoll_config->a2dp_wlan_max_dur =
+					BTCOEX_APMODE_A2DP_WLAN_MAX_DUR;
+			}
+			a2dp_config->a2dp_flags |= cpu_to_le32(
+					BTCOEX_APMODE_A2DP_MAX_BLUETOOTH_TIME);
+		}
 	}
 	break;
 	case WMI_SET_BTCOEX_SCO_CONFIG_CMDID:

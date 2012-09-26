@@ -18,21 +18,19 @@
 #include "debug.h"
 
 static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(
-						struct ath6kl_sta *conn,
-						u16 last_txrx_time,
-						unsigned long now)
+	struct ath6kl_sta *conn, u16 last_txrx_time, unsigned long now)
 {
 	u32 diff_ms;
 	enum ap_keepalive_adjust adjust_result = AP_KA_ADJ_ERROR;
 
 	if (conn->last_txrx_time_tgt) {
 		if (last_txrx_time >= conn->last_txrx_time_tgt)
-			diff_ms =
-			(last_txrx_time - conn->last_txrx_time_tgt) << 10;
+			diff_ms = (last_txrx_time -
+				   conn->last_txrx_time_tgt) << 10;
 		else	/* wrap */
-			diff_ms =
-			(0xffff - (conn->last_txrx_time_tgt - last_txrx_time))
-			<< 10;
+			diff_ms = (0xffff -
+				   (conn->last_txrx_time_tgt - last_txrx_time))
+				   << 10;
 
 		/* Update to last one. */
 		conn->last_txrx_time_tgt = last_txrx_time;
@@ -63,24 +61,23 @@ static int _ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif,
 	int action = AP_KA_ACTION_NONE;
 
 	spin_lock_bh(&conn->lock);
-	adjust_result = __ap_keepalive_adjust_txrx_time(
-						conn, last_txrx_time, now);
+	adjust_result = __ap_keepalive_adjust_txrx_time(conn,
+							last_txrx_time,
+							now);
 	if (adjust_result == AP_KA_ADJ_ADJUST) {
-		if (now - conn->last_txrx_time >=
-			msecs_to_jiffies(ap_keepalive->ap_ka_interval))
+		if ((now - conn->last_txrx_time) >=
+		    msecs_to_jiffies(ap_keepalive->ap_ka_interval))
 			action = AP_KA_ACTION_POLL;
 
-		if (now - conn->last_txrx_time >=
-			msecs_to_jiffies(ap_keepalive->ap_ka_remove_time))
+		if ((now - conn->last_txrx_time) >=
+		    msecs_to_jiffies(ap_keepalive->ap_ka_remove_time))
 			action = AP_KA_ACTION_REMOVE;
 	}
 	spin_unlock_bh(&conn->lock);
 
 	ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
-		   "ap_keepalive check (aid %d mac %02x:%02x:%02x:%02x:%02x:%02x) tgt/hst/now %d %ld %ld %s\n",
+		   "ap_keepalive check (aid %d tgt/hst/now %d %ld %ld %s\n",
 		   conn->aid,
-		   conn->mac[0], conn->mac[1], conn->mac[2],
-		   conn->mac[3], conn->mac[4], conn->mac[5],
 		   conn->last_txrx_time_tgt,
 		   conn->last_txrx_time,
 		   now,
@@ -104,6 +101,7 @@ static int ap_keepalive_preload_txrx_time(struct ath6kl_vif *vif)
 
 static int ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif)
 {
+#define _KICKOUT_CAUSE	(WLAN_REASON_DISASSOC_DUE_TO_INACTIVITY)
 	struct ath6kl *ar = vif->ar;
 	struct wmi_ap_mode_stat *ap_stats = &vif->ap_stats;
 	struct wmi_per_sta_stat *per_sta_stat;
@@ -111,7 +109,7 @@ static int ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif)
 	int i, action;
 
 	if (test_bit(STATS_UPDATE_PEND, &vif->flags)) {
-		ath6kl_info("somebody still query now and ignore it this time.\n");
+		ath6kl_info("somebody still query now and ignore it.\n");
 		return -EBUSY;
 	}
 
@@ -132,19 +130,19 @@ static int ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif)
 							       conn->aid);
 				} else if (action == AP_KA_ACTION_REMOVE) {
 					ath6kl_wmi_ap_set_mlme(ar->wmi,
-					vif->fw_vif_idx,
-					WMI_AP_DEAUTH,
-					conn->mac,
-					WLAN_REASON_DISASSOC_DUE_TO_INACTIVITY);
+							       vif->fw_vif_idx,
+							       WMI_AP_DEAUTH,
+							       conn->mac,
+							       _KICKOUT_CAUSE);
 				}
-			} else {
-				ath6kl_err("can't find this AID %d in STA list\n"
-					, per_sta_stat->aid);
-			}
+			} else
+				ath6kl_err("can't find this AID %d\n",
+						per_sta_stat->aid);
 		}
 	}
 
 	return 0;
+#undef _KICKOUT_CAUSE
 }
 
 static void ap_keepalive_start(unsigned long arg)
@@ -168,34 +166,33 @@ static void ap_keepalive_start(unsigned long arg)
 		if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
 			ret = ap_keepalive_preload_txrx_time(vif);
 			if (ret)
-				ath6kl_err(
-				"preload last_txrx_time fail, ret %d\n", ret);
+				ath6kl_err("preload last_txrx_time fail\n");
 		} else {
 			/* Update and check last TXRX time each stations. */
 			ret = ap_keepalive_update_check_txrx_time(vif);
 			if (ret)
-				ath6kl_err(
-				"update and check last_txrx_time fail, ret %d\n"
-				, ret);
+				ath6kl_err("updatecheck last_txrx_time fail\n");
 		}
 
 		if ((ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_START) &&
 		    (ap_keepalive->ap_ka_interval)) {
-			if (ap_keepalive->flags
-			    & ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
+			if (ap_keepalive->flags &
+				ATH6KL_AP_KA_FLAGS_PRELOAD_STAT) {
 				mod_timer(&ap_keepalive->ap_ka_timer,
-				    jiffies +
-				    msecs_to_jiffies(
-					ATH6KL_AP_KA_PRELOAD_STAT_TIME));
+					  jiffies +
+					  msecs_to_jiffies(
+						ATH6KL_AP_KA_PRELOAD_LEADTIME));
+
 				ap_keepalive->flags &=
 					~ATH6KL_AP_KA_FLAGS_PRELOAD_STAT;
 			} else {
 				mod_timer(&ap_keepalive->ap_ka_timer,
 					  jiffies +
 					  msecs_to_jiffies(
-					    ap_keepalive->ap_ka_interval) -
+						ap_keepalive->ap_ka_interval) -
 					  msecs_to_jiffies(
-					    ATH6KL_AP_KA_PRELOAD_STAT_TIME));
+						ATH6KL_AP_KA_PRELOAD_LEADTIME));
+
 				ap_keepalive->flags |=
 					ATH6KL_AP_KA_FLAGS_PRELOAD_STAT;
 			}
@@ -228,7 +225,7 @@ struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_BY_SUPP;
 
 	ap_keepalive->ap_ka_remove_time = ap_keepalive->ap_ka_interval *
-		ap_keepalive->ap_ka_reclaim_cycle;
+					  ap_keepalive->ap_ka_reclaim_cycle;
 
 	/* Init. periodic scan timer. */
 	init_timer(&ap_keepalive->ap_ka_timer);
@@ -281,10 +278,9 @@ int ath6kl_ap_keepalive_start(struct ath6kl_vif *vif)
 
 	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) {
 		mod_timer(&ap_keepalive->ap_ka_timer,
-				jiffies +
-				msecs_to_jiffies(ap_keepalive->ap_ka_interval) -
-				msecs_to_jiffies(
-				ATH6KL_AP_KA_PRELOAD_STAT_TIME));
+			  jiffies +
+			  msecs_to_jiffies(ap_keepalive->ap_ka_interval) -
+			  msecs_to_jiffies(ATH6KL_AP_KA_PRELOAD_LEADTIME));
 		ap_keepalive->flags |= (ATH6KL_AP_KA_FLAGS_START |
 					ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
 	}
@@ -322,7 +318,7 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 
 	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_BY_SUPP) {
 		ath6kl_dbg(ATH6KL_DBG_INFO,
-			"already offlad to supplicant/hostapd, bypass it.\n");
+			   "already offlad to supplicant/hostapd.\n");
 		return 0;
 	}
 
@@ -357,24 +353,26 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 		}
 
 		ap_keepalive->ap_ka_remove_time =
-			ap_keepalive->ap_ka_interval *
-			ap_keepalive->ap_ka_reclaim_cycle;
+				ap_keepalive->ap_ka_interval *
+				ap_keepalive->ap_ka_reclaim_cycle;
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_ENABLED;
 
 		if (restart) {
 			mod_timer(&ap_keepalive->ap_ka_timer,
-					jiffies +
-					msecs_to_jiffies(
+				  jiffies +
+				  msecs_to_jiffies(
 					ap_keepalive->ap_ka_interval) -
-					msecs_to_jiffies(
-					ATH6KL_AP_KA_PRELOAD_STAT_TIME * 1000));
-			ap_keepalive->flags |= (ATH6KL_AP_KA_FLAGS_START |
-					    ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
+				  msecs_to_jiffies(
+					ATH6KL_AP_KA_PRELOAD_LEADTIME * 1000));
+
+			ap_keepalive->flags |=
+					(ATH6KL_AP_KA_FLAGS_START |
+					 ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
 		}
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
-		   "ap_keepalive config (vif idx %d interval %d cycle %d %s restart %d)\n",
+		   "ap_keepalive config (%d intvl %d cycle %d %s restart %d)\n",
 		   vif->fw_vif_idx,
 		   ap_keepalive->ap_ka_interval,
 		   ap_keepalive->ap_ka_reclaim_cycle,
@@ -401,12 +399,13 @@ static u32 ap_keepalive_get_inactive_time(struct ath6kl_vif *vif,
 			unsigned long now = jiffies;
 
 			spin_lock_bh(&conn->lock);
-			__ap_keepalive_adjust_txrx_time(
-				conn, per_sta_stat->last_txrx_time, now);
+			__ap_keepalive_adjust_txrx_time(conn,
+						per_sta_stat->last_txrx_time,
+						now);
 
 			/* get inactive time. */
-			inact_time = jiffies_to_msecs(
-					now - conn->last_txrx_time);
+			inact_time = jiffies_to_msecs(now -
+						      conn->last_txrx_time);
 			spin_unlock_bh(&conn->lock);
 
 			ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
@@ -427,12 +426,12 @@ u32 ath6kl_ap_keepalive_get_inactive_time(struct ath6kl_vif *vif, u8 *mac)
 
 	conn = ath6kl_find_sta(vif, mac);
 
-	if (conn) {
+	if (conn)
 		inact_time = ap_keepalive_get_inactive_time(vif, conn);
-	} else {
+	else {
 		inact_time = 0;		/* return -1 ? */
 
-		ath6kl_err("can't find sta %02x:%02x:%02x:%02x:%02x:%02x vif-idx %d\n",
+		ath6kl_err("can't find %02x:%02x:%02x:%02x:%02x:%02x vif %d\n",
 			mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
 			vif->fw_vif_idx);
 	}

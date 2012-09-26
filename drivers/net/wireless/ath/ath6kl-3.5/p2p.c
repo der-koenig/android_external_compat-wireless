@@ -32,7 +32,7 @@ struct p2p_ps_info *ath6kl_p2p_ps_init(struct ath6kl_vif *vif)
 	spin_lock_init(&p2p_ps->p2p_ps_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-		   "p2p_ps init (vif %p) type %d\n",
+		   "p2p_ps init %p type %d\n",
 		   vif,
 		   vif->wdev.iftype);
 
@@ -45,21 +45,12 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 
 	if (p2p_ps) {
 		spin_lock(&p2p_ps->p2p_ps_lock);
-		/* Avoid WARNING: kfree(NULL) is safe this
-		 * check is probably not required
-		 */
 		if (p2p_ps->go_last_beacon_app_ie != NULL)
 			kfree(p2p_ps->go_last_beacon_app_ie);
 
-		/* Avoid WARNING: kfree(NULL) is safe this
-		 * check is probably not required
-		 */
 		if (p2p_ps->go_last_noa_ie != NULL)
 			kfree(p2p_ps->go_last_noa_ie);
 
-		/* Avoid WARNING: kfree(NULL) is safe this
-		 * check is probably not required
-		 */
 		if (p2p_ps->go_working_buffer != NULL)
 			kfree(p2p_ps->go_working_buffer);
 		spin_unlock(&p2p_ps->p2p_ps_lock);
@@ -70,7 +61,7 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 	vif->p2p_ps_info_ctx = NULL;
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-		   "p2p_ps deinit (vif %p)\n",
+		   "p2p_ps deinit %p\n",
 		   vif);
 
 	return;
@@ -79,18 +70,18 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 int ath6kl_p2p_ps_reset_noa(struct p2p_ps_info *p2p_ps)
 {
 	if ((!p2p_ps) ||
-		(p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
+	    (p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
 		/*
-		* This could happend if NOA_INFO event is later than
-		* GO's DISCONNECT event.
-		*/
+		 * This could happend if NOA_INFO event is later than
+		 * GO's DISCONNECT event.
+		 */
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"failed to reset P2P-GO noa, %p\n", p2p_ps);
 		return -1;
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-		   "p2p_ps reset NoA (vif %p) index %d\n",
+		   "p2p_ps reset NoA %p index %d\n",
 		   p2p_ps->vif,
 		   p2p_ps->go_noa.index);
 
@@ -123,7 +114,7 @@ int ath6kl_p2p_ps_setup_noa(struct p2p_ps_info *p2p_ps,
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-		   "p2p_ps setup NoA (vif %p) idx %d ct %d intval %x so %x dur %x\n",
+		   "p2p_ps setup NoA %p idx %d ct %d intval %x so %x dur %x\n",
 		   p2p_ps->vif,
 		   noa_id,
 		   count_type,
@@ -156,13 +147,13 @@ int ath6kl_p2p_ps_setup_noa(struct p2p_ps_info *p2p_ps,
 int ath6kl_p2p_ps_reset_opps(struct p2p_ps_info *p2p_ps)
 {
 	if ((!p2p_ps) ||
-		(p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
+	    (p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
 		ath6kl_err("failed to reset P2P-GO OppPS\n");
 		return -1;
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-		   "p2p_ps reset OppPS (vif %p) index %d\n",
+		   "p2p_ps reset OppPS %p index %d\n",
 		   p2p_ps->vif,
 		   p2p_ps->go_noa.index);
 
@@ -188,15 +179,15 @@ int ath6kl_p2p_ps_setup_opps(struct p2p_ps_info *p2p_ps,
 	WARN_ON(enabled && (!(ctwindows & 0x7f)));
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-		   "p2p_ps setup OppPS (vif %p) enabled %d ctwin %d\n",
+		   "p2p_ps setup OppPS %p enabled %d ctwin %d\n",
 		   p2p_ps->vif,
 		   enabled,
 		   ctwindows);
 
 	spin_lock(&p2p_ps->p2p_ps_lock);
 	if (enabled)
-		p2p_ps->go_noa.ctwindow_opps_param =
-			(0x80 | (ctwindows & 0x7f));
+		p2p_ps->go_noa.ctwindow_opps_param = (0x80 |
+						      (ctwindows & 0x7f));
 	else
 		p2p_ps->go_noa.ctwindow_opps_param = 0;
 	p2p_ps->go_flags |= ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED;
@@ -217,11 +208,13 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 
 	vif = p2p_ps->vif;
 
+	p2p_ps->go_noa_notif_cnt++;
+
 	spin_lock(&p2p_ps->p2p_ps_lock);
 	if ((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) ||
 	    (p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED)) {
-		WARN_ON(((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) &&
-			 (!p2p_ps->go_noa_enable_idx)));
+		WARN_ON((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) &&
+			 (!p2p_ps->go_noa_enable_idx));
 
 		len = p2p_ps->go_last_beacon_app_ie_len +
 		      sizeof(struct ieee80211_p2p_noa_ie);
@@ -239,14 +232,14 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 			p2p_ps->go_last_beacon_app_ie_len);
 
 		noa_ie = (struct ieee80211_p2p_noa_ie *)
-			(buf + p2p_ps->go_last_beacon_app_ie_len);
+				(buf + p2p_ps->go_last_beacon_app_ie_len);
 		noa_ie->element_id = WLAN_EID_VENDOR_SPECIFIC;
-		noa_ie->oui =
-		    cpu_to_be32((WLAN_OUI_WFA << 8) | (WLAN_OUI_TYPE_WFA_P2P));
+		noa_ie->oui = cpu_to_be32((WLAN_OUI_WFA << 8) |
+					  (WLAN_OUI_TYPE_WFA_P2P));
 		noa_ie->attr = IEEE80211_P2P_ATTR_NOTICE_OF_ABSENCE;
 		noa_ie->noa_info.index = p2p_ps->go_noa.index;
 		noa_ie->noa_info.ctwindow_opps_param =
-			p2p_ps->go_noa.ctwindow_opps_param;
+				p2p_ps->go_noa.ctwindow_opps_param;
 
 		idx = 0;
 		for (i = 0; i < ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS; i++) {
@@ -271,16 +264,12 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 		/* Update length */
 		noa_ie->attr_len = cpu_to_le16(2 +
 			(sizeof(struct ieee80211_p2p_noa_descriptor) * idx));
-		noa_ie->len = noa_ie->attr_len +
-			      4 + 1 + 2; /* OUI, attr, attr_len */
+		noa_ie->len = noa_ie->attr_len + 4 + 1 + 2; /* OUI, attr, len */
 		len = p2p_ps->go_last_beacon_app_ie_len + (noa_ie->len + 2);
 
 		/* Backup NoA IE for origional code path if need. */
 		p2p_ps->go_last_noa_ie_len = 0;
 
-		/* Avoid WARNING: kfree(NULL) is safe this
-		 * check is probably not required
-		 */
 		if (p2p_ps->go_last_noa_ie != NULL)
 			kfree(p2p_ps->go_last_noa_ie);
 		p2p_ps->go_last_noa_ie = kmalloc(noa_ie->len + 2, GFP_ATOMIC);
@@ -294,15 +283,17 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 		spin_unlock(&p2p_ps->p2p_ps_lock);
 
 		ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-			   "p2p_ps update app IE (vif %p) flags %x idx %d noa_ie->len %d len %d\n",
+			   "p2p_ps update app IE %p f %x idx %d ie %d len %d\n",
 			   vif,
 			   p2p_ps->go_flags,
 			   idx,
 			   noa_ie->len,
 			   len);
 	} else {
-		/* Ignore if FW disable NoA/OppPS but
-		actually no NoA/OppPS currently. */
+		/*
+		 * Ignore if FW disable NoA/OppPS but actually no NoA/OppPS
+		 * currently.
+		 */
 		if (p2p_ps->go_last_beacon_app_ie_len == 0) {
 			spin_unlock(&p2p_ps->p2p_ps_lock);
 
@@ -312,9 +303,6 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 		/* Remove NoA IE. */
 		p2p_ps->go_last_noa_ie_len = 0;
 
-		/* Avoid WARNING: kfree(NULL) is safe this
-		 * check is probably not required
-		 */
 		if (p2p_ps->go_last_noa_ie != NULL) {
 			kfree(p2p_ps->go_last_noa_ie);
 			p2p_ps->go_last_noa_ie = NULL;
@@ -336,7 +324,7 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 		spin_unlock(&p2p_ps->p2p_ps_lock);
 
 		ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-			   "p2p_ps update app IE (vif %p) flags %x beacon_ie %p len %d\n",
+			   "p2p_ps update app IE %p f %x beacon_ie %p len %d\n",
 			   vif,
 			   p2p_ps->go_flags,
 			   p2p_ps->go_last_beacon_app_ie,
@@ -372,13 +360,11 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 				u8 **ie,
 				int *len)
 {
-	if ((!p2p_ps) || (p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
-		ath6kl_err("Not need to hook user's app IE!\n");
+	if ((!p2p_ps) || (p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO))
 		return;
-	}
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
-		"p2p_ps hook app IE (vif %p) flags %x mgmt_frm_type %d len %d\n",
+		"p2p_ps hook app IE %p f %x mgmt_frm_type %d len %d\n",
 		p2p_ps->vif,
 		p2p_ps->go_flags,
 		mgmt_frm_type,
@@ -390,9 +376,6 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 		spin_lock(&p2p_ps->p2p_ps_lock);
 		p2p_ps->go_last_beacon_app_ie_len = 0;
 
-		/* Avoid WARNING: kfree(NULL) is safe this
-		 * check is probably not required
-		 */
 		if (p2p_ps->go_last_beacon_app_ie != NULL)
 			kfree(p2p_ps->go_last_beacon_app_ie);
 
@@ -424,14 +407,13 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 		 */
 		WARN_ON(!p2p_ps->go_last_noa_ie);
 
-		/* Avoid WARNING: kfree(NULL) is safe this
-		 * check is probably not required
-		 */
 		if (p2p_ps->go_working_buffer != NULL)
 			kfree(p2p_ps->go_working_buffer);
+
 		p2p_ps->go_working_buffer =
 			kmalloc((p2p_ps->go_last_noa_ie_len + *len),
-						      GFP_ATOMIC);
+				GFP_ATOMIC);
+
 		if (p2p_ps->go_working_buffer) {
 			if (*len)
 				memcpy(p2p_ps->go_working_buffer, *ie, *len);
@@ -502,6 +484,32 @@ int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
 	return ret;
 }
 
+static inline void _revert_ht_cap(struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+#ifdef CONFIG_ATH6KL_DEBUG
+	struct ht_cap_param *htCapParam;
+
+	htCapParam = &ar->debug.ht_cap_param[IEEE80211_BAND_5GHZ];
+	if (htCapParam->isConfig)
+		ath6kl_wmi_set_ht_cap_cmd(ar->wmi,
+					vif->fw_vif_idx,
+					htCapParam->band,
+					htCapParam->chan_width_40M_supported,
+					htCapParam->short_GI,
+					htCapParam->intolerance_40MHz);
+	else
+#endif
+		ath6kl_wmi_set_ht_cap_cmd(ar->wmi,
+					vif->fw_vif_idx,
+					A_BAND_5GHZ,
+					ATH6KL_5GHZ_HT40_DEF_WIDTH,
+					ATH6KL_5GHZ_HT40_DEF_SGI,
+					ATH6KL_5GHZ_HT40_DEF_INTOLR40);
+
+	return;
+}
+
 int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 			       enum nl80211_iftype type)
 {
@@ -532,8 +540,9 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 		if (ar->p2p_dedicate && (fw_vif_idx == (ar->vif_max - 1)))
 			type = NL80211_IFTYPE_P2P_DEVICE;
 
-		if (ath6kl_p2p_utils_trans_porttype(
-			type, &opmode, &subopmode) == 0) {
+		if (ath6kl_p2p_utils_trans_porttype(type,
+						&opmode,
+						&subopmode) == 0) {
 			/* Delete it first. */
 			if (type != NL80211_IFTYPE_P2P_DEVICE) {
 				set_bit(PORT_STATUS_PEND, &vif->flags);
@@ -558,7 +567,8 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 						    subopmode))
 				return -EIO;
 
-			left = wait_event_interruptible_timeout(ar->event_wq,
+			left = wait_event_interruptible_timeout(
+						ar->event_wq,
 						!test_bit(PORT_STATUS_PEND,
 						&vif->flags),
 						WMI_TIMEOUT/10);
@@ -566,28 +576,8 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 
 			/* WAR: Revert HT CAP, only for AP/P2P-GO cases. */
 			if ((type == NL80211_IFTYPE_AP) ||
-				(type == NL80211_IFTYPE_P2P_GO)) {
-#ifdef CONFIG_ATH6KL_DEBUG
-				struct ht_cap_param *htCapParam;
-
-				htCapParam =
-				  &ar->debug.ht_cap_param[IEEE80211_BAND_5GHZ];
-				if (htCapParam->isConfig)
-					ath6kl_wmi_set_ht_cap_cmd(
-					ar->wmi, vif->fw_vif_idx,
-					htCapParam->band,
-					htCapParam->chan_width_40M_supported,
-					htCapParam->short_GI,
-					htCapParam->intolerance_40MHz);
-				else
-#endif
-				    ath6kl_wmi_set_ht_cap_cmd(
-					ar->wmi, vif->fw_vif_idx,
-					A_BAND_5GHZ,
-					ATH6KL_5GHZ_HT40_DEF_WIDTH,
-					ATH6KL_5GHZ_HT40_DEF_SGI,
-					ATH6KL_5GHZ_HT40_DEF_INTOLR40);
-			}
+			    (type == NL80211_IFTYPE_P2P_GO))
+				_revert_ht_cap(vif);
 		} else
 			return -ENOTSUPP;
 	}
@@ -642,7 +632,7 @@ struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl init (ar %p) NUM_CONN %d type %d\n",
+		   "p2p_flowctrl init %p NUM_CONN %d type %d\n",
 		   ar,
 		   NUM_CONN,
 		   p2p_flowctrl->sche_type);
@@ -662,7 +652,7 @@ void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar)
 			spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 			fw_conn = &p2p_flowctrl->fw_conn_list[i];
 			if (fw_conn->sche_tx_queued != 0) {
-				ath6kl_err("memory leakage ? [%d] tx %d re_tx %d re_tx_aging %d tx_queued %d\n",
+				ath6kl_err("memory leakage? %d,%d,%d,%d,%d\n",
 						i,
 						fw_conn->sche_tx,
 						fw_conn->sche_re_tx,
@@ -679,7 +669,7 @@ void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar)
 	ar->p2p_flowctrl_ctx = NULL;
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl deinit (ar %p)\n",
+		   "p2p_flowctrl deinit %p\n",
 		   ar);
 
 	return;
@@ -701,8 +691,10 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar)
 		spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
 		if (!list_empty(&fw_conn->re_queue)) {
-			list_for_each_entry_safe(
-			packet, tmp_pkt, &fw_conn->re_queue, list) {
+			list_for_each_entry_safe(packet,
+						tmp_pkt,
+						&fw_conn->re_queue,
+						list) {
 				list_del(&packet->list);
 				packet->status = 0;
 				list_add_tail(&packet->list, &container);
@@ -712,8 +704,10 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar)
 		}
 
 		if (!list_empty(&fw_conn->conn_queue)) {
-			list_for_each_entry_safe(
-			packet, tmp_pkt, &fw_conn->conn_queue, list) {
+			list_for_each_entry_safe(packet,
+						tmp_pkt,
+						&fw_conn->conn_queue,
+						list) {
 				list_del(&packet->list);
 				packet->status = 0;
 				list_add_tail(&packet->list, &container);
@@ -727,7 +721,7 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar)
 	ath6kl_tx_complete(ar->htc_target, &container);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl cleanup (ar %p) reclaim %d\n",
+		   "p2p_flowctrl cleanup %p reclaim %d\n",
 		   ar,
 		   reclaim);
 
@@ -769,8 +763,10 @@ void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar)
 
 		if (_check_can_send(fw_conn)) {
 			if (!list_empty(&fw_conn->re_queue)) {
-				list_for_each_entry_safe(
-				packet, tmp_pkt, &fw_conn->re_queue, list) {
+				list_for_each_entry_safe(packet,
+							tmp_pkt,
+							&fw_conn->re_queue,
+							list) {
 					list_del(&packet->list);
 					if (packet == NULL)
 						continue;
@@ -786,26 +782,28 @@ void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar)
 			}
 
 			if (!list_empty(&fw_conn->conn_queue)) {
-				list_for_each_entry_safe(
-				packet, tmp_pkt, &fw_conn->conn_queue, list) {
-				list_del(&packet->list);
-				if (packet == NULL)
-					continue;
+				list_for_each_entry_safe(packet,
+							tmp_pkt,
+							&fw_conn->conn_queue,
+							list) {
+					list_del(&packet->list);
+					if (packet == NULL)
+						continue;
 
-				if (packet->endpoint >= ENDPOINT_MAX)
-					continue;
+					if (packet->endpoint >= ENDPOINT_MAX)
+						continue;
 
-				fw_conn->sche_tx++;
-				fw_conn->sche_tx_queued--;
+					fw_conn->sche_tx++;
+					fw_conn->sche_tx_queued--;
 
-				ath6kl_htc_tx(ar->htc_target, packet);
+					ath6kl_htc_tx(ar->htc_target, packet);
 				}
 			}
 		}
 		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
 		ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-			   "p2p_flowctrl schedule (ar %p) connId %d tx %d re_tx %d\n",
+			   "p2p_flowctrl schedule %p conId %d tx %d re_tx %d\n",
 			   ar,
 			   i,
 			   fw_conn->sche_tx,
@@ -827,7 +825,7 @@ int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
 	WARN_ON(!p2p_flowctrl);
 
 	if (connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID) {
-		ath6kl_err("p2p_flowctrl tx schedule packet fail, NULL connId, just send??\n");
+		ath6kl_err("p2p_flowctrl fail, NULL connId, just send??\n");
 
 		return 1;	/* Just send it */
 		/*return -1;*/	/* Drop it */
@@ -855,7 +853,7 @@ int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
 
 result:
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl schedule pkt (ar %p) %s\n",
+		   "p2p_flowctrl schedule pkt %p %s\n",
 		   ar,
 		   ((ret == 0) ? "queue" : "send"));
 
@@ -886,8 +884,10 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 				if (list_empty(tx_queue))
 					continue;
 
-				list_for_each_entry_safe(
-					packet, tmp_pkt, tx_queue, list) {
+				list_for_each_entry_safe(packet,
+							tmp_pkt,
+							tx_queue,
+							list) {
 					if (packet->connid != i)
 						continue;
 
@@ -895,7 +895,8 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 					if (packet->recycle_count >
 					    ATH6KL_P2P_FLOWCTRL_RECYCLE_LIMIT) {
 						ath6kl_dbg(ATH6KL_DBG_INFO,
-						"recycle packet exceeded limitation\n");
+							"recycle cnt exceed\n");
+
 						packet->status = 0;
 						list_add_tail(
 						&packet->list,
@@ -921,7 +922,7 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		"p2p_flowctrl state_change (ar %p) re_tx %d re_tx_aging %d\n",
+		"p2p_flowctrl state_change %p re_tx %d re_tx_aging %d\n",
 		ar,
 		fw_conn->sche_re_tx,
 		fw_conn->sche_re_tx_aging);
@@ -944,6 +945,7 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	WARN_ON(numConn > NUM_CONN);
 
 	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+	p2p_flowctrl->p2p_flowctrl_event_cnt++;
 	for (i = 0; i < numConn; i++) {
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
 		fw_conn->connect_status = ac_map[i];
@@ -951,7 +953,7 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl state_update (ar %p) ac_map %02x %02x %02x %02x\n",
+		   "p2p_flowctrl state_update %p ac_map %02x %02x %02x %02x\n",
 		   ar,
 		   ac_map[0], ac_map[1], ac_map[2], ac_map[3]);
 
@@ -997,8 +999,7 @@ void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif,
 	fw_conn = &p2p_flowctrl->fw_conn_list[connId];
 	if (mac_addr) {
 		if (fw_conn->sche_tx_queued != 0) {
-			ath6kl_err(
-	"memory leakage ? [%d/%02x] tx %d re_tx %d re_tx_aging %d tx_queued %d\n",
+			ath6kl_err("memory leakage? [%d/%02x] %d,%d,%d,%d\n",
 					fw_conn->connId,
 					fw_conn->connect_status,
 					fw_conn->sche_tx,
@@ -1040,13 +1041,11 @@ void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif,
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl set conn_id (ar %p) mode %d connId %d parent_connId %d mac_addr %02x:%02x:%02x:%02x:%02x:%02x\n",
+		   "p2p_flowctrl set conn_id %p mode %d conId %d p_conId %d\n",
 		   ar,
 		   vif->nw_type,
 		   connId,
-		   fw_conn->parent_connId,
-		   mac_addr[0], mac_addr[1], mac_addr[2],
-		   mac_addr[3], mac_addr[4], mac_addr[5]);
+		   fw_conn->parent_connId);
 
 	return;
 }
@@ -1094,8 +1093,7 @@ u8 ath6kl_p2p_flowctrl_get_conn_id(struct ath6kl_vif *vif,
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl get conn_id (ar %p) connId %d hint %02x:%02x:%02x:%02x:%02x:%02x\n",
-		   ar,
+		   "p2p_flowctrl get con_id %d %02x:%02x:%02x:%02x:%02x:%02x\n",
 		   connId,
 		   hint[0], hint[1], hint[2], hint[3], hint[4], hint[5]);
 
@@ -1114,9 +1112,25 @@ int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 
 	len += snprintf(buf + len, buf_len - len, "\n NUM_CONN : %d",
 		NUM_CONN);
-	len += snprintf(buf + len, buf_len - len, "\n SCHE_TYPE : %s\n",
+	len += snprintf(buf + len, buf_len - len, "\n SCHE_TYPE : %s",
 		(p2p_flowctrl->sche_type == P2P_FLOWCTRL_SCHE_TYPE_CONNECTION ?
 		 "CONNECTION" : "INTERFACE"));
+	len += snprintf(buf + len, buf_len - len, "\n EVENT_CNT : %d",
+		p2p_flowctrl->p2p_flowctrl_event_cnt);
+
+	len += snprintf(buf + len, buf_len - len, "\n NOA_UPDATE :");
+	for (i = 0; i < ar->vif_max; i++) {
+		struct ath6kl_vif *vif;
+		struct p2p_ps_info *p2p_ps;
+
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if (vif) {
+			p2p_ps = vif->p2p_ps_info_ctx;
+			len += snprintf(buf + len, buf_len - len,
+				" %d", p2p_ps->go_noa_notif_cnt);
+		}
+	}
+	len += snprintf(buf + len, buf_len - len, "\n");
 
 	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	for (i = 0; i < NUM_CONN; i++) {
