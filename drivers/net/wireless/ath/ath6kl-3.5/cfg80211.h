@@ -60,4 +60,9 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar);
 void ath6kl_cfg80211_stop(struct ath6kl_vif *vif);
 void ath6kl_cfg80211_stop_all(struct ath6kl *ar);
 
+#ifdef CONFIG_ANDROID
+int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
+int ath6kl_clear_wow_mode(struct wiphy *wiphy);
+#endif /* CONFIG_ANDROID */
+
 #endif /* ATH6KL_CFG80211_H */

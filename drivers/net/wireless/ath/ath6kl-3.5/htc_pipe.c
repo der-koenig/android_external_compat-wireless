@@ -22,11 +22,7 @@
 
 #define HTC_PACKET_CONTAINER_ALLOCATION 32
 #define HTC_CONTROL_BUFFER_SIZE (HTC_MAX_CTRL_MSG_LEN + HTC_HDR_LENGTH)
-
-#define USB_HIF_SINGLE_PIPE_DATA_SCHED
-#ifdef USB_HIF_SINGLE_PIPE_DATA_SCHED
 #define DATA_EP_SIZE 4
-#endif
 
 static int ath6kl_htc_pipe_tx(struct htc_target *handle,
 	struct htc_packet *packet);
@@ -994,7 +990,6 @@ static int htc_tx_completion(struct htc_target *context, struct sk_buff *netbuf)
 	u8 EpID;
 	struct htc_endpoint *ep;
 	struct htc_packet *packet;
-#ifdef USB_HIF_SINGLE_PIPE_DATA_SCHED
 	struct ath6kl *ar;
 	enum htc_endpoint_id eid[DATA_EP_SIZE] = {
 		ENDPOINT_5, ENDPOINT_4, ENDPOINT_2, ENDPOINT_3};
@@ -1002,7 +997,6 @@ static int htc_tx_completion(struct htc_target *context, struct sk_buff *netbuf)
 	u16 resources_thresh[DATA_EP_SIZE]; /* urb resources */
 	u16 resources;
 	u16 resources_max;
-#endif
 
 	netdata = netbuf->data;
 	netlen = netbuf->len;
@@ -1022,13 +1016,12 @@ static int htc_tx_completion(struct htc_target *context, struct sk_buff *netbuf)
 		send_packet_completion(target, packet);
 	}
 	netbuf = NULL;
+	ar = target->dev->ar;
 
 	if (!ep->tx_credit_flow_enabled) {
-#ifdef USB_HIF_SINGLE_PIPE_DATA_SCHED
-		if ((enum htc_endpoint_id)EpID >= ENDPOINT_2 &&
+		if ((ar->hw.flags & ATH6KL_HW_SINGLE_PIPE_SCHED) &&
+			(enum htc_endpoint_id)EpID >= ENDPOINT_2 &&
 			(enum htc_endpoint_id)EpID <= ENDPOINT_5) {
-
-			ar = target->dev->ar;
 
 			resources_max =	ath6kl_hif_pipe_get_max_queue_number(
 							ar, ep->pipeid_ul);
@@ -1073,7 +1066,6 @@ static int htc_tx_completion(struct htc_target *context, struct sk_buff *netbuf)
 				*/
 				return 0;
 		}
-#endif
 
 		/*
 		 * note: when using TX credit flow, the re-checking of queues
@@ -1086,7 +1078,6 @@ static int htc_tx_completion(struct htc_target *context, struct sk_buff *netbuf)
 	return 0;
 }
 
-#ifdef USB_HIF_SINGLE_PIPE_DATA_SCHED
 static int htc_send_pkts_sched_check(struct htc_target *target,
 				     enum htc_endpoint_id id)
 {
@@ -1198,7 +1189,6 @@ static int htc_send_pkts_sched_queue(struct htc_target *target,
 	return 0;
 }
 
-#endif
 
 static int htc_send_packets_multiple(struct htc_target *handle,
 				struct list_head *pkt_queue)
@@ -1206,6 +1196,7 @@ static int htc_send_packets_multiple(struct htc_target *handle,
 	struct htc_target *target = (struct htc_target *) handle;
 	struct htc_endpoint *ep;
 	struct htc_packet *packet, *tmp_pkt;
+	struct ath6kl *ar = target->dev->ar;
 
 	if (list_empty(pkt_queue))
 		return -EINVAL;
@@ -1221,14 +1212,14 @@ static int htc_send_packets_multiple(struct htc_target *handle,
 	}
 	ep = &target->endpoint[packet->endpoint];
 
-#ifdef USB_HIF_SINGLE_PIPE_DATA_SCHED
-	if (!htc_send_pkts_sched_check(target, ep->eid))
-		htc_send_pkts_sched_queue(target, pkt_queue, ep->eid);
-	else
+	if (ar->hw.flags & ATH6KL_HW_SINGLE_PIPE_SCHED) {
+		if (!htc_send_pkts_sched_check(target, ep->eid))
+			htc_send_pkts_sched_queue(target, pkt_queue, ep->eid);
+		else
+			htc_try_send(target, ep, pkt_queue);
+	} else {
 		htc_try_send(target, ep, pkt_queue);
-#else
-	htc_try_send(target, ep, pkt_queue);
-#endif
+	}
 
 	/* do completion on any packets that couldn't get in */
 	if (!list_empty(pkt_queue)) {
@@ -2439,6 +2430,12 @@ int ath6kl_htc_pipe_wmm_schedule_change(struct htc_target *target,
 	return 0;
 }
 
+int ath6kl_htc_pipe_change_credit_bypass(struct htc_target *target,
+		u8 traffic_class)
+{
+	return 0;
+}
+
 static const struct ath6kl_htc_ops ath6kl_htc_pipe_ops = {
 	.create = ath6kl_htc_pipe_create,
 	.wait_target = ath6kl_htc_pipe_wait_target,
@@ -2456,6 +2453,7 @@ static const struct ath6kl_htc_ops ath6kl_htc_pipe_ops = {
 	.get_stat = ath6kl_htc_pipe_stat,
 	.stop_netif_queue_full = ath6kl_htc_pipe_stop_netif_queue_full,
 	.indicate_wmm_schedule_change = ath6kl_htc_pipe_wmm_schedule_change,
+	.change_credit_bypass = ath6kl_htc_pipe_change_credit_bypass,
 };
 
 void ath6kl_htc_pipe_attach(struct ath6kl *ar)

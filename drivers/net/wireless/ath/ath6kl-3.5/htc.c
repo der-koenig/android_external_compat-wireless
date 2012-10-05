@@ -2941,6 +2941,15 @@ int ath6kl_htc_mbox_wmm_schedule_change(struct htc_target *target,
 	return 1;
 }
 
+int ath6kl_htc_mbox_change_credit_bypass(struct htc_target *target,
+		u8 traffic_class)
+{
+	if (traffic_class == WMM_AC_BK)
+		return 1;
+
+	return 0;
+}
+
 static const struct ath6kl_htc_ops ath6kl_htc_mbox_ops = {
 	.create = ath6kl_htc_mbox_create,
 	.wait_target = ath6kl_htc_mbox_wait_target,
@@ -2958,6 +2967,7 @@ static const struct ath6kl_htc_ops ath6kl_htc_mbox_ops = {
 	.get_stat = ath6kl_htc_mbox_stat,
 	.stop_netif_queue_full = ath6kl_htc_mbox_stop_netif_queue_full,
 	.indicate_wmm_schedule_change = ath6kl_htc_mbox_wmm_schedule_change,
+	.change_credit_bypass = ath6kl_htc_mbox_change_credit_bypass,
 };
 
 void ath6kl_htc_mbox_attach(struct ath6kl *ar)

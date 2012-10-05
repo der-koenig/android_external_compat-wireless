@@ -40,6 +40,12 @@ int android_readwrite_file(const char *filename, char *rbuf,
 			break;
 		}
 
+		if (!filp->f_op->write || !filp->f_op->read) {
+			filp_close(filp, NULL);
+			ret = -ENOENT;
+			break;
+		}
+
 		if (length == 0) {
 			/* Read the length of the file only */
 			struct inode    *inode;

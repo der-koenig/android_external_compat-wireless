@@ -2532,6 +2532,9 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
 	}
 
+	if (vif->arp_offload_ip_set)
+		filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
+
 	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
 					  ATH6KL_WOW_MODE_ENABLE,
 					  filter,
@@ -2985,7 +2988,7 @@ static int ath6kl_set_ap_probe_resp_ies(struct ath6kl_vif *vif,
 	int ret;
 
 	/*
-	 * Filter out P2P IE(s) since they will be included depending on
+	 * Filter out P2P/WFD IE(s) since they will be included depending on
 	 * the Probe Request frame in ath6kl_wmi_send_go_probe_response_cmd().
 	 */
 
@@ -2997,7 +3000,8 @@ static int ath6kl_set_ap_probe_resp_ies(struct ath6kl_vif *vif,
 		while (pos + 1 < ies + ies_len) {
 			if (pos + 2 + pos[1] > ies + ies_len)
 				break;
-			if (!ath6kl_is_p2p_ie(pos)) {
+			if ((!ath6kl_is_p2p_ie(pos)) &&
+			    (!ath6kl_is_wfd_ie(pos))) {
 				memcpy(buf + len, pos, 2 + pos[1]);
 				len += 2 + pos[1];
 			}
@@ -3167,6 +3171,7 @@ static int ath6kl_set_ap_acl(struct wiphy *wiphy, struct net_device *dev,
 
 		if ((pos[1] - 4) > _MAX_ACL_SETTING_SIZE) {
 			ath6kl_err("wrong ACL setting length!\n");
+			kfree(acl_setting);
 			return 0;
 		}
 
@@ -4693,6 +4698,7 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 
 	vif->scanband_chan = 0;
 	vif->scanband_type = SCANBAND_TYPE_ALL;
+	vif->last_pwr_mode = REC_POWER;
 
 	return 0;
 }

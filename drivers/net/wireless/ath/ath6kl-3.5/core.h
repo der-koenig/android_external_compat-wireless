@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.145
+#define __BUILD_VERSION_ (3.5.0.151)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -752,6 +752,11 @@ struct ath6kl_mbox_info {
 	u32 gmbox_sz;
 };
 
+enum ath6kl_hw_flags {
+	ATH6KL_HW_TGT_ALIGN_PADDING = BIT(0),
+	ATH6KL_HW_SINGLE_PIPE_SCHED = BIT(1),
+};
+
 /*
  * 802.11i defines an extended IV for use with non-WEP ciphers.
  * When the EXTIV bit is set in the key id byte an additional
@@ -898,6 +903,7 @@ struct ath6kl_vif {
 
 	u8 last_pwr_mode;
 	u8 saved_pwr_mode;
+	u8 arp_offload_ip_set;
 };
 
 #define WOW_LIST_ID		0
@@ -1014,6 +1020,7 @@ struct ath6kl {
 		u32 reserved_ram_size;
 		u32 board_addr;
 		u32 testscript_addr;
+		u32 flags;
 
 		struct ath6kl_hw_fw {
 			const char *dir;
@@ -1139,6 +1146,7 @@ struct ath6kl {
 			u8 lpl_policy;
 			u8 no_blocker_detect;
 			u8 no_rfb_detect;
+			u8 rsvd;
 		} lpl_force_enable_params;
 
 		struct power_param {
@@ -1227,6 +1235,13 @@ static inline bool ath6kl_is_p2p_ie(const u8 *pos)
 	return pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
 		pos[2] == 0x50 && pos[3] == 0x6f &&
 		pos[4] == 0x9a && pos[5] == 0x09;
+}
+
+static inline bool ath6kl_is_wfd_ie(const u8 *pos)
+{
+	return pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
+		pos[2] == 0x50 && pos[3] == 0x6f &&
+		pos[4] == 0x9a && pos[5] == 0x0a;
 }
 
 int ath6kl_configure_target(struct ath6kl *ar);

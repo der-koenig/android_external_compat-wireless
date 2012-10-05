@@ -83,6 +83,9 @@ int rttm_init(void *ar)
 
 int rttm_recv(void *buf, u32 len)
 {
+#define RTTM_CONTEXT_PREFIX_OFFSET \
+	(sizeof(u32) + sizeof(u32) + sizeof(struct ath6kl *))
+
 	struct rttm_context *prttm = NULL;
 	struct nsp_mresphdr *presphdr = (struct nsp_mresphdr *)buf;
 	int resptype = presphdr->response_type;
@@ -101,7 +104,8 @@ int rttm_recv(void *buf, u32 len)
 			prttm->dhclkcal_index = 0;
 			/* Post Response of measurements to Device */
 			prttm->mresphdr.frame_type = NSP_RTTCLKCAL_INFO;
-			rttm_issue_request(&prttm->mresphdr,
+			rttm_issue_request(
+				(char *)prttm + RTTM_CONTEXT_PREFIX_OFFSET,
 				NSP_HDR_LEN + sizeof(struct nsp_rtt_clkoffset));
 		}
 

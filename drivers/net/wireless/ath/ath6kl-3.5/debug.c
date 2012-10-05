@@ -3162,6 +3162,8 @@ static ssize_t ath6kl_get_pmkid_list(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+#define PMKID_LIST_NUM_SIZE 4
+
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
 	unsigned int len = 0, buf_len;
@@ -3201,8 +3203,8 @@ static ssize_t ath6kl_get_pmkid_list(struct file *file,
 
 	if (reply->num_pmkid != 0 && reply->num_pmkid <= WMI_MAX_PMKID_CACHE) {
 		int i;
-		char *bssid = (char *)reply->bssid_list;
-		char *pmkid = (char *)reply->pmkid_list;
+		char *bssid = (char *)reply + PMKID_LIST_NUM_SIZE;
+		char *pmkid = (char *)reply + PMKID_LIST_NUM_SIZE + ETH_ALEN;
 
 		for (i = 0; i < reply->num_pmkid; i++) {
 			len += scnprintf(p + len, buf_len - len,
@@ -3731,15 +3733,18 @@ static ssize_t ath6kl_tgt_ap_stat_read(struct file *file,
 		    (vif->nw_type == AP_NETWORK)) {
 			struct wmi_ap_mode_stat *ap_stats;
 
-			if (down_interruptible(&ar->sem))
-				return -EBUSY;
+			if (down_interruptible(&ar->sem)) {
+				ret_cnt = -EBUSY;
+				goto FAIL;
+			}
 
 			set_bit(STATS_UPDATE_PEND, &vif->flags);
 
 			if (ath6kl_wmi_get_stats_cmd(ar->wmi,
 						vif->fw_vif_idx)) {
 				up(&ar->sem);
-				return -EIO;
+				ret_cnt = -EIO;
+				goto FAIL;
 			}
 
 			left = wait_event_interruptible_timeout(ar->event_wq,
@@ -3747,8 +3752,10 @@ static ssize_t ath6kl_tgt_ap_stat_read(struct file *file,
 						&vif->flags), WMI_TIMEOUT);
 			up(&ar->sem);
 
-			if (left <= 0)
-				return -ETIMEDOUT;
+			if (left <= 0) {
+				ret_cnt = -ETIMEDOUT;
+				goto FAIL;
+			}
 
 			len += scnprintf(p + len, buf_len - len, "VIF[%d]\n",
 					vif->fw_vif_idx);
@@ -3777,6 +3784,7 @@ static ssize_t ath6kl_tgt_ap_stat_read(struct file *file,
 
 	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 
+FAIL:
 	kfree(buf);
 
 	return ret_cnt;
@@ -4075,6 +4083,114 @@ static const struct file_operations fops_ap_acl_mac_list = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for AMPDU */
+static ssize_t ath6kl_ampdu_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	u32 ampdu;
+	char buf[32];
+	ssize_t len;
+	int i;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &ampdu))
+		return -EINVAL;
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		/* only support 8 TIDs now. */
+		if (vif)
+			ath6kl_wmi_allow_aggr_cmd(vif->ar->wmi,
+						vif->fw_vif_idx,
+						(ampdu ? 0xff : 0),
+						(ampdu ? 0xff : 0));
+	}
+
+	return count;
+}
+
+/* debug fs for AMPDU */
+static const struct file_operations fops_ampdu = {
+	.write = ath6kl_ampdu_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static int ath6kl_parse_arp_offload_ip_addrs(const char __user *user_buf,
+				size_t count,
+				u8 *ip_addrs)
+{
+	char buf[64];
+	char *p;
+	unsigned int len;
+	int value, i;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	p = buf;
+
+	SKIP_SPACE;
+
+	for (i = 0 ; i < 4; i++) {
+		sscanf(p, "%d", &value);
+		if (value > 0xff) {
+			/*Wrong value should be less than 255*/
+			return -EFAULT;
+		}
+		*(ip_addrs+i) = value;
+		if (i < 3) {
+			SEEK_SPACE;
+			SKIP_SPACE;
+		}
+	}
+
+	return 0;
+}
+
+static ssize_t ath6kl_arp_offload_ipaddrs_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	int ret;
+	u8 ip_addrs[4];
+
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return -EIO;
+
+	vif->arp_offload_ip_set = 0;
+	ret = ath6kl_parse_arp_offload_ip_addrs(user_buf, count, ip_addrs);
+
+	if (ret)
+		return ret;
+
+	if (ath6kl_wmi_set_arp_offload_ip_cmd(ar->wmi, ip_addrs))
+		return -EIO;
+	vif->arp_offload_ip_set = 1;
+
+	return count;
+}
+
+/* debug fs for ARP OFFLOAD */
+static const struct file_operations fops_arp_offload_ip_addrs = {
+	.write = ath6kl_arp_offload_ipaddrs_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -4234,6 +4350,12 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("ap_acl_mac_list", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_ap_acl_mac_list);
+
+	debugfs_create_file("ampdu", S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_ampdu);
+
+	debugfs_create_file("arp_ip_addrs", S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_arp_offload_ip_addrs);
 
 	return 0;
 }

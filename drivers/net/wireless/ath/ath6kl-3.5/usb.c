@@ -209,9 +209,6 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb);
 #define ATH6KL_USB_IS_ISOC_EP(attr)  (((attr) & 3) == 0x01)
 #define ATH6KL_USB_IS_DIR_IN(addr)  ((addr) & 0x80)
 
-/*TBD: change to AR6004 type only */
-#define AR6004_1_0_ALIGN_WAR 1
-
 /* pipe/urb operations */
 static struct ath6kl_urb_context *ath6kl_usb_alloc_urb_from_pipe(
 						struct ath6kl_usb_pipe *pipe)
@@ -402,6 +399,7 @@ static u8 ath6kl_usb_get_logical_pipe_num(struct ath6kl_usb *device,
 	case ATH6KL_USB_EP_ADDR_APP_DATA_HP_OUT:
 		pipe_num = ATH6KL_USB_PIPE_TX_DATA_HP;
 		*urb_count = TX_URB_COUNT;
+		break;
 	case ATH6KL_USB_EP_ADDR_APP_DATA_VHP_OUT:
 		pipe_num = ATH6KL_USB_PIPE_TX_DATA_VHP;
 		*urb_count = TX_URB_COUNT;
@@ -781,6 +779,7 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 	struct htc_frame_hdr *htc_hdr;
 	u16 payload_len;
 	struct sk_buff *new_skb = NULL;
+	struct ath6kl *ar = pipe->ar_usb->ar;
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 		"%s: recv pipe: %d, stat:%d, len:%d urb:0x%p\n", __func__,
@@ -823,10 +822,8 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 		netlen = urb->actual_length;
 
 		do {
-#if defined(AR6004_1_0_ALIGN_WAR)
 			u8 extra_pad = 0;
 			u16 act_frame_len = 0;
-#endif
 			u16 frame_len;
 
 			/* Hack into HTC header for bundle processing */
@@ -840,18 +837,18 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 			payload_len =
 			 le16_to_cpu(get_unaligned((u16 *)&htc_hdr->payld_len));
 
-#if defined(AR6004_1_0_ALIGN_WAR)
-			act_frame_len = (HTC_HDR_LENGTH + payload_len);
+			if (ar->hw.flags & ATH6KL_HW_TGT_ALIGN_PADDING) {
+				act_frame_len = (HTC_HDR_LENGTH + payload_len);
 
-			if (htc_hdr->eid == 0 || htc_hdr->eid == 1)
-				/* assumption: target won't pad on
-				* HTC endpoint 0 & 1.
-				*/
-				extra_pad = 0;
-			else
-				extra_pad =
-					get_unaligned((u8 *)&htc_hdr->ctrl[1]);
-#endif
+				if (htc_hdr->eid == 0 || htc_hdr->eid == 1)
+					/* assumption: target won't pad on
+					* HTC endpoint 0 & 1.
+					*/
+					extra_pad = 0;
+				else
+					extra_pad =
+					 get_unaligned((u8 *)&htc_hdr->ctrl[1]);
+			}
 
 			if (payload_len > ATH6KL_MAX_AMSDU_SIZE) {
 				ath6kl_dbg(ATH6KL_DBG_USB_BULK,
@@ -860,41 +857,43 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 				break;
 			}
 
-#if defined(AR6004_1_0_ALIGN_WAR)
-			frame_len = (act_frame_len + extra_pad);
-#else
-			frame_len = (HTC_HDR_LENGTH + payload_len);
-#endif
+			if (ar->hw.flags & ATH6KL_HW_TGT_ALIGN_PADDING)
+				frame_len = (act_frame_len + extra_pad);
+			else
+				frame_len = (HTC_HDR_LENGTH + payload_len);
 
 			if (netlen >= frame_len) {
 				/* allocate a new skb and copy */
-#if defined(AR6004_1_0_ALIGN_WAR)
-				new_skb = dev_alloc_skb(act_frame_len);
-				if (new_skb == NULL) {
-					ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-						"athusb: allocate skb (len=%u) "
-						"failed\n", act_frame_len);
-					break;
+				if (ar->hw.flags &
+					ATH6KL_HW_TGT_ALIGN_PADDING) {
+					new_skb = dev_alloc_skb(act_frame_len);
+					if (new_skb == NULL) {
+						ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+						 "athusb: allocate skb (len=%u) "
+						 "failed\n", act_frame_len);
+						break;
+					}
+
+					netdata_new = new_skb->data;
+					netlen_new = new_skb->len;
+					memcpy(netdata_new,
+						netdata, act_frame_len);
+					skb_put(new_skb, act_frame_len);
+				} else {
+					new_skb = dev_alloc_skb(frame_len);
+					if (new_skb == NULL) {
+						ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+						 "athusb: allocate skb (len=%u) "
+						 "failed\n", frame_len);
+						break;
+					}
+
+					netdata_new = new_skb->data;
+					netlen_new = new_skb->len;
+					memcpy(netdata_new, netdata, frame_len);
+					skb_put(new_skb, frame_len);
 				}
 
-				netdata_new = new_skb->data;
-				netlen_new = new_skb->len;
-				memcpy(netdata_new, netdata, act_frame_len);
-				skb_put(new_skb, act_frame_len);
-#else
-				new_skb = dev_alloc_skb(frame_len);
-				if (new_skb == NULL) {
-					ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-						"athusb: allocate skb (len=%u) "
-						"failed\n", frame_len);
-					break;
-				}
-
-				netdata_new = new_skb->data;
-				netlen_new = new_skb->len;
-				memcpy(netdata_new, netdata, frame_len);
-				skb_put(new_skb, frame_len);
-#endif
 				skb_queue_tail(&pipe->io_comp_queue, new_skb);
 				new_skb = NULL;
 

@@ -112,4 +112,11 @@ static inline int ath6kl_htc_wmm_schedule_change(struct htc_target *target,
 			change);
 }
 
+static inline int ath6kl_htc_change_credit_bypass(struct htc_target *target,
+		u8 traffic_class)
+{
+	return target->dev->ar->htc_ops->change_credit_bypass(target,
+			traffic_class);
+}
+
 #endif

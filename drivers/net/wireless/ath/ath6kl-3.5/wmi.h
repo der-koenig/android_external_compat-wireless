@@ -711,6 +711,9 @@ enum wmi_cmd_id {
 	WMI_ENABLE_BLINKING_LED_CMDID,
 
 	WMI_AP_POLL_STA_CMDID,
+	WMI_AP_PSBUF_OFFLOAD_CMDID,
+	WMI_SET_REGDOMAIN_CMDID,
+	WMI_SET_CREDIT_BYPASS_CMDID,
 };
 
 enum wmi_mgmt_frame_type {
@@ -1199,7 +1202,7 @@ enum wmi_phy_mode {
 	WMI_11GONLY_MODE = 0x5,
 };
 
-#define WMI_MAX_CHANNELS        32
+#define WMI_MAX_CHANNELS        64
 
 /*
  *  WMI_RSSI_THRESHOLD_PARAMS_CMDID
@@ -2875,6 +2878,12 @@ struct wmi_report_wmm_params {
 	struct wmm_params wmm_params[WMM_NUM_AC];
 } __packed;
 
+struct wmi_set_credit_bypass_cmd {
+	u8 eid;
+	u8 restore;
+	u16 threshold;
+} __packed;
+
 /* AP ACL */
 #define AP_ACL_SIZE             10
 
@@ -2895,6 +2904,68 @@ struct wmi_ap_acl_mac_list_cmd {
 	u8 index;
 	u8 mac[ETH_ALEN];
 	u8 wildcard;
+} __packed;
+
+struct wmi_allow_aggr_cmd {
+	u16 tx_allow_aggr;	/* bitmask indicate TID */
+	u16 rx_allow_aggr;	/* bitmask indicate TID */
+} __packed;
+
+
+/* ARP OFFLOAD */
+struct wmi_ipv6_addr {
+	u8 address[16];    /* IPV6 in Network Byte Order */
+} __packed;
+
+#define WMI_MAX_NS_OFFLOADS           2
+#define WMI_MAX_ARP_OFFLOADS          2
+
+/* the tuple entry is valid */
+#define WMI_ARPOFF_FLAGS_VALID              (1 << 0)
+/* the target mac address is valid */
+#define WMI_ARPOFF_FLAGS_MAC_VALID          (1 << 1)
+/* remote IP field is valid */
+#define WMI_ARPOFF_FLAGS_REMOTE_IP_VALID    (1 << 2)
+
+/* flags
+ * IPV4 addresses of the local node
+ * source address of the remote node requesting the ARP (qualifier)
+ * mac address for this tuple, if not valid, the local MAC is used
+ */
+struct wmi_arp_offload_tuple {
+	u8 flags;
+	u8 target_ipaddr[4];
+	u8 remote_ipaddr[4];
+	u8 target_mac[ETH_ALEN];
+} __packed;
+
+/* the tuple entry is valid */
+#define WMI_NSOFF_FLAGS_VALID           (1 << 0)
+/* the target mac address is valid */
+#define WMI_NSOFF_FLAGS_MAC_VALID       (1 << 1)
+/* remote IP field is valid */
+#define WMI_NSOFF_FLAGS_REMOTE_IP_VALID (1 << 2)
+
+#define WMI_NSOFF_MAX_TARGET_IPS    2
+
+/* flags
+ * IPV6 target addresses of the local node
+ * multi-cast source IP addresses for receiving solicitations
+ * address of remote node requesting the solicitation (qualifier)
+ * mac address for this tuple, if not valid, the local MAC is used
+ */
+struct wmi_ns_offload_tuple {
+	u8 flags;
+	struct wmi_ipv6_addr target_ipaddr[WMI_NSOFF_MAX_TARGET_IPS];
+	struct wmi_ipv6_addr solicitation_ipaddr;
+	struct wmi_ipv6_addr remote_ipaddr;
+	u8 target_mac[ETH_ALEN];
+} __packed;
+
+struct wmi_set_arp_ns_offload_cmd {
+	u32 flags;
+	struct wmi_ns_offload_tuple ns_tuples[WMI_MAX_NS_OFFLOADS];
+	struct wmi_arp_offload_tuple arp_tuples[WMI_MAX_ARP_OFFLOADS];
 } __packed;
 
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
@@ -3150,4 +3221,9 @@ int ath6kl_wmi_ap_poll_sta(struct wmi *wmi, u8 if_idx, u8 aid);
 int ath6kl_wmi_ap_acl_policy(struct wmi *wmi, u8 if_idx, u8 policy);
 int ath6kl_wmi_ap_acl_mac_list(struct wmi *wmi, u8 if_idx,
 	u8 idx, u8 *mac_addr, u8 action);
+int ath6kl_wmi_allow_aggr_cmd(struct wmi *wmi, u8 if_idx,
+	u16 tx_tid_mask, u16 rx_tid_mask);
+int ath6kl_wmi_set_credit_bypass(struct wmi *wmi, u8 if_idx, u8 eid,
+	u8 restore, u16 threshold);
+int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs);
 #endif /* WMI_H */

@@ -3403,8 +3403,8 @@ int ath6kl_wmi_send_go_probe_response_cmd(struct wmi *wmi,
 	struct ath6kl_vif *vif, const u8 *buf, size_t len, unsigned int freq)
 {
 	const u8 *pos;
-	u8 *p2p;
-	int p2p_len;
+	u8 *p2p, *wfd;
+	int p2p_len, wfd_len;
 	int ret;
 	const struct ieee80211_mgmt *mgmt;
 
@@ -3415,6 +3415,13 @@ int ath6kl_wmi_send_go_probe_response_cmd(struct wmi *wmi,
 		return -ENOMEM;
 	p2p_len = 0;
 
+	wfd = kmalloc(len, GFP_KERNEL);
+	if (wfd == NULL) {
+		kfree(p2p);
+		return -ENOMEM;
+	}
+	wfd_len = 0;
+
 	/* Include P2P IE(s) from the frame generated in user space. */
 	pos = mgmt->u.probe_resp.variable;
 	while (pos + 1 < buf + len) {
@@ -3423,6 +3430,9 @@ int ath6kl_wmi_send_go_probe_response_cmd(struct wmi *wmi,
 		if (ath6kl_is_p2p_ie(pos)) {
 			memcpy(p2p + p2p_len, pos, 2 + pos[1]);
 			p2p_len += 2 + pos[1];
+		} else if (ath6kl_is_wfd_ie(pos)) {
+			memcpy(wfd + wfd_len, pos, 2 + pos[1]);
+			wfd_len += 2 + pos[1];
 		}
 		pos += 2 + pos[1];
 	}
@@ -3431,6 +3441,25 @@ int ath6kl_wmi_send_go_probe_response_cmd(struct wmi *wmi,
 				  WMI_FRAME_PROBE_RESP,
 				  &p2p,
 				  &p2p_len);
+
+	/* Add WFD IEs after P2P IEs. */
+	if (wfd_len) {
+		u8 *p2p_wfd;
+
+		p2p_wfd = kmalloc(p2p_len + wfd_len, GFP_KERNEL);
+		if (p2p_wfd == NULL) {
+			kfree(wfd);
+			kfree(p2p);
+			return -ENOMEM;
+		}
+
+		memcpy(p2p_wfd, p2p, p2p_len);
+		memcpy(p2p_wfd + p2p_len, wfd, wfd_len);
+
+		kfree(p2p);
+		p2p = p2p_wfd;
+		p2p_len += wfd_len;
+	}
 
 	ret = ath6kl_wmi_send_probe_response_cmd(wmi, vif->fw_vif_idx, freq,
 						 mgmt->da, p2p, p2p_len);
@@ -3679,7 +3708,6 @@ static int ath6kl_wmi_disc_peer_event_rx(u8 *datap,
 {
 	struct ath6kl *ar = vif->ar;
 	struct wmi_disc_peer_event *ev;
-	struct wmi_disc_peer *peers;
 	u16 peers_size;
 	u8 peer_num;
 
@@ -3689,11 +3717,7 @@ static int ath6kl_wmi_disc_peer_event_rx(u8 *datap,
 	ev = (struct wmi_disc_peer_event *) datap;
 	peer_num = ev->peer_num;
 	peers_size = sizeof(struct wmi_disc_peer)*peer_num;
-	peers = kmalloc(peers_size, GFP_KERNEL);
-	if (peers == NULL)
-		return -EINVAL;
 
-	memcpy(peers, ev->peer_data, peers_size);
 	ath6kl_tm_disc_event(ar, ev, sizeof(*ev)+peers_size-1);
 
 	return 0;
@@ -4906,4 +4930,76 @@ int ath6kl_wmi_ap_acl_mac_list(struct wmi *wmi, u8 if_idx,
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_AP_ACL_MAC_LIST_CMDID,
 				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_allow_aggr_cmd(struct wmi *wmi, u8 if_idx,
+	u16 tx_tid_mask, u16 rx_tid_mask)
+{
+	struct sk_buff *skb;
+	struct wmi_allow_aggr_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"allow_aggr: tx_tid %x rx_tid %x\n",
+			tx_tid_mask,
+			rx_tid_mask);
+
+	cmd = (struct wmi_allow_aggr_cmd *)skb->data;
+	cmd->tx_allow_aggr = tx_tid_mask;
+	cmd->rx_allow_aggr = rx_tid_mask;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_ALLOW_AGGR_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_set_credit_bypass(struct wmi *wmi, u8 if_idx, u8 eid,
+	u8 restore, u16 threshold)
+{
+	struct sk_buff *skb;
+	struct wmi_set_credit_bypass_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"eid %d restore: %d, threshould: %d\n",
+			eid, restore, threshold);
+
+	cmd = (struct wmi_set_credit_bypass_cmd *)skb->data;
+	cmd->eid = eid;
+	cmd->restore = restore;
+	cmd->threshold = threshold;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
+				WMI_SET_CREDIT_BYPASS_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs)
+{
+	struct sk_buff *skb;
+	struct wmi_set_arp_ns_offload_cmd *cmd;
+	int ret, i;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_set_arp_ns_offload_cmd *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	for (i = 0 ; i < 4; i++) {
+		/*mapping IP Address*/
+		cmd->arp_tuples[0].target_ipaddr[i] = *(ip_addrs+i);
+	}
+	cmd->arp_tuples[0].flags = WMI_ARPOFF_FLAGS_VALID;
+	cmd->flags = 0;
+
+	ret = ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ARP_NS_OFFLOAD_CMDID,
+					NO_SYNC_WMIFLAG);
+	return ret;
 }

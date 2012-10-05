@@ -734,6 +734,19 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 			ar->hiac_stream_active_pri =
 					ar->ac_stream_pri_map[traffic_class];
 
+		if (ath6kl_htc_change_credit_bypass(ar->htc_target,
+					traffic_class)) {
+			struct ath6kl_vif *vif;
+			vif = ath6kl_vif_first(ar);
+
+			spin_unlock_bh(&ar->lock);
+
+			ath6kl_wmi_set_credit_bypass(ar->wmi,
+				vif->fw_vif_idx,
+				ar->ac2ep_map[WMM_AC_BE], 0, 6);
+
+			spin_lock_bh(&ar->lock);
+		}
 	} else {
 		/*
 		 * We may have to search for the next active stream
@@ -759,6 +772,21 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 					ar->hiac_stream_active_pri =
 						ar->ac_stream_pri_map[i];
 			}
+		}
+
+		if (ath6kl_htc_change_credit_bypass(ar->htc_target,
+					traffic_class)) {
+			struct ath6kl_vif *vif;
+			vif = ath6kl_vif_first(ar);
+
+			spin_unlock_bh(&ar->lock);
+
+			ath6kl_wmi_set_credit_bypass(ar->wmi,
+					vif->fw_vif_idx,
+					ar->ac2ep_map[WMM_AC_BE],
+					1, 1);
+
+			spin_lock_bh(&ar->lock);
 		}
 	}
 

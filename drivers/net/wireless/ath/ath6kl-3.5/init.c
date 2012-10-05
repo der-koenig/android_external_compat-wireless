@@ -77,6 +77,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 		/* hw2.0 needs override address hardcoded */
 		.app_start_override_addr	= 0x944C00,
+		.flags				= 0,
 
 		.fw = {
 			.dir		= AR6003_HW_2_0_FW_DIR,
@@ -98,6 +99,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0x542330,
 		.reserved_ram_size		= 512,
 		.testscript_addr		= 0x57ef74,
+		.flags				= 0,
 
 		.fw = {
 			.dir		= AR6003_HW_2_1_1_FW_DIR,
@@ -122,6 +124,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size	= 19456,
 		.board_addr		= 0x433900,
 		.testscript_addr	= 0x432900,
+		.flags			= ATH6KL_HW_TGT_ALIGN_PADDING |
+					ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_0_FW_DIR,
@@ -141,6 +145,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0x435400,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_1_FW_DIR,
@@ -165,6 +171,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 9216,
 		.board_addr			= 0x435c00,
 		.testscript_addr		= 0x434c00,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_2_FW_DIR,
@@ -189,6 +197,9 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0x434c00,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
+
 		.fw = {
 			.dir		= AR6004_HW_1_3_FW_DIR,
 			.fw		= AR6004_HW_1_3_FIRMWARE_FILE,
@@ -212,6 +223,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x42e400,
 		.testscript_addr		= 0x434c00,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_3_FW_DIR,
@@ -236,6 +249,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
 		.testscript_addr		= 0x43d400,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_6_FW_DIR,
@@ -259,6 +273,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 11264,
 		.board_addr			= 0x45fc00,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6006_HW_1_0_FW_DIR,
@@ -772,8 +787,15 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return -EIO;
 	}
 
-	if (ar->p2p_concurrent && !ar->p2p_dedicate) {
+	if (ar->p2p_concurrent && !ar->p2p_dedicate)
 		param |= HI_OPTION_DISABLE_P2P_DEDICATE;
+
+#ifndef CONFIG_ANDROID
+	param |= HI_OPTION_DISABLE_RTT;
+#endif
+
+	if (param & HI_OPTION_DISABLE_P2P_DEDICATE ||
+	    param & HI_OPTION_DISABLE_RTT) {
 		if (ath6kl_bmi_write(ar, ath6kl_get_hi_item_addr(ar,
 				HI_ITEM(hi_option_flag2)),
 				(u8 *)&param, 4) != 0) {
@@ -2650,6 +2672,4 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_TRC,
 			"attempting to reset target on instance destroy\n");
 	ath6kl_reset_device(ar, ar->target_type, true, true);
-
-	clear_bit(WLAN_ENABLED, &ar->flag);
 }

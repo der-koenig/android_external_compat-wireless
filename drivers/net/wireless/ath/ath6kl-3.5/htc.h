@@ -583,6 +583,8 @@ struct ath6kl_htc_ops {
 	int (*stop_netif_queue_full)(struct htc_target *target);
 	int (*indicate_wmm_schedule_change)(struct htc_target *target,
 		bool change);
+	int (*change_credit_bypass)(struct htc_target *target,
+		u8 traffic_class);
 };
 
 struct ath6kl_device;

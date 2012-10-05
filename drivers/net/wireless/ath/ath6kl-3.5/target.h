@@ -328,6 +328,9 @@ struct host_interest {
 
 #define HI_OPTION_FW_BRIDGE_SHIFT 0x04
 
+/* Disable RTT Feature */
+#define HI_OPTION_DISABLE_RTT 0x20
+
 /* Disable p2p dedicate device */
 #define HI_OPTION_DISABLE_P2P_DEDICATE          0x100
 

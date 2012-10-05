@@ -1601,13 +1601,13 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 				char *user_cmd,
 				int len)
 {
-	int ret = 0;
-	u8 not_allow_ch, scanband_type;
+	int ret = 0, scanband_type = 0;
+	u8 not_allow_ch;
 
 	/* SET::SETBAND {band} */
 	if (len > 1) {
 		ret = 0;
-		scanband_type = user_cmd[0] - '0';
+		sscanf(user_cmd, "%d", &scanband_type);
 
 		if (scanband_type == ANDROID_SETBAND_ALL)
 			vif->scanband_type = SCANBAND_TYPE_ALL;
@@ -1615,7 +1615,10 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 			vif->scanband_type = SCANBAND_TYPE_5G;
 		else if (scanband_type == ANDROID_SETBAND_2G)
 			vif->scanband_type = SCANBAND_TYPE_2G;
-		else
+		else if ((scanband_type >= 2412) && (scanband_type <= 5825)) {
+			vif->scanband_type = SCANBAND_TYPE_CHAN_ONLY;
+			vif->scanband_chan = scanband_type;
+		} else
 			ret = -ENOTSUPP;
 
 		/* Disconnect if AP is in not allowed band. */
