@@ -40,7 +40,7 @@ obj-y := compat/
 obj-$(CONFIG_COMPAT_RFKILL) += net/rfkill/
 
 ifeq ($(BT),)
-obj-$(CONFIG_COMPAT_WIRELESS) += net/wireless/ net/mac80211/
+obj-$(CONFIG_COMPAT_WIRELESS) += net/wireless/
 obj-$(CONFIG_COMPAT_WIRELESS_MODULES) += drivers/net/wireless/
 
 

@@ -2,7 +2,7 @@
 #define COMPAT_AUTOCONF_INCLUDED
 /*
  * Automatically generated C config: don't edit
- * Sat Sep 22 19:44:59 IST 2012 
+ * Tue Oct  9 19:02:26 IST 2012 
  * compat-drivers: compat-drivers-2012-09-18-7-gc629694
  * linux: v3.0-58275-gbf074b3
  */
