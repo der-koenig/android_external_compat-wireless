@@ -941,5 +941,7 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type);
 void ath6kl_core_cleanup(struct ath6kl *ar);
 void ath6kl_core_destroy(struct ath6kl *ar);
 void ath6kl_ap_restart_timer(unsigned long ptr);
+void ath6kl_platform_driver_register(void);
+void ath6kl_platform_driver_unregister(void);
 
 #endif /* CORE_H */
