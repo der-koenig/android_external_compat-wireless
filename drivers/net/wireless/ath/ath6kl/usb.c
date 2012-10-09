@@ -32,6 +32,7 @@ enum ATH6KL_USB_PIPE_ID {
 	ATH6KL_USB_PIPE_TX_DATA_LP,
 	ATH6KL_USB_PIPE_TX_DATA_MP,
 	ATH6KL_USB_PIPE_TX_DATA_HP,
+	ATH6KL_USB_PIPE_TX_DATA_VHP,
 	ATH6KL_USB_PIPE_RX_CTRL,
 	ATH6KL_USB_PIPE_RX_DATA,
 	ATH6KL_USB_PIPE_RX_DATA2,
@@ -91,6 +92,7 @@ struct ath6kl_urb_context {
 #define ATH6KL_USB_EP_ADDR_APP_DATA_LP_OUT      0x02
 #define ATH6KL_USB_EP_ADDR_APP_DATA_MP_OUT      0x03
 #define ATH6KL_USB_EP_ADDR_APP_DATA_HP_OUT      0x04
+#define ATH6KL_USB_EP_ADDR_APP_DATA_VHP_OUT     0x05
 
 /* diagnostic command defnitions */
 #define ATH6KL_USB_CONTROL_REQ_SEND_BMI_CMD        1
@@ -286,6 +288,9 @@ static u8 ath6kl_usb_get_logical_pipe_num(struct ath6kl_usb *ar_usb,
 		pipe_num = ATH6KL_USB_PIPE_TX_DATA_HP;
 		*urb_count = TX_URB_COUNT;
 		break;
+	case ATH6KL_USB_EP_ADDR_APP_DATA_VHP_OUT:
+		pipe_num = ATH6KL_USB_PIPE_TX_DATA_VHP;
+		*urb_count = TX_URB_COUNT;
 	default:
 		/* note: there may be endpoints not currently used */
 		break;
@@ -685,7 +690,7 @@ static void hif_start(struct ath6kl *ar)
 
 	/* set the TX resource avail threshold for each TX pipe */
 	for (i = ATH6KL_USB_PIPE_TX_CTRL;
-	     i <= ATH6KL_USB_PIPE_TX_DATA_HP; i++) {
+	     i <= ATH6KL_USB_PIPE_TX_DATA_VHP; i++) {
 		device->pipes[i].urb_cnt_thresh =
 		    device->pipes[i].urb_alloc / 2;
 	}

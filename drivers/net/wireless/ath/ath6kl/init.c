@@ -166,6 +166,29 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_board               = AR6004_HW_1_3_BOARD_DATA_FILE,
 		.fw_default_board       = AR6004_HW_1_3_DEFAULT_BOARD_DATA_FILE,
 	},
+	{
+		.id				= AR6004_HW_1_6_VERSION,
+		.name				= "ar6004 hw 1.6",
+		.dataset_patch_addr		= 0,
+		.app_load_addr			= 0x1234,
+		.board_ext_data_addr		= 0,
+		.reserved_ram_size		= 7168,
+		.board_addr			= 0x43e400,
+		.refclk_hz                      = 40000000,
+		.uarttx_pin                     = 11,
+		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
+						  ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
+
+		.fw = {
+			.dir		= AR6004_HW_1_6_FW_DIR,
+			.fw		= AR6004_HW_1_6_FIRMWARE_FILE,
+			.tcmd	        = AR6004_HW_1_6_TCMD_FIRMWARE_FILE,
+			.utf		= AR6004_HW_1_6_UTF_FIRMWARE_FILE,
+		},
+
+		.fw_board		= AR6004_HW_1_6_BOARD_DATA_FILE,
+		.fw_default_board	= AR6004_HW_1_6_DEFAULT_BOARD_DATA_FILE,
+	},
 };
 
 /*

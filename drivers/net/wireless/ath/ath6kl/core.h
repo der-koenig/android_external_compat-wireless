@@ -220,6 +220,16 @@ enum ath6kl_hw_flags {
 #define AR6004_HW_1_3_TCMD_FIRMWARE_FILE	"utf.bin"
 #define AR6004_HW_1_3_UTF_FIRMWARE_FILE	"utf.bin"
 
+/* AR6004 1.6 definitions */
+#define AR6004_HW_1_6_VERSION                 0x31c80958
+#define AR6004_HW_1_6_FW_DIR			"ath6k/AR6004/hw1.6"
+#define AR6004_HW_1_6_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_1_6_TCMD_FIRMWARE_FILE      "utf.bin"
+#define AR6004_HW_1_6_UTF_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_1_6_BOARD_DATA_FILE         "ath6k/AR6004/hw1.6/bdata.bin"
+#define AR6004_HW_1_6_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6004/hw1.6/bdata.bin"
+
 /* Per STA data, used in AP mode */
 #define STA_PS_AWAKE		BIT(0)
 #define	STA_PS_SLEEP		BIT(1)
