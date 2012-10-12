@@ -174,7 +174,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
-		.refclk_hz                      = 40000000,
+		.refclk_hz                      = 26000000,
 		.uarttx_pin                     = 11,
 		.flags				= ATH6KL_HW_FLAG_64BIT_RATES,
 
