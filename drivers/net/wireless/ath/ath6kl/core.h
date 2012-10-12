@@ -24,6 +24,7 @@
 #include <linux/sched.h>
 #include <linux/circ_buf.h>
 #include <net/cfg80211.h>
+#include <linux/wireless.h>
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
@@ -402,6 +403,40 @@ struct ath6kl_bmi {
 	u32 max_cmd_size;
 };
 
+/* Same as struct target_stats, expect it trackes only few
+   stats in u32 variable. */
+struct target_stats_dup {
+	u32 tx_retry_cnt[4];
+	u32 tx_mult_retry_cnt[4];
+	u32 tx_pkt_per_ac[4];
+	u32 rx_pkt;
+	u32 rx_dupl_frame;
+	u32 tx_fail_cnt[4];
+	u32 tx_rts_fail_cnt;
+	u32 tx_err;
+	u32 tx_rts_success_cnt;
+	u32 rx_err;
+	u32 tx_byte;
+};
+
+enum ath6kl_wlan_stats {
+	WLAN_STATS_INVALID,
+	WLAN_STATS_RETRY_CNT,
+	WLAN_STATS_MUL_RETRY_CNT,
+	WLAN_STATS_TX_FRM_CNT,
+	WLAN_STATS_RX_FRM_CNT,
+	WLAN_STATS_FRM_DUP_CNT,
+	WLAN_STATS_FAIL_CNT,
+	WLAN_STATS_RTS_FAIL_CNT,
+	WLAN_STATS_ACK_FAIL_CNT,
+	WLAN_STATS_RTS_SUC_CNT,
+	WLAN_STATS_RX_DISCARD_CNT,
+	WLAN_STATS_RX_ERROR_CNT,
+	WLAN_STATS_TX_BYTE_CNT,
+};
+
+#define ATH6KL_PRI_IOCTL_REPLY_BUF_MAX 1024
+
 struct target_stats {
 	u64 tx_pkt;
 	u64 tx_byte;
@@ -612,6 +647,7 @@ struct ath6kl_vif {
 	u8 assoc_bss_dtim_period;
 	struct net_device_stats net_stats;
 	struct target_stats target_stats;
+	struct target_stats_dup target_stats_dup;
 	struct wmi_connect_cmd profile;
 	u16 rsn_capab;
 
@@ -622,6 +658,8 @@ struct ath6kl_vif {
 #define WOW_HOST_REQ_DELAY	500 /* ms */
 
 #define ATH6KL_SCHED_SCAN_RESULT_DELAY 5000 /* ms */
+
+#define ATH6KL_PRIV_GET_WLAN_STATS	(SIOCIWFIRSTPRIV + 21)
 
 /* Flag info */
 enum ath6kl_dev_state {
