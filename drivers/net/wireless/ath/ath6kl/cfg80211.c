@@ -145,6 +145,8 @@ static struct ieee80211_supported_band ath6kl_band_5ghz = {
 
 #define CCKM_KRK_CIPHER_SUITE 0x004096ff /* use for KRK */
 
+#define SSCAN_WAKELOCK_IN_SECOND 35
+
 /* returns true if scheduled scan was stopped */
 static bool __ath6kl_cfg80211_sscan_stop(struct ath6kl_vif *vif)
 {
@@ -2211,7 +2213,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	struct ath6kl_vif *first_vif, *vif;
 	int ret = 0;
 	u32 filter = 0;
-	bool connected = false;
+	bool connected = false, sscan = false;
 
 	/* enter / leave wow suspend on first vif always */
 	first_vif = ath6kl_vif_first(ar);
@@ -2226,8 +2228,16 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (!test_bit(CONNECTED, &vif->flags) ||
-		    !ath6kl_cfg80211_ready(vif))
+		    !ath6kl_cfg80211_ready(vif)) {
+			/* if a sscan is going on, do not clear
+			   WOW_FILTER_SSID later */
+			if (test_bit(SCHED_SCANNING, &vif->flags)) {
+				filter |= WOW_FILTER_SSID;
+				sscan = true;
+			}
 			continue;
+		}
+
 		connected = true;
 
 		ret = ath6kl_wow_suspend_vif(vif, wow, &filter);
@@ -2236,7 +2246,8 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	}
 	spin_unlock_bh(&ar->list_lock);
 
-	if (!connected)
+	/* to enable pno, goes into wow while sscan */
+	if (!connected && !sscan)
 		return -ENOTCONN;
 	else if (ret)
 		return ret;
@@ -2288,8 +2299,9 @@ static int ath6kl_wow_resume_vif(struct ath6kl_vif *vif)
 
 static int ath6kl_wow_resume(struct ath6kl *ar)
 {
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif, *vif_p;
 	int ret;
+	bool sscan = false;
 
 	vif = ath6kl_vif_first(ar);
 	if (WARN_ON(unlikely(!vif)) ||
@@ -2297,7 +2309,23 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 		return -EIO;
 
 #ifdef CONFIG_HAS_WAKELOCK
-	wake_lock_timeout(&ar->wake_lock, 5);
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif_p, &ar->vif_list, list) {
+		if (test_bit(SCHED_SCANNING, &vif_p->flags)) {
+			sscan = true;
+			break;
+		}
+	}
+	spin_unlock_bh(&ar->list_lock);
+
+	if (sscan) {
+		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "sched scan %ds(%d jiffies) wake lock\n",
+			SSCAN_WAKELOCK_IN_SECOND, SSCAN_WAKELOCK_IN_SECOND*HZ);
+		wake_lock_timeout(&ar->wake_lock,
+			SSCAN_WAKELOCK_IN_SECOND * HZ);
+	} else {
+		wake_lock_timeout(&ar->wake_lock, 5);
+	}
 #endif
 
 	ar->state = ATH6KL_STATE_RESUMING;
