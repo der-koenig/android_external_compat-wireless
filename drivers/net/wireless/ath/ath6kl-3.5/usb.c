@@ -793,7 +793,7 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 			status = -EIO;
 			switch (urb->status) {
 			case -EOVERFLOW:
-				urb->actual_length = ATH6KL_USB_RX_BUFFER_SIZE;
+				urb->actual_length = ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE;
 				status = 0;
 				break;
 			case -ECONNRESET:
@@ -1317,11 +1317,17 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	u32 len;
 	struct urb *urb;
 	int usb_status;
+#ifdef CONFIG_ANDROID
+	struct usb_interface *interface = device->interface;
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 			"+%s pipe : %d, buf:0x%p\n",
 			__func__, PipeID, buf);
-
+#ifdef CONFIG_ANDROID
+	if (PipeID != ATH6KL_USB_PIPE_TX_CTRL)
+		usb_autopm_get_interface_async(interface);
+#endif
 	urb_context = ath6kl_usb_alloc_urb_from_pipe(pipe);
 
 	if (urb_context == NULL) {
@@ -1390,6 +1396,11 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	pipe_st->num_tx++;
 
 fail_hif_send:
+
+#ifdef CONFIG_ANDROID
+	if (PipeID != ATH6KL_USB_PIPE_TX_CTRL)
+		usb_autopm_put_interface_async(interface);
+#endif
 	return status;
 }
 
@@ -1780,7 +1791,11 @@ int ath6kl_usb_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	pm_message_t message;
 	int ret;
 
+#ifdef CONFIG_ANDROID
+	if (ath6kl_android_need_wow_suspend(ar)) {
+#else
 	if (wow) {
+#endif
 		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, wow);
 		if (ret)
 			return ret;
@@ -1989,14 +2004,14 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 
 	vif = ath6kl_vif_first(ar);
 
-	if (test_bit(WLAN_WOW_ENABLE, &vif->flags) &&
-	    test_bit(CONNECTED, &vif->flags))
+	if (ath6kl_android_need_wow_suspend(ar))
 		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, NULL);
 	else
 		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_DEEPSLEEP,
 						NULL);
+	if (ret == 0)
+		ath6kl_usb_flush_all(device);
 
-	ath6kl_usb_flush_all(device);
 	return ret;
 }
 #else

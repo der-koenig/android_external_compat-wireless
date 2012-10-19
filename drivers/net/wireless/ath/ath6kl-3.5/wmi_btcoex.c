@@ -184,12 +184,25 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 
 		if (a2dp_config->a2dp_flags &
 			WMI_A2DP_CONFIG_FLAG_IS_EDR_CAPABLE) {
-			a2dp_config->a2dp_flags |= cpu_to_le32(
-				BTCOEX_A2DP_EDR_MAX_BLUETOOTH_TIME);
 
-			/* disable stomping BT during WLAN scan or connection */
-			a2dp_config->a2dp_flags |= cpu_to_le32(
-				WMI_A2DP_CONFIG_FLAG_DIS_SCANCONN_STOMP);
+			if (a2dp_config->a2dp_flags &
+				WMI_A2DP_CONFIG_FLAG_IS_BT_ROLE_MASTER) {
+
+				a2dp_config->a2dp_flags |= cpu_to_le32(
+					BTCOEX_A2DP_EDR_MAX_BLUETOOTH_TIME);
+
+				/* disable stomping BT during WLAN scan
+				 * or connection
+				 */
+				a2dp_config->a2dp_flags |= cpu_to_le32(
+					WMI_A2DP_CONFIG_FLAG_DIS_SCANCONN_STOMP
+					);
+			}
+			else {
+				/* use BDR parameter for A2DP EDR slave case */
+				a2dp_config->a2dp_flags |= cpu_to_le32(
+					BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);				
+			}
 		} else {
 			a2dp_config->a2dp_flags |= cpu_to_le32(
 				BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);

@@ -331,7 +331,7 @@ struct sk_buff *ath6kl_buf_alloc(int size)
 
 	/* Add chacheline space at front and back of buffer */
 	reserved = (2 * L1_CACHE_BYTES) + ATH6KL_DATA_OFFSET +
-		   sizeof(struct htc_packet) + ATH6KL_HTC_ALIGN_BYTES;
+		   sizeof(struct htc_packet);
 	skb = dev_alloc_skb(size + reserved);
 
 	if (skb)
@@ -2105,14 +2105,14 @@ static int ath6kl_change_hw_params(struct ath6kl *ar)
 		return 0;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(hw_list); i++) {
+	for (i = 0; i < ARRAY_SIZE(hw_list) - 1; i++) {
 		hw = &hw_list[i];
 
 		if (hw->id == ar->version.target_ver)
 			break;
 	}
 
-	if (i == ARRAY_SIZE(hw_list)) {
+	if (i == ARRAY_SIZE(hw_list) - 1) {
 		ath6kl_err("Unsupported hardware version: 0x%x\n",
 			   ar->version.target_ver);
 		return -EINVAL;
@@ -2571,6 +2571,12 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ath6kl_info("Enable Firmware crash notiry.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
+
+#ifdef CONFIG_ANDROID
+	ret = ath6kl_android_enable_wow_default(ar);
+	if (ret != 0)
+		goto err_rxbuf_cleanup;
+#endif
 
 	return ret;
 

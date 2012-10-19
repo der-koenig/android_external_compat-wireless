@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.158)
+#define __BUILD_VERSION_ (3.5.0.167)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -56,6 +56,9 @@
 #include "diagnose.h"
 #endif
 
+/* for WMM issues, we might need to enlarge the number of cookies */
+#define ATH6KL_USE_LARGE_COOKIE      1
+
 /* TODO : move to BSP, only for Android-JB now. */
 #ifdef CONFIG_ATH6KL_UB134
 #ifndef CONFIG_ATH6KL_MCC
@@ -64,6 +67,7 @@
 #ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
 #define CONFIG_ATH6KL_UDP_TPUT_WAR
 #endif
+#undef ATH6KL_USE_LARGE_COOKIE
 #endif
 
 #ifdef CONFIG_ANDROID
@@ -139,8 +143,14 @@
 #define ATH6KL_HTC_ALIGN_BYTES 3
 
 /* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
+#ifdef ATH6KL_USE_LARGE_COOKIE
+#define MAX_DEF_COOKIE_NUM                270
+#define MAX_HI_COOKIE_NUM                 27	/* 10% of MAX_COOKIE_NUM */
+#else
 #define MAX_DEF_COOKIE_NUM                180
 #define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
+#endif
+
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
@@ -1377,6 +1387,11 @@ void ath6kl_sdio_exit_msm(void);
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
 void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
+
+#ifdef CONFIG_ANDROID
+int ath6kl_android_enable_wow_default(struct ath6kl *ar);
+bool ath6kl_android_need_wow_suspend(struct ath6kl *ar);
+#endif
 
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;

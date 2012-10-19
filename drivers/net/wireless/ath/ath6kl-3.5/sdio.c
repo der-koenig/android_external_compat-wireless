@@ -838,13 +838,6 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	struct sdio_func *func = ar_sdio->func;
 	mmc_pm_flag_t flags;
 	int ret;
-#ifdef CONFIG_ANDROID
-	struct cfg80211_wowlan new_wow;
-	unsigned char mask = 0x3F;
-	struct ath6kl_vif *vif;
-	int i, mask_len;
-	bool is_connected = false;
-#endif
 
 	flags = sdio_get_host_pm_caps(func);
 
@@ -863,68 +856,12 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		       ret);
 		return ret;
 	}
-
 #ifdef CONFIG_ANDROID
-	/*
-	 * wow suspend mode is set as default if any interface is connected,
-	 * even wow configuration is not enabled through iw tool.
-	 * wow enable any trigger and MAC address pattern match
-	 */
-	for (i = 0; i < ar->vif_max; i++) {
-		vif = ath6kl_get_vif_by_index(ar, i);
-		if (vif) {
-			if (test_bit(CONNECTED, &vif->flags))
-				is_connected = true;
-		}
-	}
-
-	vif = ath6kl_vif_first(ar);
-	if (!vif)
-		goto normal_suspend;
-
-	if (!test_bit(WLAN_WOW_ENABLE, &vif->flags)) {
-		if (is_connected) {
-			new_wow.any = true;
-			new_wow.n_patterns = 1;
-			new_wow.patterns = kcalloc(new_wow.n_patterns,
-				sizeof(new_wow.patterns[0]), GFP_KERNEL);
-			if (!new_wow.patterns)
-				goto normal_suspend;
-
-			mask_len = DIV_ROUND_UP(ETH_ALEN, 8);
-			new_wow.patterns[0].mask =
-				kmalloc(mask_len + ETH_ALEN, GFP_KERNEL);
-			if (!new_wow.patterns[0].mask) {
-				kfree(new_wow.patterns);
-				goto normal_suspend;
-			}
-
-			new_wow.patterns[0].pattern =
-				new_wow.patterns[0].mask + mask_len;
-			memcpy(new_wow.patterns[0].mask, &mask, mask_len);
-			new_wow.patterns[0].pattern_len = ETH_ALEN;
-			memcpy(new_wow.patterns[0].pattern, ar->mac_addr,
-								ETH_ALEN);
-
-			if (!ath6kl_set_wow_mode(ar->wiphy, &new_wow))
-				wow = &new_wow;
-
-			kfree(new_wow.patterns[0].mask);
-			kfree(new_wow.patterns);
-		}
-	} else {
-		if (!wow) {
-			if (is_connected)
-				wow = &new_wow;
-			else
-				ath6kl_clear_wow_mode(ar->wiphy);
-		}
-	}
-
-normal_suspend:
-#endif
-
+	if ((flags & MMC_PM_WAKE_SDIO_IRQ) && wow
+		&& ath6kl_android_need_wow_suspend(ar)) {
+#else
 	if ((flags & MMC_PM_WAKE_SDIO_IRQ) && wow) {
+#endif
 		/*
 		 * The host sdio controller is capable of keep power and
 		 * sdio irq wake up at this point. It's fine to continue

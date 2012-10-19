@@ -2689,9 +2689,10 @@ static int ath6kl_htc_mbox_wait_target(struct htc_target *target)
 		target->msg_per_bndl_max = 0;
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_BOOT, "htc using protocol %s (%d)\n",
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "htc using protocol %s (%d) bndl_size %d\n",
 		  (target->htc_tgt_ver == HTC_VERSION_2P0) ? "2.0" : ">= 2.1",
-		  target->htc_tgt_ver);
+		  target->htc_tgt_ver,
+		  target->msg_per_bndl_max);
 
 	if (target->msg_per_bndl_max > 0)
 		htc_setup_msg_bndl(target);
@@ -2903,10 +2904,113 @@ static void ath6kl_htc_mbox_cleanup(struct htc_target *target)
 }
 
 int ath6kl_htc_mbox_stat(struct htc_target *target,
-						 u8 *buf, int buf_len)
+			 u8 *buf, int buf_len)
 {
-	/* TBD */
-	return 0;
+	struct htc_endpoint *ep;
+	struct htc_endpoint_stats *ep_st;
+	struct ath6kl_htc_credit_info *credit_info;
+	struct list_head *tx_queue;
+	int i, tmp, len = 0;
+
+	if ((!target) || (!buf))
+		return 0;
+
+	credit_info = target->credit_info;
+	if (!credit_info)
+		return 0;
+
+	len += snprintf(buf + len, buf_len - len,
+			" " "\nCredit Size : %d         Avail Credit : %d/%d\n",
+			target->tgt_cred_sz,
+			credit_info->cur_free_credits,
+			credit_info->total_avail_credits);
+
+	for (i = ENDPOINT_2; i <= ENDPOINT_5; i++) {
+		len += snprintf(buf + len, buf_len - len, "EP-%d\n", i);
+
+		ep = &target->endpoint[i];
+		tx_queue = &ep->txq;
+		ep_st = &ep->ep_st;
+
+		spin_lock_bh(&target->tx_lock);
+		tmp = get_queue_depth(tx_queue);
+		spin_unlock_bh(&target->tx_lock);
+
+		len += snprintf(buf + len, buf_len - len,
+				" tx_proc/rx_proc     : %d/%d\n",
+				ep->tx_proc_cnt, ep->rx_proc_cnt);
+		len += snprintf(buf + len, buf_len - len,
+				" tx_queue            : %d/%d\n",
+				tmp, ep->max_txq_depth);
+		len += snprintf(buf + len, buf_len - len,
+				" seq_no              : %d\n",
+				ep->seqno);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_low_indicate   : %d\n",
+				ep_st->cred_low_indicate);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_rpt_from_rx    : %d\n",
+				ep_st->cred_rpt_from_rx);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_rpt_from_other : %d\n",
+				ep_st->cred_rpt_from_other);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_rpt_ep0        : %d\n",
+				ep_st->cred_rpt_ep0);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_from_rx        : %d\n",
+				ep_st->cred_from_rx);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_from_other     : %d\n",
+				ep_st->cred_from_other);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_from_ep0       : %d\n",
+				ep_st->cred_from_ep0);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_cosumd         : %d\n",
+				ep_st->cred_cosumd);
+		len += snprintf(buf + len, buf_len - len,
+				" cred_retnd          : %d\n",
+				ep_st->cred_retnd);
+		len += snprintf(buf + len, buf_len - len,
+				" tx_issued           : %d\n",
+				ep_st->tx_issued);
+		len += snprintf(buf + len, buf_len - len,
+				" tx_dropped          : %d\n",
+				ep_st->tx_dropped);
+		len += snprintf(buf + len, buf_len - len,
+				" tx_cred_rpt         : %d\n",
+				ep_st->tx_cred_rpt);
+		len += snprintf(buf + len, buf_len - len,
+				" rx_pkts             : %d\n",
+				ep_st->rx_pkts);
+		len += snprintf(buf + len, buf_len - len,
+				" rx_lkahds           : %d\n",
+				ep_st->rx_lkahds);
+		len += snprintf(buf + len, buf_len - len,
+				" rx_alloc_thresh_hit : %d\n",
+				ep_st->rx_alloc_thresh_hit);
+		len += snprintf(buf + len, buf_len - len,
+				" rxalloc_thresh_byte : %d\n",
+				ep_st->rxalloc_thresh_byte);
+		len += snprintf(buf + len, buf_len - len,
+				" tx_pkt_bundled      : %d\n",
+				ep_st->tx_pkt_bundled);
+		len += snprintf(buf + len, buf_len - len,
+				" tx_bundles          : %d\n",
+				ep_st->tx_bundles);
+		len += snprintf(buf + len, buf_len - len,
+				" rx_bundl            : %d\n",
+				ep_st->rx_bundl);
+		len += snprintf(buf + len, buf_len - len,
+				" rx_bundle_lkahd     : %d\n",
+				ep_st->rx_bundle_lkahd);
+		len += snprintf(buf + len, buf_len - len,
+				" rx_bundle_from_hdr  : %d\n",
+				ep_st->rx_bundle_from_hdr);
+	}
+
+	return len;
 }
 
 int ath6kl_htc_mbox_stop_netif_queue_full(struct htc_target *target)

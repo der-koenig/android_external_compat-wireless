@@ -3465,6 +3465,7 @@ int ath6kl_wmi_send_go_probe_response_cmd(struct wmi *wmi,
 						 mgmt->da, p2p, p2p_len);
 
 	kfree(p2p);
+	kfree(wfd);
 
 	return ret;
 }
@@ -3574,7 +3575,7 @@ static int ath6kl_wmi_rsn_cap_event_rx(struct ath6kl_vif *vif,
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "wmi event rsn_cap %04x\n", cmd->rsn_cap);
 
-	vif->last_rsn_cap = cmd->rsn_cap;
+	vif->last_rsn_cap = le16_to_cpu(cmd->rsn_cap);
 
 	return 0;
 }
@@ -4499,7 +4500,7 @@ int ath6kl_wmi_set_rsn_cap(struct wmi *wmi, u8 if_idx, u16 rsn_cap)
 	ath6kl_dbg(ATH6KL_DBG_WMI, "set_rsn_cap: 0x%04x\n", rsn_cap);
 
 	cmd = (struct wmi_rsn_cap_cmd *)skb->data;
-	cmd->rsn_cap = rsn_cap;
+	cmd->rsn_cap = cpu_to_le16(rsn_cap);
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_RSN_CAP_CMDID,
 				NO_SYNC_WMIFLAG);

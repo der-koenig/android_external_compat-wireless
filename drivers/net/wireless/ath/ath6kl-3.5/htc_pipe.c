@@ -2327,7 +2327,7 @@ int ath6kl_htc_pipe_stat(struct htc_target *target,
 			target->avail_tx_credits,
 			target->tgt_creds);
 
-	for (i = ENDPOINT_2; i < ENDPOINT_5; i++) {
+	for (i = ENDPOINT_2; i <= ENDPOINT_5; i++) {
 		len += snprintf(buf + len, buf_len - len, "EP-%d\n", i);
 
 		ep = &target->endpoint[i];

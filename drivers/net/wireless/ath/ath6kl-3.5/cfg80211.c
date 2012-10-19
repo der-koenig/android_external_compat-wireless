@@ -2445,9 +2445,6 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
-	if (!test_bit(CONNECTED, &vif->flags))
-		return -EINVAL;
-
 #ifdef ATH6KL_SUPPORT_WLAN_HB
 	if (ar->wlan_hb_enable != 0) {
 		if (ath6kl_wmi_set_heart_beat_params(ar->wmi, vif->fw_vif_idx,
@@ -4930,3 +4927,91 @@ void ath6kl_core_init_defer(struct work_struct *wk)
 	return;
 #undef MAX_RD_WAIT_CNT
 }
+
+#ifdef CONFIG_ANDROID
+int ath6kl_android_enable_wow_default(struct ath6kl *ar)
+{
+	unsigned char mask = 0x3F;
+	int mask_len;
+	int rv = 0, i;
+	struct cfg80211_wowlan wow;
+
+	memset(&wow, 0, sizeof(wow));
+
+	/*default filters : ANY + all self MACs*/
+	wow.any = true;
+	wow.patterns = kcalloc(ar->vif_max,
+			sizeof(wow.patterns[0]), GFP_KERNEL);
+	if (!wow.patterns)
+		return -ENOMEM;
+
+	mask_len = DIV_ROUND_UP(ETH_ALEN, 8);
+	for (i = 0; i < ar->vif_max; i++) {
+
+		wow.patterns[i].mask = kmalloc(mask_len + ETH_ALEN, GFP_KERNEL);
+		if (!wow.patterns[i].mask) {
+			rv = -ENOMEM;
+			goto failed;
+		}
+		wow.patterns[i].pattern = wow.patterns[i].mask + mask_len;
+		memcpy(wow.patterns[i].mask, &mask, mask_len);
+		wow.patterns[i].pattern_len = ETH_ALEN;
+		memcpy(wow.patterns[i].pattern, ar->mac_addr, ETH_ALEN);
+		if (i != 0)
+			wow.patterns[i].pattern[0] =
+			(wow.patterns[i].pattern[0] ^ (1 << i)) | 0x2;
+
+		wow.n_patterns++;
+
+		ath6kl_dbg(ATH6KL_DBG_WOWLAN,
+			"Add wow pattern:%x:%x:%x:%x:%x:%x\n",
+			wow.patterns[i].pattern[0], wow.patterns[i].pattern[1],
+			wow.patterns[i].pattern[2], wow.patterns[i].pattern[3],
+			wow.patterns[i].pattern[4], wow.patterns[i].pattern[5]);
+
+	}
+
+	/*Set wow mode to target firmware*/
+	rv = ath6kl_set_wow_mode(ar->wiphy, &wow);
+failed:
+	for (i = 0; i < ar->vif_max; i++)
+		kfree(wow.patterns[i].mask);
+
+	kfree(wow.patterns);
+
+	return rv;
+}
+
+bool ath6kl_android_need_wow_suspend(struct ath6kl *ar)
+{
+	struct ath6kl_vif *vif = NULL;
+	int i;
+	bool isConnected = false;
+
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return false;
+
+	if (!test_bit(WLAN_WOW_ENABLE, &vif->flags))
+		return false;
+
+	/*If p2p-GO or softAP interface is connected, we don't do Wow suspend.
+	  *Otherwise, if one of the interfaces is connected, we do WoW
+	  *to save power.
+	  */
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if (vif) {
+			/*if p2p-GO or softAP is connect, don't do wow*/
+			if (test_bit(CONNECTED, &vif->flags) &&
+			    (vif->nw_type == AP_NETWORK))
+				return false;
+			else if (test_bit(CONNECTED, &vif->flags))
+				isConnected = true;
+		}
+	}
+
+	return isConnected;
+}
+#endif
+
