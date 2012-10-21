@@ -3692,6 +3692,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 		skb_queue_head_init(&ar->sta_list[ctr].psq);
 		skb_queue_head_init(&ar->sta_list[ctr].apsdq);
 		ar->sta_list[ctr].mgmt_psq_len = 0;
+		ar->sta_list[ctr].apsdq_depth = 0;
 		INIT_LIST_HEAD(&ar->sta_list[ctr].mgmt_psq);
 		ar->sta_list[ctr].aggr_conn =
 			kzalloc(sizeof(struct aggr_info_conn), GFP_KERNEL);

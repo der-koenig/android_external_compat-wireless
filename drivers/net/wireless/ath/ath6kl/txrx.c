@@ -101,7 +101,7 @@ static bool ath6kl_process_uapsdq(struct ath6kl_sta *conn,
 				u32 *flags)
 {
 	struct ath6kl *ar = vif->ar;
-	bool is_apsdq_empty = false;
+	bool is_apsdq_empty = false, is_apsdq_full = false;
 	struct ethhdr *datap = (struct ethhdr *) skb->data;
 	u8 up = 0, traffic_class, *ip_hdr;
 	u16 ether_type;
@@ -152,7 +152,16 @@ static bool ath6kl_process_uapsdq(struct ath6kl_sta *conn,
 	/* Queue the frames if the STA is sleeping */
 	spin_lock_bh(&conn->psq_lock);
 	is_apsdq_empty = skb_queue_empty(&conn->apsdq);
+	is_apsdq_full = (conn->apsdq_depth >= MAX_APSD_DEPTH_FOR_EACH_CONN) ? true : false;
+	/*apsq queue's depth is too large, drop it directly*/
+	if (is_apsdq_full) {
+		spin_unlock_bh(&conn->psq_lock);
+		dev_kfree_skb(skb);
+		*flags |= WMI_DATA_HDR_FLAGS_UAPSD;
+		return true;
+	}
 	skb_queue_tail(&conn->apsdq, skb);
+	conn->apsdq_depth++;
 	spin_unlock_bh(&conn->psq_lock);
 
 	/*
@@ -1269,6 +1278,7 @@ static void ath6kl_uapsd_trigger_frame_rx(struct ath6kl_vif *vif,
 
 		spin_lock_bh(&conn->psq_lock);
 		skb = skb_dequeue(&conn->apsdq);
+		conn->apsdq_depth--;
 		is_apsdq_empty = skb_queue_empty(&conn->apsdq);
 		spin_unlock_bh(&conn->psq_lock);
 
@@ -1491,6 +1501,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 				is_apsdq_empty = skb_queue_empty(&conn->apsdq);
 				while ((skbuff = skb_dequeue(&conn->apsdq))) {
+					conn->apsdq_depth--;
 					spin_unlock_bh(&conn->psq_lock);
 					ath6kl_data_tx(skbuff, vif->ndev);
 					spin_lock_bh(&conn->psq_lock);

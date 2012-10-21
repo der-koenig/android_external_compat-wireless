@@ -73,6 +73,8 @@
 
 #define DISCON_TIMER_INTVAL               10000  /* in msec */
 
+#define MAX_APSD_DEPTH_FOR_EACH_CONN	  50	/*limit it to avoid exhausting system's memory*/
+
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL         50 /* in ms */
 
@@ -389,6 +391,7 @@ struct ath6kl_sta {
 	size_t mgmt_psq_len;
 	u8 apsd_info;
 	struct sk_buff_head apsdq;
+	size_t apsdq_depth;
 	struct aggr_info_conn *aggr_conn;
 };
 

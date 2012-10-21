@@ -88,6 +88,7 @@ static void ath6kl_sta_cleanup(struct ath6kl *ar, u8 i)
 	spin_lock_bh(&sta->psq_lock);
 	skb_queue_purge(&sta->psq);
 	skb_queue_purge(&sta->apsdq);
+	sta->apsdq_depth = 0;
 
 	if (sta->mgmt_psq_len != 0) {
 		list_for_each_entry_safe(entry, tmp, &sta->mgmt_psq, list) {
