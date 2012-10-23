@@ -62,7 +62,10 @@
 
 /* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
 #define MAX_DEF_COOKIE_NUM                180
-#define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
+/* Reserved for data sync cmd to avoid htc dead lock */
+#define DATA_SYNC_RESERVED                10
+/* 10% of MAX_COOKIE_NUM(18) + DATA_SYNC_RESERVED(10) */
+#define MAX_HI_COOKIE_NUM                 28
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 #define WMI_MAX_COOKIE_NUM                80
 

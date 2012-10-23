@@ -600,7 +600,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 */
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
-		ath6kl_recovery_err_notify(ar, ATH6KL_FW_EP_FULL);
+		/* TODO: Handle FW error recovery here for ctrl ep full cases */
 		return action;
 	}
 
@@ -611,7 +611,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 	 * The last MAX_HI_COOKIE_NUM "batch" of cookies are reserved for
 	 * the highest active stream.
 	 */
-	if (ar->ac_stream_pri_map[ar->ep2ac_map[endpoint]] <
+	if (ar->ac_stream_pri_map[ar->ep2ac_map[endpoint]] <=
 	    ar->hiac_stream_active_pri &&
 	    ar->cookie_count <=
 			target->endpoint[endpoint].tx_drop_packet_threshold)

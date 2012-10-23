@@ -2240,7 +2240,9 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 		connected = true;
 
+		spin_unlock_bh(&ar->list_lock);
 		ret = ath6kl_wow_suspend_vif(vif, wow, &filter);
+		spin_lock_bh(&ar->list_lock);
 		if (ret)
 			break;
 	}
@@ -2343,7 +2345,9 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 		if (!test_bit(CONNECTED, &vif->flags) ||
 		    !ath6kl_cfg80211_ready(vif))
 			continue;
+		spin_unlock_bh(&ar->list_lock);
 		ret = ath6kl_wow_resume_vif(vif);
+		spin_lock_bh(&ar->list_lock);
 		if (ret)
 			break;
 	}
