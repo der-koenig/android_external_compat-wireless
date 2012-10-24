@@ -108,6 +108,9 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 	int msgs_upper_limit =
 		(htc_bundle_send) ? HTC_HOST_MAX_MSG_PER_BUNDLE : 1;
 
+	if (target->tgt_cred_sz == 0)
+		return;
+
 	/* NOTE : the TX lock is held when this function is called */
 
 	/* loop until we can grab as many packets out of the queue as we can */
@@ -767,6 +770,9 @@ static int htc_setup_target_buffer_assignments(struct htc_target *target)
 	int credits;
 	int credit_per_maxmsg;
 	unsigned int hif_usbaudioclass = 0;
+
+	if (target->tgt_cred_sz == 0)
+		return -ECOMM;
 
 	credit_per_maxmsg = MAX_MESSAGE_SIZE / target->tgt_cred_sz;
 	if (MAX_MESSAGE_SIZE % target->tgt_cred_sz)
@@ -1894,6 +1900,9 @@ static int ath6kl_htc_pipe_conn_service(struct htc_target *handle,
 		WARN_ON(1);
 		goto free_packet;
 	}
+
+	if (target->tgt_cred_sz == 0)
+		goto free_packet;
 
 	/* return assigned endpoint to caller */
 	conn_resp->endpoint = assigned_epid;

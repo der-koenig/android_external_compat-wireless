@@ -793,7 +793,8 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 			status = -EIO;
 			switch (urb->status) {
 			case -EOVERFLOW:
-				urb->actual_length = ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE;
+				urb->actual_length =
+					ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE;
 				status = 0;
 				break;
 			case -ECONNRESET:

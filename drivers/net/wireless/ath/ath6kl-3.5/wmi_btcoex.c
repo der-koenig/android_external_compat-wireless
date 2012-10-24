@@ -197,11 +197,10 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				a2dp_config->a2dp_flags |= cpu_to_le32(
 					WMI_A2DP_CONFIG_FLAG_DIS_SCANCONN_STOMP
 					);
-			}
-			else {
+			} else {
 				/* use BDR parameter for A2DP EDR slave case */
 				a2dp_config->a2dp_flags |= cpu_to_le32(
-					BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);				
+					BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
 			}
 		} else {
 			a2dp_config->a2dp_flags |= cpu_to_le32(

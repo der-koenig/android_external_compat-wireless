@@ -2682,6 +2682,10 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 		}
 	}
 
+	spin_lock_bh(&ar->state_lock);
+	ar->state = ATH6KL_STATE_DEEPSLEEP;
+	spin_unlock_bh(&ar->state_lock);
+
 	ath6kl_cfg80211_stop_all(ar);
 
 
@@ -2724,9 +2728,6 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 			return ret;
 		}
 
-		spin_lock_bh(&ar->state_lock);
-		ar->state = ATH6KL_STATE_DEEPSLEEP;
-		spin_unlock_bh(&ar->state_lock);
 		break;
 
 	case ATH6KL_CFG_SUSPEND_CUTPOWER:
@@ -3310,6 +3311,15 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 	if (ath6kl_set_rsn_cap(wiphy, dev, info->tail, info->tail_len)) {
 		up(&ar->sem);
 		return -EIO;
+	}
+
+	/* Turn off power saving mode, if the first interface is AP mode */
+	if (vif == ath6kl_vif_first(ar)) {
+		if (ath6kl_wmi_powermode_cmd(ar->wmi, vif->fw_vif_idx,
+					MAX_PERF_POWER)) {
+			up(&ar->sem);
+			return -EIO;
+		}
 	}
 
 	vif->ap_mode_bkey.valid = false;

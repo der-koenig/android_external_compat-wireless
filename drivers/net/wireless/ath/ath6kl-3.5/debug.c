@@ -4191,6 +4191,41 @@ static const struct file_operations fops_arp_offload_ip_addrs = {
 	.llseek = default_llseek,
 };
 
+/* File operation for mcc profile */
+static ssize_t ath6kl_mcc_profile(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[8];
+	ssize_t len;
+	u8 mcc_profile;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou8(buf, 0, &mcc_profile))
+		return -EINVAL;
+
+	if (mcc_profile >= WMI_MCC_PROFILE_MAX)
+		return -EINVAL;
+
+	if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi, mcc_profile))
+		return -EIO;
+
+	return count;
+}
+
+/* debug fs for mcc profile */
+static const struct file_operations fops_mcc_profile = {
+	.write = ath6kl_mcc_profile,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -4356,6 +4391,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("arp_ip_addrs", S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_arp_offload_ip_addrs);
+
+	debugfs_create_file("mcc_profile", S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_mcc_profile);
 
 	return 0;
 }

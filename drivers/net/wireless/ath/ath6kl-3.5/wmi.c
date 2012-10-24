@@ -5004,3 +5004,19 @@ int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs)
 					NO_SYNC_WMIFLAG);
 	return ret;
 }
+
+int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u8 mcc_profile)
+{
+	struct sk_buff *skb;
+	struct wmi_set_mcc_profile_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_set_mcc_profile_cmd *)skb->data;
+	cmd->mcc_profile = mcc_profile;
+
+	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_MCC_PROFILE_CMDID,
+				NO_SYNC_WMIFLAG);
+}

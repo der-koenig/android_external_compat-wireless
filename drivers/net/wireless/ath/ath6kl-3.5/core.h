@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.167)
+#define __BUILD_VERSION_ (3.5.0.175)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
