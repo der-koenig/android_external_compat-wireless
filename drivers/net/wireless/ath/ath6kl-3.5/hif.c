@@ -524,6 +524,7 @@ static int proc_pending_irqs(struct ath6kl_device *dev, bool *done)
 		status = ath6kl_hif_proc_counter_intr(dev);
 
 out:
+#ifdef BYPASS_IRQ_RECHECK
 	/*
 	 * An optimization to bypass reading the IRQ status registers
 	 * unecessarily which can re-wake the target, if upper layers
@@ -542,6 +543,18 @@ out:
 
 	if (!dev->htc_cnxt->chk_irq_status_cnt)
 		*done = true;
+#else
+	/*
+	 * The benefit is that if packet happens to arrive during that extra
+	 * read (bursty traffic), we maybe able to catch the packet and
+	 * continue RX without waiting for the next interrupt. This seems to
+	 * improve throughput on slower processors.
+	 *
+	 * NOTE : There might be a chance to hold CPU time to let other SDIO
+	 * devices starvation. In sdio_irq.c, the SDIO irq thread run each
+	 * SDIO device¡¦s call-back one bye one.
+	 */
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_IRQ,
 		   "proc_pending_irqs: (done:%d, status=%d\n", *done, status);

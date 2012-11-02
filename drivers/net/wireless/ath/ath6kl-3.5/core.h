@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.175)
+#define __BUILD_VERSION_ (3.5.0.184)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -364,6 +364,21 @@ struct ath6kl_android_wifi_priv_cmd {
 	"ath6k/AR6004/hw1.6/bdata.bin"
 #define AR6004_HW_1_6_EPPING_FILE             "ath6k/AR6004/hw1.6/epping.bin"
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
+
+/* AR6004 1.7 definitions */
+#define AR6004_HW_1_7_VERSION			0x31c80013
+#define AR6004_HW_1_7_FW_DIR			"ath6k/AR6004/hw1.7"
+#define AR6004_HW_1_7_OTP_FILE			"otp.bin"
+#define AR6004_HW_1_7_FIRMWARE_2_FILE         "fw-2.bin"
+#define AR6004_HW_1_7_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_1_7_TCMD_FIRMWARE_FILE      "utf.bin"
+#define AR6004_HW_1_7_UTF_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_1_7_TESTSCRIPT_FILE	"nullTestFlow.bin"
+#define AR6004_HW_1_7_BOARD_DATA_FILE         "ath6k/AR6004/hw1.7/bdata.bin"
+#define AR6004_HW_1_7_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6004/hw1.7/bdata.bin"
+#define AR6004_HW_1_7_EPPING_FILE             "ath6k/AR6004/hw1.7/epping.bin"
+#define AR6004_HW_1_7_SOFTMAC_FILE            "ath6k/AR6004/hw1.7/softmac.bin"
 
 /* AR6006 1.0 definitions */
 #define AR6006_HW_1_0_VERSION                 0x31c80997

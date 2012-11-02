@@ -41,6 +41,7 @@
 #define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
 #define BTCOEX_A2DP_WLAN_MAX_DUR			   25
 #define BTCOEX_APMODE_A2DP_WLAN_MAX_DUR	       70
+#define BTCOEX_APMODE_A2DP_MIN_BURST_CNT       10
 
 #define WMI_SCO_CONFIG_FLAG_ALLOW_OPTIMIZATION   (1 << 0)
 #define WMI_SCO_CONFIG_FLAG_IS_EDR_CAPABLE       (1 << 1)
@@ -223,7 +224,9 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 					BTCOEX_APMODE_A2DP_WLAN_MAX_DUR;
 			}
 			a2dp_config->a2dp_flags |= cpu_to_le32(
-					BTCOEX_APMODE_A2DP_MAX_BLUETOOTH_TIME);
+				BTCOEX_APMODE_A2DP_MAX_BLUETOOTH_TIME);
+			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
+				BTCOEX_APMODE_A2DP_MIN_BURST_CNT);
 		}
 	}
 	break;

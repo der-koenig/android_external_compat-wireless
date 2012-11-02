@@ -272,6 +272,28 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_softmac		= AR6004_HW_1_6_SOFTMAC_FILE,
 	},
 	{
+		.id				= AR6004_HW_1_7_VERSION,
+		.name				= "ar6004 hw 1.7",
+		.dataset_patch_addr		= 0,
+		.app_load_addr			= 0x1234,
+		.board_ext_data_addr		= 0,
+		.reserved_ram_size		= 11264,
+		.board_addr			= 0x43e400,
+		.testscript_addr		= 0x43d400,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
+
+		.fw = {
+			.dir		= AR6004_HW_1_7_FW_DIR,
+			.fw		= AR6004_HW_1_7_FIRMWARE_FILE,
+			.api2		= ATH6KL_FW_API2_FILE,
+		},
+
+		.fw_board		= AR6004_HW_1_7_BOARD_DATA_FILE,
+		.fw_default_board	= AR6004_HW_1_7_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6004_HW_1_7_EPPING_FILE,
+		.fw_softmac		= AR6004_HW_1_7_SOFTMAC_FILE,
+	},
+	{
 		.id				= AR6006_HW_1_0_VERSION,
 		.name				= "ar6006 hw 1.0",
 		.dataset_patch_addr		= 0,
@@ -437,6 +459,7 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	memset(&connect, 0, sizeof(connect));
 
 	if (ar->version.target_ver == AR6004_HW_1_6_VERSION ||
+	    ar->version.target_ver == AR6004_HW_1_7_VERSION ||
 	    ar->version.target_ver == AR6006_HW_1_0_VERSION) {
 		connect.conn_flags |= HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL;
 	}
@@ -1643,9 +1666,10 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 				 (unsigned char *) &param, 4);
 	}
 
-	/* AR6006 are loading fake board data,
+	/* AR6006 and AR6004 hw1.7 are loading fake board data,
 	   ignore checking */
-	if (!(ar->target_type == TARGET_TYPE_AR6006)) {
+	if (!((ar->target_type == TARGET_TYPE_AR6006) ||
+		(ar->version.target_ver == AR6004_HW_1_7_VERSION))) {
 		if (ar->fw_board_len < board_data_size) {
 			ath6kl_err("Too small board file: %zu, need: %zu\n",
 				ar->fw_board_len, board_data_size);
@@ -1886,8 +1910,8 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		status = ath6kl_bmi_reg_write(ar, address, param);
 		if (status)
 			return status;
-	} else if ((ar->target_type == TARGET_TYPE_AR6006)) {
-		ath6kl_dbg(ATH6KL_DBG_BOOT, "FPGA is running at 40/44MHz\n");
+	} else if ((ar->target_type == TARGET_TYPE_AR6006) ||
+		ar->version.target_ver == AR6004_HW_1_7_VERSION) {
 		param = 0;
 		address = RTC_BASE_ADDRESS + CPU_CLOCK_ADDRESS;
 		status = ath6kl_bmi_reg_write(ar, address, param);
