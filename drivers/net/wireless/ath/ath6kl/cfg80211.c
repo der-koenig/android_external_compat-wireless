@@ -3787,7 +3787,7 @@ static const struct ieee80211_iface_combination ath6kl_dualmode_if_comb = {
 	.limits = ath6kl_dualmode_if_limits,
 	.n_limits = ARRAY_SIZE(ath6kl_dualmode_if_limits),
 	.max_interfaces = ATH6KL_VIF_MAX,
-	.num_different_channels = 1,
+	.num_different_channels = 2,
 };
 
 static const struct ieee80211_iface_combination ath6kl_p2p_if_comb = {
