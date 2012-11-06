@@ -95,7 +95,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x433900,
 		.refclk_hz			= 26000000,
 		.uarttx_pin			= 11,
-		.flags				= ATH6KL_HW_FLAG_64BIT_RATES,
+		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
+						  ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 
 		.fw = {
 			.dir		= AR6004_HW_1_0_FW_DIR,
@@ -115,7 +116,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x43d400,
 		.refclk_hz			= 40000000,
 		.uarttx_pin			= 11,
-		.flags				= ATH6KL_HW_FLAG_64BIT_RATES,
+		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
+						  ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 
 		.fw = {
 			.dir		= AR6004_HW_1_1_FW_DIR,
@@ -135,7 +137,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x435c00,
 		.refclk_hz			= 40000000,
 		.uarttx_pin			= 11,
-		.flags				= ATH6KL_HW_FLAG_64BIT_RATES,
+		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
+						  ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 
 		.fw = {
 			.dir		= AR6004_HW_1_2_FW_DIR,
@@ -154,8 +157,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x436400,
 		.refclk_hz                      = 40000000,
 		.uarttx_pin                     = 11,
-		.flags                          = ATH6KL_HW_FLAG_64BIT_RATES,
-
+		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
+						  ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 		.fw = {
 			.dir            = AR6004_HW_1_3_FW_DIR,
 			.fw             = AR6004_HW_1_3_FIRMWARE_FILE,

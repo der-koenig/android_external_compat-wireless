@@ -2782,6 +2782,7 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	int i, ret;
 	u16 rsn_capab = 0;
 	struct ath6kl_htcap *htcap;
+	int inactivity_timeout = 0;
 
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s:\n", __func__);
@@ -2921,8 +2922,14 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	if (info->inactivity_timeout) {
+
+		inactivity_timeout = info->inactivity_timeout;
+
+		if (ar->hw.flags & ATH6KL_HW_FLAG_AP_INACTIVITY_MINS)
+			inactivity_timeout = DIV_ROUND_UP(info->inactivity_timeout, 60);
+
 		res = ath6kl_wmi_set_inact_period(ar->wmi, vif->fw_vif_idx,
-						  info->inactivity_timeout);
+						  inactivity_timeout);
 		if (res < 0)
 			return res;
 	}
