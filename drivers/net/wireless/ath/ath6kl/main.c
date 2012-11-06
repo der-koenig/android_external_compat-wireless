@@ -540,6 +540,7 @@ void disconnect_timer_handler(unsigned long ptr)
 	ath6kl_disconnect(vif);
 }
 
+
 void ath6kl_ap_restart_timer(unsigned long ptr)
 {
 	struct net_device *dev = (struct net_device *)ptr;
@@ -549,9 +550,13 @@ void ath6kl_ap_restart_timer(unsigned long ptr)
 
 	if(vif->ap_hold_conn) {
 		vif->ap_hold_conn = 0;
-		res = ath6kl_wmi_ap_profile_commit(ar->wmi, vif->fw_vif_idx, &vif->profile);
+		res = ath6kl_wmi_ap_profile_commit(ar->wmi,
+			vif->fw_vif_idx, &vif->profile);
+		if (res) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+				   "Ap profile commit failure");
+		}
 	}
-
 }
 
 void ath6kl_disconnect(struct ath6kl_vif *vif)
@@ -1003,9 +1008,10 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	if (vif->nw_type == AP_NETWORK) {
 		/* disconnect due to other STA vif switching channels */
 		if (reason == BSS_DISCONNECTED &&
-		    prot_reason_status == WMI_AP_REASON_STA_ROAM)
+			      prot_reason_status == WMI_AP_REASON_STA_ROAM) {
 			ar->want_ch_switch |= 1 << vif->fw_vif_idx;
-
+			vif->ap_hold_conn = 1;
+		}
 		if (!ath6kl_remove_sta(ar, bssid, prot_reason_status))
 			return;
 

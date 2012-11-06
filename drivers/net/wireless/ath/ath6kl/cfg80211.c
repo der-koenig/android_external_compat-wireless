@@ -760,12 +760,13 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 				   "%s: ath6k not in station mode\n", __func__);
 			return;
 		}
-		list_for_each_entry(vif_tmp, &ar->vif_list, list)
-			if(vif_tmp->nw_type == AP_NETWORK) break;
-
-		if (vif_tmp->ap_hold_conn) {
-			mod_timer(&vif_tmp->ap_restart_timer,
+		list_for_each_entry(vif_tmp, &ar->vif_list, list) {
+			if(vif_tmp->nw_type == AP_NETWORK) {
+				if (vif_tmp->ap_hold_conn) {
+					mod_timer(&vif_tmp->ap_restart_timer,
 			jiffies + msecs_to_jiffies(1 * AP_RESTART_TIMER_INVAL));
+				}
+			}
 		}
 	}
 
@@ -871,12 +872,13 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 			return;
 		}
 
-		list_for_each_entry(vif_tmp, &ar->vif_list, list)
-			if(vif_tmp->nw_type == AP_NETWORK) break;
-
-		if (vif_tmp->ap_hold_conn) {
-			mod_timer(&vif_tmp->ap_restart_timer,
+		list_for_each_entry(vif_tmp, &ar->vif_list, list) {
+			if(vif_tmp->nw_type == AP_NETWORK) {
+				if (vif_tmp->ap_hold_conn) {
+					mod_timer(&vif_tmp->ap_restart_timer,
 			jiffies + msecs_to_jiffies(2 * AP_RESTART_TIMER_INVAL));
+				}
+			}
 		}
 	}
 
@@ -3667,7 +3669,7 @@ static int ath6kl_cfg80211_vif_init(struct ath6kl_vif *vif)
 		    (unsigned long) vif->ndev);
 	setup_timer(&vif->sched_scan_timer, ath6kl_wmi_sscan_timer,
 		    (unsigned long) vif);
-        setup_timer(&vif->ap_restart_timer, ath6kl_ap_restart_timer,
+	setup_timer(&vif->ap_restart_timer, ath6kl_ap_restart_timer,
 		    (unsigned long) vif->ndev);
 
 	set_bit(WMM_ENABLED, &vif->flags);

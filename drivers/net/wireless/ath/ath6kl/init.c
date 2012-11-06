@@ -1723,6 +1723,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 						0, NULL, 0);
 	}
 
+	del_timer(&vif->ap_restart_timer);
 	if (vif->scan_req) {
 		cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;
