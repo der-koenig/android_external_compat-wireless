@@ -89,6 +89,7 @@ static void ath6kl_sta_cleanup(struct ath6kl *ar, u8 i)
 	skb_queue_purge(&sta->psq);
 	skb_queue_purge(&sta->apsdq);
 	sta->apsdq_depth = 0;
+	sta->psq_depth = 0;
 
 	if (sta->mgmt_psq_len != 0) {
 		list_for_each_entry_safe(entry, tmp, &sta->mgmt_psq, list) {
@@ -977,6 +978,7 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 		kfree(mgmt_buf);
 	} else {
 		skb = skb_dequeue(&conn->psq);
+		conn->psq_depth--;
 		spin_unlock_bh(&conn->psq_lock);
 
 		conn->sta_flags |= STA_PS_POLLED;

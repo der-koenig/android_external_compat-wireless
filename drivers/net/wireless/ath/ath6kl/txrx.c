@@ -184,6 +184,7 @@ static bool ath6kl_process_psq(struct ath6kl_sta *conn,
 				u32 *flags)
 {
 	bool is_psq_empty = false;
+	bool is_psq_full = false;
 	struct ath6kl *ar = vif->ar;
 
 	if (conn->sta_flags & STA_PS_POLLED) {
@@ -197,7 +198,14 @@ static bool ath6kl_process_psq(struct ath6kl_sta *conn,
 	/* Queue the frames if the STA is sleeping */
 	spin_lock_bh(&conn->psq_lock);
 	is_psq_empty = skb_queue_empty(&conn->psq);
+	is_psq_full = (conn->psq_depth >= MAX_PSQ_DEPTH_FOR_EACH_CONN) ? true : false;
+	if (is_psq_full) {
+		spin_unlock_bh(&conn->psq_lock);
+		dev_kfree_skb(skb);
+		return true;
+	}
 	skb_queue_tail(&conn->psq, skb);
+	conn->psq_depth++;
 	spin_unlock_bh(&conn->psq_lock);
 
 	/*
@@ -1494,6 +1502,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 				}
 				conn->mgmt_psq_len = 0;
 				while ((skbuff = skb_dequeue(&conn->psq))) {
+					conn->psq_depth--;
 					spin_unlock_bh(&conn->psq_lock);
 					ath6kl_data_tx(skbuff, vif->ndev);
 					spin_lock_bh(&conn->psq_lock);
