@@ -2574,9 +2574,9 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			} else {
 				return -EINVAL;
 			}
-                 } else {
-                                return -EINVAL;
-		 }
+		} else {
+			return -EINVAL;
+		}
 	}
 
 	if (!cfg80211_can_beacon_sec_chan(&rdev->wiphy, params.channel,

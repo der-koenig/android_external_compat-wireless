@@ -1247,12 +1247,12 @@ struct wmi_delete_pstream_cmd {
 
 /* WMI_SET_CHANNEL_PARAMS_CMDID */
 enum wmi_phy_mode {
-       WMI_11A_MODE = 0x1,
-       WMI_11G_MODE = 0x2,
-       WMI_11AG_MODE = 0x3,
-       WMI_11B_MODE = 0x4,
-       WMI_11GONLY_MODE = 0x5,
-       WMI_11G_HT20    = 0x6,
+	WMI_11A_MODE = 0x1,
+	WMI_11G_MODE = 0x2,
+	WMI_11AG_MODE = 0x3,
+	WMI_11B_MODE = 0x4,
+	WMI_11GONLY_MODE = 0x5,
+	WMI_11G_HT20    = 0x6,
 };
 
 struct wmi_set_ch_params {
