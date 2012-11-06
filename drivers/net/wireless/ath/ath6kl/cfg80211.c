@@ -897,9 +897,6 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 
 	vif->sme_state = SME_DISCONNECTED;
 
-	if (proto_reason == WMI_AP_REASON_STA_ROAM) {
-		vif->ap_hold_conn = 1;
-	}
 
 	/*
 	 * Send a disconnect command to target when a disconnect event is

@@ -179,8 +179,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x43e400,
 		.refclk_hz                      = 26000000,
 		.uarttx_pin                     = 11,
-		.flags				= ATH6KL_HW_FLAG_64BIT_RATES,
-
+		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
+							ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 		.fw = {
 			.dir		= AR6004_HW_1_6_FW_DIR,
 			.fw		= AR6004_HW_1_6_FIRMWARE_FILE,
