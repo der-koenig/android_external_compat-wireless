@@ -661,10 +661,10 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 			0xFFFF, 0, 0, 100);
 	} else {
 		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
-				WMI_ROAM_LRSSI_SCAN_PERIOD,
-				WMI_ROAM_LRSSI_SCAN_THRESHOLD,
-				WMI_ROAM_LRSSI_ROAM_THRESHOLD,
-				WMI_ROAM_LRSSI_ROAM_FLOOR);
+				ar->low_rssi_roam_params.lrssi_scan_period,
+				ar->low_rssi_roam_params.lrssi_scan_threshold,
+				ar->low_rssi_roam_params.lrssi_roam_threshold,
+				ar->low_rssi_roam_params.roam_rssi_floor);
 	}
 	ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi, RATECTRL_MODE_PERONLY);
 
@@ -1032,6 +1032,9 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 				      u8 *assoc_info, u16 proto_reason)
 {
 	struct ath6kl *ar = vif->ar;
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: reason=%u, proto_reason %u\n",
+		__func__, reason, proto_reason);
 
 	if (vif->scan_req) {
 		ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
@@ -3814,11 +3817,6 @@ static void ath6kl_mgmt_frame_register(struct wiphy *wiphy,
 	if (!ath6kl_cfg80211_ready(vif))
 		return;
 
-	if (down_interruptible(&vif->ar->sem)) {
-		ath6kl_err("busy, couldn't get access\n");
-		return;
-	}
-
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: frame_type=0x%x reg=%d\n",
 		   __func__, frame_type, reg);
 	if (frame_type == IEEE80211_STYPE_PROBE_REQ) {
@@ -3829,8 +3827,6 @@ static void ath6kl_mgmt_frame_register(struct wiphy *wiphy,
 		 */
 		vif->probe_req_report = reg;
 	}
-
-	up(&vif->ar->sem);
 }
 
 int	ath6kl_set_gtk_rekey_offload(struct wiphy *wiphy,
@@ -4459,7 +4455,12 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	ar->listen_intvl_b = 0;
 	ar->tx_pwr = 0;
 
-	ar->lrssi_roam_threshold = DEF_LRSSI_ROAM_THRESHOLD;
+	ar->low_rssi_roam_params.lrssi_scan_period = WMI_ROAM_LRSSI_SCAN_PERIOD;
+	ar->low_rssi_roam_params.lrssi_scan_threshold = \
+		WMI_ROAM_LRSSI_SCAN_THRESHOLD;
+	ar->low_rssi_roam_params.lrssi_roam_threshold = \
+		WMI_ROAM_LRSSI_ROAM_THRESHOLD;
+	ar->low_rssi_roam_params.roam_rssi_floor = WMI_ROAM_LRSSI_ROAM_FLOOR;
 
 	ar->state = ATH6KL_STATE_OFF;
 

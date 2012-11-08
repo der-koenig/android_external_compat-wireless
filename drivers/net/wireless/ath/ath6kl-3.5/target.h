@@ -334,6 +334,9 @@ struct host_interest {
 /* Disable p2p dedicate device */
 #define HI_OPTION_DISABLE_P2P_DEDICATE          0x100
 
+/* Ext patch download finished after WMI ready*/
+#define HI_OPTION_EXT_FW_DOWNLOAD_DONE          0x80000
+
 /* Fw Mode/SubMode Mask
 |------------------------------------------------------------------------------|
 |   SUB   |   SUB   |   SUB   |  SUB    |         |         |         |

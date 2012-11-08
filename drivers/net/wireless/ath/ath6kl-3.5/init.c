@@ -196,6 +196,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.name				= "ar6004 hw 1.3",
 		.dataset_patch_addr		= 0x437860,
 		.app_load_addr			= 0x1234,
+		.app_load_ext_addr		= 0x9a7000,
 		.board_ext_data_addr		= 0x437000,
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
@@ -211,6 +212,7 @@ static const struct ath6kl_hw hw_list[] = {
 			.api2		= ATH6KL_FW_API2_FILE,
 			.utf		= AR6004_HW_1_3_UTF_FIRMWARE_FILE,
 			.testscript	= AR6004_HW_1_3_TESTSCRIPT_FILE,
+			.fw_ext		= AR6004_HW_1_3_FIRMWARE_EXT_FILE,
 		},
 
 		.fw_board		= AR6004_HW_1_3_BOARD_DATA_FILE,
@@ -1300,6 +1302,19 @@ get_fw:
 		return ret;
 	}
 
+	if (ar->hw.flags & ATH6KL_HW_FIRMWARE_EXT_SUPPORT) {
+		snprintf(filename, sizeof(filename), "%s/%s",
+			 ar->hw.fw.dir, ar->hw.fw.fw_ext);
+		ret = ath6kl_get_fw(ar, filename, &ar->fw_ext, &ar->fw_ext_len);
+		if (ret) {
+			ath6kl_err("Failed to get firmware ext file %s: %d\n",
+				   filename, ret);
+			return ret;
+		}
+
+		set_bit(DOWNLOAD_FIRMWARE_EXT, &ar->flag);
+	}
+
 	return 0;
 }
 
@@ -1778,6 +1793,107 @@ static int ath6kl_upload_firmware(struct ath6kl *ar)
 		address = ar->hw.app_start_override_addr;
 		ath6kl_bmi_set_app_start(ar, address);
 	}
+	return ret;
+}
+
+static int ath6kl_upload_firmware_ext(struct ath6kl *ar)
+{
+	u32 address;
+	int ret;
+	u32 param;
+	u32 fileSize = 0, sectionAddr = 0, sectionLen = 0, readLen = 0;
+	u32 i;
+	u32 value;
+
+	if (WARN_ON(ar->fw_ext == NULL))
+		return 0;
+
+	address = ar->hw.app_load_ext_addr;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "writing firmware ext to 0x%x (%zd B)\n",
+		   address, ar->fw_len);
+
+	fileSize = ar->fw_ext_len;
+	while (readLen < fileSize) {
+		sectionAddr = ar->fw_ext[readLen]		       |
+			      ((ar->fw_ext[readLen+1]<<8)&0x0000ff00)  |
+			      ((ar->fw_ext[readLen+2]<<16)&0x00ff0000) |
+			      ((ar->fw_ext[readLen+3]<<24)&0xff000000);
+		sectionLen  = ar->fw_ext[readLen+4] |
+			      ((ar->fw_ext[readLen+5]<<8)&0x0000ff00)  |
+			      ((ar->fw_ext[readLen+6]<<16)&0x00ff0000) |
+			      ((ar->fw_ext[readLen+7]<<24)&0xff000000);
+
+		for (i = (readLen+8); i < (readLen+8+sectionLen); i += 4) {
+			value = 0;
+			if ((readLen+8+sectionLen-i)/4 > 0) {
+				value = ar->fw_ext[i]|
+					((ar->fw_ext[i+1]<<8)&0x0000ff00)  |
+					((ar->fw_ext[i+2]<<16)&0x00ff0000) |
+					((ar->fw_ext[i+3]<<24)&0xff000000);
+			} else {
+				switch (readLen+8+sectionLen-i) {
+				case 1:
+					value = ar->fw_ext[i];
+					break;
+				case 2:
+					value = ar->fw_ext[i] |
+					    ((ar->fw_ext[i+1]<<8)&0x0000ff00);
+					break;
+				case 3:
+					value = ar->fw_ext[i] |
+					    ((ar->fw_ext[i+1]<<8)&0x0000ff00) |
+					    ((ar->fw_ext[i+2]<<16)&0x00ff0000);
+					break;
+				default:
+					break;
+				}
+			}
+
+			ret = ath6kl_diag_write32(ar, sectionAddr, value);
+
+			if (ret)
+				break;
+
+			sectionAddr += 4;
+		}
+
+		if (ret)
+			break;
+
+		readLen += (sectionLen+8);
+	}
+
+	if (ret) {
+		ath6kl_err("Failed to write firmware ext: %d\n", ret);
+		return ret;
+	}
+
+	param = 0;
+	if (ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param) != 0) {
+		ath6kl_err("read_memory for setting fwmode failed\n");
+		return -EIO;
+	}
+
+	param |= HI_OPTION_EXT_FW_DOWNLOAD_DONE;
+	if (ath6kl_diag_write32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		param) != 0) {
+		ath6kl_err("write_memory for "
+			   "hi_option_flag2 failed\n");
+		return -EIO;
+	}
+
+	param = 0;
+	if (ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param) != 0) {
+		ath6kl_err("read_memory for setting fwmode failed\n");
+		return -EIO;
+	}
+
 	return ret;
 }
 
@@ -2267,6 +2383,12 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 		}
 
 		ath6kl_dbg(ATH6KL_DBG_TRC, "%s: wmi is ready\n", __func__);
+		if (test_bit(DOWNLOAD_FIRMWARE_EXT, &ar->flag)) {
+			ret = ath6kl_upload_firmware_ext(ar);
+			if (ret)
+				goto err_htc_stop;
+		}
+
 		rttm_init(ar);
 		/* communicate the wmi protocol verision to the target */
 		/* FIXME: return error */

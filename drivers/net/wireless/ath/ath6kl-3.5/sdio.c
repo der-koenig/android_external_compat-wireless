@@ -857,7 +857,7 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		return ret;
 	}
 #ifdef CONFIG_ANDROID
-	if ((flags & MMC_PM_WAKE_SDIO_IRQ) && wow
+	if ((flags & MMC_PM_WAKE_SDIO_IRQ)
 		&& ath6kl_android_need_wow_suspend(ar)) {
 #else
 	if ((flags & MMC_PM_WAKE_SDIO_IRQ) && wow) {

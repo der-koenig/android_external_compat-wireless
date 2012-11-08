@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.184)
+#define __BUILD_VERSION_ (3.5.0.187)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -160,6 +160,7 @@
 #define A_MAX_WOW_LISTEN_INTERVAL         1000
 
 #define ATH6KL_DISCONNECT_TIMEOUT	  3
+#define ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT	10
 
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL           100 /* in msec */
@@ -341,6 +342,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_3_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_3_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_3_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_1_3_FIRMWARE_EXT_FILE       "fw_ext.ram.bin"
 #define AR6004_HW_1_3_TCMD_FIRMWARE_FILE      "utf.bin"
 #define AR6004_HW_1_3_UTF_FIRMWARE_FILE	"utf.bin"
 #define AR6004_HW_1_3_TESTSCRIPT_FILE	"nullTestFlow.bin"
@@ -366,7 +368,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
 
 /* AR6004 1.7 definitions */
-#define AR6004_HW_1_7_VERSION			0x31c80013
+#define AR6004_HW_1_7_VERSION			0x31c80014
 #define AR6004_HW_1_7_FW_DIR			"ath6k/AR6004/hw1.7"
 #define AR6004_HW_1_7_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_7_FIRMWARE_2_FILE         "fw-2.bin"
@@ -785,6 +787,7 @@ struct ath6kl_mbox_info {
 enum ath6kl_hw_flags {
 	ATH6KL_HW_TGT_ALIGN_PADDING = BIT(0),
 	ATH6KL_HW_SINGLE_PIPE_SCHED = BIT(1),
+	ATH6KL_HW_FIRMWARE_EXT_SUPPORT = BIT(2),
 };
 
 /*
@@ -952,6 +955,7 @@ enum ath6kl_dev_state {
 	FIRST_BOOT,
 	USB_REMOTE_WKUP,
 	INIT_DEFER_PROGRESS,
+	DOWNLOAD_FIRMWARE_EXT,
 };
 
 enum ath6kl_state {
@@ -1009,7 +1013,7 @@ struct ath6kl {
 	struct semaphore wmi_evt_sem;
 	u16 listen_intvl_b;
 	u16 listen_intvl_t;
-	u8 lrssi_roam_threshold;
+	struct low_rssi_scan_params low_rssi_roam_params;
 	struct ath6kl_version version;
 	u32 target_type;
 	u32 target_subtype;
@@ -1046,6 +1050,7 @@ struct ath6kl {
 		u32 dataset_patch_addr;
 		u32 app_load_addr;
 		u32 app_start_override_addr;
+		u32 app_load_ext_addr;
 		u32 board_ext_data_addr;
 		u32 reserved_ram_size;
 		u32 board_addr;
@@ -1061,6 +1066,7 @@ struct ath6kl {
 			const char *api2;
 			const char *utf;
 			const char *testscript;
+			const char *fw_ext;
 		} fw;
 
 		const char *fw_board;
@@ -1093,6 +1099,9 @@ struct ath6kl {
 
 	u8 *fw_softmac;
 	size_t fw_softmac_len;
+
+	u8 *fw_ext;
+	size_t fw_ext_len;
 
 	unsigned long fw_capabilities[ATH6KL_CAPABILITY_LEN];
 

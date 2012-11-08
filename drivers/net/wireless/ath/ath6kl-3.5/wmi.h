@@ -231,11 +231,6 @@ enum WMI_DATA_HDR_FLAGS {
 #define WMI_DATA_HDR_HAS_PSPOLLED_BIT(h)	((h)->info3 & \
 	(WMI_DATA_HDR_PSPOLLED_MASK << WMI_DATA_HDR_PSPOLLED_SHIFT))
 
-#define WMI_ROAM_LRSSI_SCAN_PERIOD		(30 * 1000) /* secs */
-#define WMI_ROAM_LRSSI_SCAN_THRESHOLD		25 /* rssi */
-#define WMI_ROAM_LRSSI_ROAM_THRESHOLD		18 /* rssi */
-#define WMI_ROAM_LRSSI_ROAM_FLOOR		80 /* rssi */
-
 struct wmi_data_hdr {
 	s8 rssi;
 
@@ -1568,10 +1563,12 @@ enum wmi_bi_ftype {
 	PROBEREQ_FTYPE,
 };
 
-#define DEF_LRSSI_SCAN_PERIOD		 5
-#define DEF_LRSSI_ROAM_THRESHOLD	20
-#define DEF_LRSSI_ROAM_FLOOR		60
-#define DEF_SCAN_FOR_ROAM_INTVL		 2
+#define DEF_SCAN_FOR_ROAM_INTVL			7
+#define WMI_ROAM_LRSSI_SCAN_PERIOD		(15 * 1000)	/* secs */
+#define WMI_ROAM_LRSSI_ROAM_THRESHOLD	30	/* rssi */
+#define WMI_ROAM_LRSSI_SCAN_THRESHOLD (WMI_ROAM_LRSSI_ROAM_THRESHOLD + \
+	DEF_SCAN_FOR_ROAM_INTVL)	/* rssi */
+#define WMI_ROAM_LRSSI_ROAM_FLOOR		60	/* rssi */
 
 enum wmi_roam_ctrl {
 	WMI_FORCE_ROAM = 1,
@@ -3098,7 +3095,6 @@ int ath6kl_wmi_del_all_wow_ext_patterns_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 				u8 *kek, u8 *kck, u8 *replay_ctr);
 
-int ath6kl_wmi_set_roam_lrssi_cmd(struct wmi *wmi, u8 lrssi);
 int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
 	u16  lowrssi_scan_period, u16  lowrssi_scan_threshold,
 	u16  lowrssi_roam_threshold,

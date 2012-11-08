@@ -1007,8 +1007,13 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	vif->bss_ch = channel;
 
 	if ((vif->nw_type == INFRA_NETWORK)) {
-		ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
-					   ATH6KL_DISCONNECT_TIMEOUT);
+		if (ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM) {
+			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
+				ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT);
+		} else {
+			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
+				ATH6KL_DISCONNECT_TIMEOUT);
+		}
 		ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
 					      ar->listen_intvl_t,
 					      ar->listen_intvl_b);
