@@ -35,6 +35,7 @@ ath6kl_core-y += txrx.o
 ath6kl_core-y += wmi.o
 ath6kl_core-y += core.o
 ath6kl_core-y += wmiconfig.o
+ath6kl_core-y += platform.o
 ath6kl_core-$(CONFIG_NL80211_TESTMODE) += testmode.o
 
 obj-$(CONFIG_ATH6KL_SDIO) += ath6kl_sdio.o
