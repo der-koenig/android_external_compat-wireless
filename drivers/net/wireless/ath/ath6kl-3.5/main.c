@@ -989,6 +989,20 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "scan complete: %d\n", status);
 }
 
+/* shall be used within if_lock */
+static void ath6kl_handshake_protect(struct ath6kl_vif *vif)
+{
+
+	if (test_bit(CONNECTED, &vif->flags) &&
+		(vif->auth_mode > NONE_AUTH) &&
+		(vif->prwise_crypto > WEP_CRYPT) &&
+		(vif->nw_type == INFRA_NETWORK)) {
+		set_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	} else {
+		clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	}
+}
+
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 			  u16 listen_int, u16 beacon_int,
 			  enum network_type net_type, u8 beacon_ie_len,
@@ -1025,6 +1039,7 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	spin_lock_bh(&vif->if_lock);
 	set_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
+	ath6kl_handshake_protect(vif);
 	netif_carrier_on(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
@@ -1464,6 +1479,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	/* update connect & link status atomically */
 	spin_lock_bh(&vif->if_lock);
 	clear_bit(CONNECTED, &vif->flags);
+	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 	netif_carrier_off(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
@@ -1550,6 +1566,7 @@ static int ath6kl_close(struct net_device *dev)
 	vif->sme_state = SME_DISCONNECTED;
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
+	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 
 	if (test_bit(WMI_READY, &ar->flag)) {
 		if (ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0xFFFF,
@@ -1647,6 +1664,29 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 			memset(vif->ssid, 0, sizeof(vif->ssid));
 			vif->ssid_len = 0;
 		}
+	} else
+		ret = -EFAULT;
+
+	return ret;
+}
+
+static int ath6kl_ioctl_setrts(struct ath6kl_vif *vif,
+				char *user_cmd,
+				int len)
+{
+	int ret = 0, rts_threshold = 0;
+
+	/* SET::SETRTS {threshold, 0~2347} */
+	if (len > 1) {
+		ret = 0;
+		sscanf(user_cmd, "%d", &rts_threshold);
+
+		if (rts_threshold < 0 || rts_threshold > 2347)
+			return -EINVAL;
+
+		ath6kl_wmi_set_rts_cmd(vif->ar->wmi,
+			vif->fw_vif_idx,
+			rts_threshold);
 	} else
 		ret = -EFAULT;
 
@@ -1761,6 +1801,10 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					ret = ath6kl_ioctl_setband(vif,
 						(user_cmd + 8),
 						(android_cmd.used_len - 8));
+				else if (strstr(user_cmd, "SETRTS "))
+					ret = ath6kl_ioctl_setrts(vif,
+						(user_cmd + 7),
+						(android_cmd.used_len - 7));
 				else if (strstr(user_cmd, "P2P_DEV_ADDR"))
 					ret = ath6kl_ioctl_p2p_dev_addr(vif,
 							user_cmd,

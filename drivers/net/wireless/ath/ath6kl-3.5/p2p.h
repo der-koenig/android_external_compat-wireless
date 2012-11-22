@@ -28,6 +28,30 @@ enum {
 	IEEE80211_P2P_ATTR_NOTICE_OF_ABSENCE = 12,
 };
 
+enum {
+	WLAN_PUB_ACTION_VENDER_SPECIFIC = 9,
+};
+
+enum {
+	WLAN_P2P_GO_NEG_REG = 0,
+	WLAN_P2P_GO_NEG_RESP = 1,
+	WLAN_P2P_GO_NEG_CONF = 2,
+	WLAN_P2P_INVITATION_REQ = 3,
+	WLAN_P2P_INVITATION_RESP = 4,
+	WLAN_P2P_DEV_DISC_REQ = 5,
+	WLAN_P2P_DEV_DISC_RESP = 6,
+	WLAN_P2P_PROV_DISC_REQ = 7,
+	WLAN_P2P_PROV_DISC_RESP = 8
+};
+
+struct ieee80211_p2p_action_public {
+	u8 category;
+	u8 action_code;
+	u32 oui;
+	u8 action_subtype;
+	u8 variable[0];
+} __packed;
+
 struct ieee80211_p2p_noa_descriptor {
 	u8 count_or_type;	/* 255: continuous schedule, 0: reserved */
 	__le32 duration;
@@ -167,5 +191,7 @@ u8 ath6kl_p2p_flowctrl_get_conn_id(struct ath6kl_vif *vif,
 				   struct sk_buff *skb);
 int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 			     u8 *buf, int buf_len);
+
+bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len);
 #endif
 

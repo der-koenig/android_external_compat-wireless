@@ -75,16 +75,17 @@ int ath6kl_printk(const char *level, const char *fmt, ...)
 }
 
 #define EVENT_ID_LEN 2
+#define INTF_ID_LEN 1
 
 void ath6kl_send_genevent_to_app(struct net_device *dev,
-					u16 event_id,
+					u16 event_id, u8 ifid,
 					u8 *datap, int len)
 {
 	char *buf;
 	u16 size;
 	union iwreq_data wrqu;
 
-	size = len + EVENT_ID_LEN;
+	size = len + EVENT_ID_LEN + INTF_ID_LEN;
 
 	if (size > IW_GENERIC_IE_MAX)
 		return;
@@ -95,23 +96,25 @@ void ath6kl_send_genevent_to_app(struct net_device *dev,
 
 	memset(buf, 0, size);
 	memcpy(buf, &event_id, EVENT_ID_LEN);
-	memcpy(buf + EVENT_ID_LEN, datap, len);
+	memcpy(buf + EVENT_ID_LEN, &ifid, INTF_ID_LEN);
+	memcpy(buf + EVENT_ID_LEN + INTF_ID_LEN, datap, len);
 
 	memset(&wrqu, 0, sizeof(wrqu));
 	wrqu.data.length = size;
 	wireless_send_event(dev, IWEVGENIE, &wrqu, buf);
 	kfree(buf);
+
 }
 
 void ath6kl_send_event_to_app(struct net_device *dev,
-					u16 event_id,
+					u16 event_id, u8 ifid,
 					u8 *datap, int len)
 {
 	char *buf;
 	u16 size;
 	union iwreq_data wrqu;
 
-	size = len + EVENT_ID_LEN;
+	size = len + EVENT_ID_LEN + INTF_ID_LEN;
 
 	if (size > IW_CUSTOM_MAX)
 		return;
@@ -122,7 +125,8 @@ void ath6kl_send_event_to_app(struct net_device *dev,
 
 	memset(buf, 0, size);
 	memcpy(buf, &event_id, EVENT_ID_LEN);
-	memcpy(buf + EVENT_ID_LEN, datap, len);
+	memcpy(buf + EVENT_ID_LEN, &ifid, INTF_ID_LEN);
+	memcpy(buf + EVENT_ID_LEN + INTF_ID_LEN, datap, len);
 
 	memset(&wrqu, 0, sizeof(wrqu));
 	wrqu.data.length = size;
@@ -371,7 +375,7 @@ ath6kl_debug_fwlog_event_send(struct ath6kl *ar, const u8 *buffer, u32 length)
 			MAX_WIRELESS_EVENT_SIZE);
 	while (send) {
 		ath6kl_send_event_to_app(dev, WMIX_DBGLOG_EVENTID,
-			(u8 *)&buffer[sent], send);
+			vif->fw_vif_idx, (u8 *)&buffer[sent], send);
 		sent += send;
 		send = ath6kl_fwlog_fragment(&buffer[sent], length - sent,
 				MAX_WIRELESS_EVENT_SIZE);
@@ -4283,6 +4287,40 @@ static const struct file_operations fops_mcc_profile = {
 	.llseek = default_llseek,
 };
 
+/* File operation for P2P Frame Retry */
+static ssize_t ath6kl_p2p_frame_retry_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u32 p2p_frame_retry;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &p2p_frame_retry))
+		return -EINVAL;
+
+	if (p2p_frame_retry)
+		ar->p2p_frame_retry = true;
+	else
+		ar->p2p_frame_retry = false;
+
+	return count;
+}
+
+/* debug fs for P2P Frame Retry */
+static const struct file_operations fops_p2p_frame_retry = {
+	.write = ath6kl_p2p_frame_retry_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -4451,6 +4489,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("mcc_profile", S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_mcc_profile);
+
+	debugfs_create_file("p2p_frame_retry", S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_p2p_frame_retry);
 
 	return 0;
 }

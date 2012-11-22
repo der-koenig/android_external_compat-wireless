@@ -20,7 +20,7 @@
 #ifdef CONFIG_MMC_MSM_SDC3_POLLING
 #define MMC_MSM_DEV "msm_sdcc.3"
 #else
-#define MMC_MSM_DEV "msm_sdcc.2"
+#define MMC_MSM_DEV "msm_sdcc.4"
 #endif
 /* End MMC polling stuff */
 

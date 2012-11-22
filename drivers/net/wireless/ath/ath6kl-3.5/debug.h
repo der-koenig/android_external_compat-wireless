@@ -171,11 +171,11 @@ static inline int ath6kl_mod_debug_quirks(struct ath6kl *ar,
 }
 
 void ath6kl_send_event_to_app(struct net_device *dev,
-					u16 event_id,
+					u16 event_id, u8 ifid,
 					u8 *datap, int len);
 
 void ath6kl_send_genevent_to_app(struct net_device *dev,
-					u16 event_id,
+					u16 event_id, u8 ifid,
 					u8 *datap, int len);
 
 #ifdef CONFIG_QC_INTERNAL

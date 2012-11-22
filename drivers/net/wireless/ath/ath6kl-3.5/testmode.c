@@ -30,9 +30,10 @@ enum ath6kl_tm_attr {
 };
 
 enum ath6kl_tm_cmd {
-	ATH6KL_TM_CMD_TCMD		= 0,
-	ATH6KL_TM_CMD_WLAN_HB		= 1,
-	ATH6KL_TM_CMD_WIFI_DISC		= 2,
+	ATH6KL_TM_CMD_TCMD         = 0,
+	ATH6KL_TM_CMD_WLAN_HB      = 1,
+	ATH6KL_TM_CMD_WIFI_DISC    = 2,
+	ATH6KL_TM_CMD_WIFI_KTK     = 3,
 };
 
 #define ATH6KL_TM_DATA_MAX_LEN		5000
@@ -286,6 +287,40 @@ struct wifi_disc_params {
 			u16 numPeers;
 			u16 peerTimeout;
 			u16 txPower;
+		} start_params;
+	} params;
+};
+#endif
+
+#ifdef ATH6KL_SUPPORT_WIFI_KTK
+#define WLAN_WIFI_KTK_MAX_IE_SIZE	200
+
+enum nl80211_wifi_ktk_cmd {
+	NL80211_WIFI_KTK_IE         = 0,
+	NL80211_WIFI_KTK_IE_FILTER  = 1,
+	NL80211_WIFI_KTK_START      = 2,
+	NL80211_WIFI_KTK_STOP       = 3,
+};
+
+struct wifi_ktk_params {
+	u16 cmd;
+	union {
+		struct {
+			u16 length;
+			u8 ie[WLAN_WIFI_KTK_MAX_IE_SIZE];
+		} ie_params;
+
+		struct {
+			u16 enable;
+			u16 startPos;
+			u16 length;
+			u8 filter[WLAN_WIFI_KTK_MAX_IE_SIZE];
+		} ie_filter_params;
+
+		struct {
+			u16 ssid_len;
+			u8 ssid[32];
+			u8 passphrase[16];
 		} start_params;
 	} params;
 };
@@ -573,6 +608,103 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 						__func__);
 				return -EINVAL;
 			}
+		}
+	}
+
+	return 0;
+	break;
+#endif
+
+#ifdef ATH6KL_SUPPORT_WIFI_KTK
+	case ATH6KL_TM_CMD_WIFI_KTK:
+	{
+		struct wifi_ktk_params *ktk_params;
+		struct ath6kl_vif *vif;
+
+		vif = ath6kl_vif_first(ar);
+		if (!vif)
+			return -EINVAL;
+
+		if (!tb[ATH6KL_TM_ATTR_DATA]) {
+			printk(KERN_ERR "%s: NO DATA\n", __func__);
+			return -EINVAL;
+		}
+
+		if (!ar->ktk_enable) {
+			printk(KERN_ERR "%s: KTK feature is not enabled\n",
+					__func__);
+			return -EINVAL;
+		}
+
+		buf = nla_data(tb[ATH6KL_TM_ATTR_DATA]);
+		buf_len = nla_len(tb[ATH6KL_TM_ATTR_DATA]);
+
+		ktk_params = (struct wifi_ktk_params *)buf;
+
+		if (ktk_params->cmd == NL80211_WIFI_KTK_IE) {
+			u8 ie_hdr[6] = {0xDD, 0x00, 0x00, 0x03, 0x7f, 0x00};
+			u8 *ie = NULL;
+			u16 ie_length = ktk_params->params.ie_params.length;
+
+			ie = kmalloc(ie_length+6, GFP_KERNEL);
+			if (ie == NULL)
+				return -ENOMEM;
+
+			memcpy(ie, ie_hdr, 6);
+			ie[1] = ie_length+4;
+			memcpy(ie+6, ktk_params->params.ie_params.ie,
+				ie_length);
+
+			if (ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+							WMI_FRAME_PROBE_RESP,
+							ie,
+							ie_length+6)) {
+				kfree(ie);
+				printk(KERN_ERR
+					"%s: wifi ktk set probe	response ie fail\n",
+					__func__);
+				return -EINVAL;
+			}
+
+			if (ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+					WMI_FRAME_BEACON, ie, ie_length+6)) {
+				kfree(ie);
+				printk(KERN_ERR
+					"%s: wifi ktk set beacon ie fail\n",
+					__func__);
+				return -EINVAL;
+			}
+
+			kfree(ie);
+		} else if (ktk_params->cmd == NL80211_WIFI_KTK_IE_FILTER) {
+			if (ath6kl_wmi_disc_ie_cmd(ar->wmi, vif->fw_vif_idx,
+				ktk_params->params.ie_filter_params.enable,
+				ktk_params->params.ie_filter_params.startPos,
+				ktk_params->params.ie_filter_params.filter,
+				ktk_params->params.ie_filter_params.length)) {
+				printk(KERN_ERR
+					"%s: wifi ktk set ie filter fail\n",
+					__func__);
+				return -EINVAL;
+			}
+		} else if (ktk_params->cmd == NL80211_WIFI_KTK_START) {
+			ar->ktk_active = true;
+
+			memcpy(ar->ktk_passphrase,
+				ktk_params->params.start_params.passphrase,
+				16);
+
+			if (ath6kl_wmi_probedssid_cmd(ar->wmi, vif->fw_vif_idx,
+				1, SPECIFIC_SSID_FLAG,
+				ktk_params->params.start_params.ssid_len,
+				ktk_params->params.start_params.ssid)) {
+				printk(KERN_ERR
+					"%s: wifi ktk set probedssid fail\n",
+					__func__);
+				return -EINVAL;
+			}
+		} else if (ktk_params->cmd == NL80211_WIFI_KTK_STOP) {
+			ar->ktk_active = false;
 		}
 	}
 

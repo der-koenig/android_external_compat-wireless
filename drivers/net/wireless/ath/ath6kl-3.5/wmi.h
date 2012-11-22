@@ -105,6 +105,9 @@ struct wmi_mgmt_tx_frame {
 	u8 *mgmt_tx_frame;
 	size_t mgmt_tx_frame_len;
 	int mgmt_tx_frame_idx;
+	u32 mgmt_tx_frame_freq;
+#define WMI_TX_MGMT_RETRY_MAX	(3)
+	int mgmt_tx_frame_retry;
 };
 
 /* WMM stream classes */
@@ -1089,6 +1092,28 @@ struct wmi_power_params_cmd {
 	__le16 tx_wakeup_policy;
 	__le16 num_tx_to_wakeup;
 	__le16 ps_fail_event_policy;
+} __packed;
+
+/* Adhoc power save types */
+enum wmi_adhoc_ps_type {
+	ADHOC_PS_DISABLE = 1,
+	ADHOC_PS_ATH = 2,
+	ADHOC_PS_IEEE = 3,
+	ADHOC_PS_OTHER = 4,
+};
+
+struct wmi_ibss_pm_caps_cmd {
+	/* see, enum wmi_adhoc_ps_type */
+	u8 power_saving;
+
+	/* number of beacon periods */
+	u8 ttl;
+
+	/* msec */
+	__le16 atim_windows;
+
+	/* msec */
+	__le16 timeout_value;
 } __packed;
 
 /* WMI_SET_DISC_TIMEOUT_CMDID */
@@ -3043,7 +3068,7 @@ int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
 				  u8 tsid);
 int ath6kl_wmi_disctimeout_cmd(struct wmi *wmi, u8 if_idx, u8 timeout);
 
-int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u16 threshold);
+int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u8 if_idx, u16 threshold);
 int ath6kl_wmi_set_lpreamble_cmd(struct wmi *wmi, u8 if_idx, u8 status,
 				 u8 preamble_policy);
 

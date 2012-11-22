@@ -65,4 +65,6 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
 int ath6kl_clear_wow_mode(struct wiphy *wiphy);
 #endif /* CONFIG_ANDROID */
 
+bool ath6kl_sched_scan_trigger(struct ath6kl_vif *vif);
+
 #endif /* ATH6KL_CFG80211_H */

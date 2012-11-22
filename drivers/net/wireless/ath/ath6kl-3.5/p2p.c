@@ -1173,3 +1173,25 @@ int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 	return len;
 }
 
+bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len)
+{
+	struct ieee80211_p2p_action_public *action_frame =
+		(struct ieee80211_p2p_action_public *)frm;
+
+	if (!ar->p2p_frame_retry)
+		return false;
+
+	/*
+	 * WAR : Except P2P-Neg-Confirm frame and other P2P action frames
+	 *       could be recovery by supplicant's state machine.
+	 */
+	if (len < 8)
+		return false;
+
+	return ((action_frame->category == WLAN_CATEGORY_PUBLIC) &&
+		(action_frame->action_code ==
+					WLAN_PUB_ACTION_VENDER_SPECIFIC) &&
+		(action_frame->oui == cpu_to_be32((WLAN_OUI_WFA << 8) |
+						  (WLAN_OUI_TYPE_WFA_P2P))) &&
+		(action_frame->action_subtype == WLAN_P2P_GO_NEG_CONF));
+}
