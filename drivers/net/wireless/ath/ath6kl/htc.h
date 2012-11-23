@@ -619,6 +619,7 @@ struct htc_target {
 
 	/* counts the number of Tx without bundling continously per AC */
 	u32 ac_tx_count[WMM_NUM_AC];
+	int avail_tx_credits;
 
 	struct {
 		struct htc_packet *htc_packet_pool;

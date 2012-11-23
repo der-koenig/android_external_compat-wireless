@@ -24,6 +24,7 @@
 
 #define HTC_PACKET_CONTAINER_ALLOCATION 32
 #define HTC_CONTROL_BUFFER_SIZE (HTC_MAX_CTRL_MSG_LEN + HTC_HDR_LENGTH)
+#define DATA_EP_SIZE 4
 
 static int ath6kl_htc_pipe_tx(struct htc_target *handle,
 			      struct htc_packet *packet);
@@ -140,6 +141,20 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 			 */
 			credits_required = 0;
 
+		} else if (ep->eid >= ENDPOINT_2 && ep->eid <= ENDPOINT_5) {
+	
+			if (target->avail_tx_credits < credits_required)
+				break;
+			target->avail_tx_credits -= credits_required;
+			ep->ep_st.cred_cosumd += credits_required;
+
+			if (target->avail_tx_credits < 1) {
+				/* tell the target we need credits ASAP! */
+				send_flags |= HTC_FLAGS_NEED_CREDIT_UPDATE;
+				ep->ep_st.cred_low_indicate += 1;
+				ath6kl_dbg(ATH6KL_DBG_HTC,
+					"%s: host needs credits\n", __func__);
+			}
 		} else {
 
 			if (ep->cred_dist.credits < credits_required)
@@ -276,7 +291,14 @@ static int htc_issue_packets(struct htc_target *target,
 			list_del(&packet->list);
 
 			/* reclaim credits */
-			ep->cred_dist.credits += packet->info.tx.cred_used;
+
+			if (ep->eid >= ENDPOINT_2 && ep->eid <= ENDPOINT_5)
+				target->avail_tx_credits +=
+						packet->info.tx.cred_used;
+			else
+				ep->cred_dist.credits +=
+						packet->info.tx.cred_used;
+
 			spin_unlock_bh(&target->tx_lock);
 
 			/* put it back into the callers queue */
@@ -685,12 +707,32 @@ static void htc_process_credit_report(struct htc_target *target,
 		}
 
 		ep = &target->endpoint[rpt->eid];
-		ep->cred_dist.credits += rpt->credits;
+		if (ep->eid >= ENDPOINT_2 && ep->eid <= ENDPOINT_5) {
+			enum htc_endpoint_id eid[DATA_EP_SIZE] = {
+				ENDPOINT_5, ENDPOINT_4, ENDPOINT_2, ENDPOINT_3};
+			int epid_idx;
 
-		if (ep->cred_dist.credits && get_queue_depth(&ep->txq)) {
+			target->avail_tx_credits += rpt->credits;
+
+			for (epid_idx = 0; epid_idx < DATA_EP_SIZE;
+				epid_idx++) {
+				ep = &target->endpoint[eid[epid_idx]];
+				if (get_queue_depth(&ep->txq))
+					break;
+			}
 			spin_unlock_bh(&target->tx_lock);
 			htc_try_send(target, ep, NULL);
 			spin_lock_bh(&target->tx_lock);
+		} else {
+
+			ep->cred_dist.credits += rpt->credits;
+
+			if (ep->cred_dist.credits &&
+				get_queue_depth(&ep->txq)) {
+				spin_unlock_bh(&target->tx_lock);
+				htc_try_send(target, ep, NULL);
+				spin_lock_bh(&target->tx_lock);
+			}
 		}
 
 		total_credits += rpt->credits;
@@ -1594,6 +1636,7 @@ static int ath6kl_htc_pipe_wait_target(struct htc_target *target)
 
 	target->tgt_creds = le16_to_cpu(ready_msg->ver2_0_info.cred_cnt);
 	target->tgt_cred_sz = le16_to_cpu(ready_msg->ver2_0_info.cred_sz);
+	target->avail_tx_credits = target->tgt_creds - 1;
 
 	if ((target->tgt_creds == 0) || (target->tgt_cred_sz == 0))
 		return -ECOMM;
