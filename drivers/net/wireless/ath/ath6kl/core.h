@@ -49,6 +49,9 @@
 #define ATH6KL_APSD_NUM_OF_AC		0x4
 #define ATH6KL_APSD_FRAME_MASK		0xF
 
+#define BDATA_CHECKSUM_OFFSET                 4
+#define BDATA_MAC_ADDR_OFFSET                 8
+
 /* Extra bytes for htc header alignment */
 #define ATH6KL_HTC_ALIGN_BYTES 3
 
@@ -942,5 +945,6 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type);
 void ath6kl_core_cleanup(struct ath6kl *ar);
 void ath6kl_core_destroy(struct ath6kl *ar);
 void ath6kl_ap_restart_timer(unsigned long ptr);
+int _string_to_mac(char *string, int len, u8 *macaddr);
 
 #endif /* CORE_H */

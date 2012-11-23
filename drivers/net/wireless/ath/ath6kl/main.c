@@ -26,6 +26,26 @@
 #include "target.h"
 #include "debug.h"
 
+int _string_to_mac(char *string, int len, u8 *macaddr)
+{
+	int i, k;
+	char temp[3] = {0};
+
+	/* assume string is "00:11:22:33:44:55". */
+	if (!string || (len < 17))
+		return -1;
+
+
+	i = k = 0;
+	while (i < len) {
+		memcpy(temp, string + i, 2);
+		macaddr[k++] = (u8)simple_strtoul(temp, NULL, 16);
+		i += 3;
+	}
+
+	return 0;
+}
+
 struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
 {
 	struct ath6kl *ar = vif->ar;

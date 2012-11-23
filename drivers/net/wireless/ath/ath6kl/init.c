@@ -34,6 +34,11 @@
 #include "hif-ops.h"
 #include "htc-ops.h"
 
+/* assume string is "00:11:22:33:44:55".  used to override the default MAC of MAC from softmac.bin file*/
+char *ath6kl_wifi_mac = "00:11:22:33:44:55";
+
+module_param(ath6kl_wifi_mac, charp, 0000);
+
 static const struct ath6kl_hw hw_list[] = {
 	{
 		.id				= AR6003_HW_2_0_VERSION,
@@ -726,6 +731,57 @@ static bool check_device_tree(struct ath6kl *ar)
 }
 #endif /* CONFIG_OF */
 
+static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
+{
+	int i;
+	u16 *p;
+	u32 sum = 0;
+	u32 param;
+	u8 macaddr[ETH_ALEN] = {0,};
+
+	/* set checksum filed in the board data to zero */
+	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
+	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
+
+	if (ar->fw_board == NULL || str_mac == NULL)
+		return -1;
+
+	/*generate locally adminstered mac*/
+	if (strcmp(str_mac, "00:11:22:33:44:55") == 0)
+		sprintf(str_mac, "02:03:7F:%d:%d:%d", random32() & 0xff, random32() & 0xff, random32() & 0xff);
+
+	if (_string_to_mac(str_mac, strlen(str_mac), macaddr) < 0)
+		return -1;
+
+	/* replace the mac address with module parameter input */
+	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], macaddr, ETH_ALEN);
+
+	p = (u16 *) ar->fw_board;
+
+	/* calculate check sum */
+	for (i = 0; i < (ar->fw_board_len / 2); i++) {
+		sum ^= *p++;
+	}
+
+	sum = ~sum;
+
+	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
+	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
+
+	ath6kl_bmi_read(ar,
+				ath6kl_get_hi_item_addr(ar,
+				HI_ITEM(hi_option_flag2)),
+				(u8 *) &param, 4);
+
+	param |= HI_OPTION_DISABLE_MAC_OTP;
+	ath6kl_bmi_write(ar,
+			 ath6kl_get_hi_item_addr(ar,
+			 HI_ITEM(hi_option_flag2)),
+			 (u8 *)&param, 4);
+
+	return 0;
+}
+
 static int ath6kl_fetch_board_file(struct ath6kl *ar)
 {
 	const char *filename;
@@ -742,6 +798,11 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 	ret = ath6kl_get_fw(ar, filename, &ar->fw_board,
 			    &ar->fw_board_len);
 	if (ret == 0) {
+
+		/*if valid MAC from module_param, then use it */
+		if (ath6kl_replace_with_module_param(ar, ath6kl_wifi_mac) == 0)
+			return 0;
+
 		/* managed to get proper board file */
 		return 0;
 	}
