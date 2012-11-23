@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.204)
+#define __BUILD_VERSION_ (3.5.0.207)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -373,7 +373,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
 
 /* AR6004 2.1 definitions */
-#define AR6004_HW_2_1_VERSION			0x31c80014
+#define AR6004_HW_2_1_VERSION			0x31c809da
 #define AR6004_HW_2_1_FW_DIR			"ath6k/AR6004/hw2.1"
 #define AR6004_HW_2_1_OTP_FILE			"otp.bin"
 #define AR6004_HW_2_1_FIRMWARE_2_FILE         "fw-2.bin"
