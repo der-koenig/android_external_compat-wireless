@@ -542,13 +542,15 @@ static int ath6kl_wmi_remain_on_chnl_event_rx(struct wmi *wmi, u8 *datap,
 	if (id == vif->last_cancel_roc_id) {
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"RoC : This RoC already be cancelled by user %x\n", id);
-
-		return 0;
+	} else {
+		cfg80211_ready_on_channel(vif->ndev,
+				id, chan, NL80211_CHAN_NO_HT, dur, GFP_ATOMIC);
 	}
 
-	cfg80211_ready_on_channel(vif->ndev, id, chan, NL80211_CHAN_NO_HT,
-				  dur, GFP_ATOMIC);
-
+	if (test_bit(ROC_WAIT_EVENT, &vif->flags)) {
+		clear_bit(ROC_WAIT_EVENT, &vif->flags);
+		wake_up(&ar->event_wq);
+	}
 	return 0;
 }
 
@@ -632,6 +634,11 @@ static int ath6kl_wmi_cancel_remain_on_chnl_event_rx(struct wmi *wmi,
 		cfg80211_remain_on_channel_expired(vif->ndev, id, chan,
 						   NL80211_CHAN_NO_HT,
 						   GFP_ATOMIC);
+		if (test_bit(ROC_WAIT_EVENT, &vif->flags)) {
+			clear_bit(ROC_WAIT_EVENT, &vif->flags);
+			wake_up(&ar->event_wq);
+		}
+
 	}
 
 	return 0;

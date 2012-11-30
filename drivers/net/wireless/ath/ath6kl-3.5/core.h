@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.207)
+#define __BUILD_VERSION_ (3.5.0.213)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -865,6 +865,7 @@ enum ath6kl_vif_state {
 	ROC_PEND,
 	ROC_ONGOING,
 	ROC_CANCEL_PEND,
+	ROC_WAIT_EVENT,
 	DISCONNECT_PEND,
 	PMKLIST_GET_PEND,
 	PORT_STATUS_PEND,

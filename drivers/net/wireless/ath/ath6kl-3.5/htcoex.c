@@ -177,7 +177,12 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 		   coex_info->num_chans,
 		   vif->bss_ch);
 
-	action_frame = kzalloc(sizeof(struct ieee80211_mgmt), GFP_KERNEL);
+	len = 24 +
+		sizeof(struct ieee80211_action_public) +
+		sizeof(struct ieee80211_bss_coex_ie) +
+		sizeof(struct ieee80211_intolerant_chan_report_ie) +
+		coex_info->num_chans;
+	action_frame = kzalloc(len, GFP_KERNEL);
 	if (action_frame) {
 		struct ieee80211_action_public *action_public;
 		struct ieee80211_bss_coex_ie *bss_coex_ie;
@@ -213,12 +218,6 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 		for (i = 0; i < coex_info->num_chans; i++)
 			into_chan_report_ie->chan_variable[i] =
 				coex_info->chans[i];
-
-		len = 24 +
-			sizeof(struct ieee80211_action_public) +
-			sizeof(struct ieee80211_bss_coex_ie) +
-			sizeof(struct ieee80211_intolerant_chan_report_ie) +
-			coex_info->num_chans;
 
 		ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "tx-htcoex ",
 						(u8 *)action_frame, len);

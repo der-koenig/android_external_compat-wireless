@@ -1383,6 +1383,7 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags)) {
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"%s connect_handshake_protect reject scan\n", __func__);
+		clear_bit(SCANNING, &vif->flags);
 		kfree(channels);
 		up(&ar->sem);
 		return -EBUSY;
@@ -1402,6 +1403,7 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	if (ret) {
 		ath6kl_err("ath6kl_cfg80211_scan: set scan parameter failed\n");
+		clear_bit(SCANNING, &vif->flags);
 		kfree(channels);
 		up(&ar->sem);
 		return ret;
@@ -1411,9 +1413,10 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 					force_fg_scan, false, 0,
 					ATH6KL_FG_SCAN_INTERVAL,
 					n_channels, channels);
-	if (ret)
+	if (ret) {
 		ath6kl_err("wmi_startscan_cmd failed\n");
-	else
+		clear_bit(SCANNING, &vif->flags);
+	} else
 		vif->scan_req = request;
 
 	kfree(channels);
@@ -2743,7 +2746,7 @@ static bool ath6kl_cfg80211_need_suspend(struct ath6kl *ar, u32 *suspend_vif)
 static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif;
-	int i, ret = 0;
+	int i, ret = 0, left;
 	u32 need_suspend_vif = 0;
 
 	if (!ath6kl_cfg80211_need_suspend(ar, &need_suspend_vif))
@@ -2779,6 +2782,23 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 
 	ath6kl_cfg80211_stop_all(ar);
 
+	/*
+	 * Flush data packets and wait for all control packets
+	 * to be cleared in TX path before deep sleep suspend.
+	 */
+	ath6kl_tx_data_cleanup(ar);
+
+	if (ar->tx_pending[ar->ctrl_ep]) {
+		left = wait_event_interruptible_timeout(ar->event_wq,
+				ar->tx_pending[ar->ctrl_ep] == 0, WMI_TIMEOUT);
+		if (left == 0) {
+			ath6kl_warn("clear wmi ctrl data timeout\n");
+			ret = -ETIMEDOUT;
+		} else if (left < 0) {
+			ath6kl_warn("clear wmi ctrl data failed: %d\n", left);
+			ret = left;
+		}
+	}
 
 	return ret;
 }
@@ -3729,14 +3749,20 @@ static int ath6kl_remain_on_channel(struct wiphy *wiphy,
 	/* If already pending or ongoing remain-on-channel and wait it
 	 * finish.
 	 */
-	if ((test_bit(ROC_PEND, &vif->flags)) ||
-	    (test_bit(ROC_ONGOING, &vif->flags))) {
+	if (test_bit(ROC_PEND, &vif->flags)) {
+		ath6kl_err("RoC : Receive duplicate ROC.\n");
+		up(&ar->sem);
+		return -EBUSY;
+	}
+
+	if (test_bit(ROC_ONGOING, &vif->flags)) {
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"RoC : Last RoC not yet finish, %x %d %d",
 				vif->last_roc_id,
 				((test_bit(ROC_PEND, &vif->flags)) ? 1 : 0),
 				((test_bit(ROC_ONGOING, &vif->flags)) ? 1 : 0));
 
+		set_bit(ROC_WAIT_EVENT, &vif->flags);
 		wait_event_interruptible_timeout(ar->event_wq,
 			!test_bit(ROC_ONGOING, &vif->flags),
 			 MAX_ROC_PERIOD);
@@ -3792,8 +3818,9 @@ static int ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 			"RoC : RoC not start but canceled %x\n",
 				vif->last_roc_id);
 
+		set_bit(ROC_WAIT_EVENT, &vif->flags);
 		wait_event_interruptible_timeout(ar->event_wq,
-			!test_bit(ROC_ONGOING, &vif->flags),
+			test_bit(ROC_ONGOING, &vif->flags),
 			WMI_TIMEOUT);
 
 		if (signal_pending(current)) {

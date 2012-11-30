@@ -305,8 +305,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.dataset_patch_addr		= 0,
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
-		.reserved_ram_size		= 7168,
-		.board_addr			= 0x46E400,
+		.reserved_ram_size		= 14336,
+		.board_addr			= 0x46c800,
 		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
