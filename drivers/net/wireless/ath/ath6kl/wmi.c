@@ -3240,10 +3240,21 @@ int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
 
 s32 ath6kl_wmi_get_rate(s8 rate_index)
 {
+	u8 sgi = 0;
+
 	if (rate_index == RATE_AUTO)
 		return 0;
 
-	return wmi_rate_tbl[(u32) rate_index][0];
+	/* SGI is stored as the MSB of the rate_index */
+	if (rate_index & RATE_INDEX_MSB) {
+		rate_index &= RATE_INDEX_WITHOUT_SGI_MASK;
+		sgi = 1;
+	}
+
+	if (WARN_ON(rate_index > RATE_MCS_7_40))
+		rate_index = RATE_MCS_7_40;
+
+	return wmi_rate_tbl[(u32) rate_index][sgi];
 }
 
 static int ath6kl_wmi_get_pmkid_list_event_rx(struct wmi *wmi, u8 *datap,
@@ -3783,6 +3794,30 @@ int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_AP_ACL_MAC_LIST_CMDID,
 				   NO_SYNC_WMIFLAG);
 }
+
+int ath6kl_wmi_ap_set_num_sta(struct wmi *wmip, u8 if_idx, u8 num_sta)
+{
+	struct sk_buff *skb;
+	struct wmi_ap_num_sta_cmd *cm;
+	int res;
+
+	/*0x80 is used global connection setting*/
+	if (num_sta & 0x80) {
+		return  -EINVAL;
+	}
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cm));
+	if (!skb)
+		return -ENOMEM;
+
+	cm = (struct wmi_ap_num_sta_cmd *) skb->data;
+	cm->num_sta = num_sta;
+
+	res = ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_AP_SET_NUM_STA_CMDID,
+				  NO_SYNC_WMIFLAG);
+
+	return res;
+}
+
 
 static void ath6kl_wmi_hb_challenge_resp_event(struct wmi *wmi, u8 *datap,
 					       int len)

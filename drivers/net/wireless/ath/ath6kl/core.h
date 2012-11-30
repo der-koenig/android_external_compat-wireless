@@ -604,6 +604,18 @@ enum ath6kl_vif_state {
 	SCHED_SCANNING,
 };
 
+struct ath6kl_vif_bcn_info {
+	bool hidden_ssid;
+	enum wmi_phy_mode phy_mode;
+	u8 *beacon_ies;
+	size_t beacon_ies_len;
+	u8 *proberesp_ies;
+	size_t proberesp_ies_len;
+	u8 *assocresp_ies;
+	size_t assocresp_ies_len;
+	u8 sta_cap_req;
+};
+
 struct ath6kl_vif {
 	struct list_head list;
 	struct wireless_dev wdev;
@@ -660,6 +672,7 @@ struct ath6kl_vif {
 	u16 rsn_capab;
 
 	struct list_head mc_filter;
+	struct ath6kl_vif_bcn_info bcn_info;
 };
 
 #define WOW_LIST_ID		0
@@ -985,6 +998,7 @@ void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit);
 int ath6kl_wait_for_init_comp(void);
 void ath6kl_notify_init_done(void);
 
+u8 ath6kl_remove_sta(struct ath6kl *ar, u8 *mac, u16 reason);
 /* Fw error recovery */
 void ath6kl_init_hw_restart(struct ath6kl *ar);
 void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason);

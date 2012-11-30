@@ -1988,6 +1988,8 @@ void ath6kl_init_hw_restart(struct ath6kl *ar)
 		ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Failed to restart during fw error recovery\n");
 		return;
 	}
+
+	ath6kl_cfg80211_start_all(ar);
 }
 
 void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)

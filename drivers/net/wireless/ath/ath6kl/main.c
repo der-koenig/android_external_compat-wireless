@@ -112,7 +112,7 @@ static void ath6kl_sta_cleanup(struct ath6kl *ar, u8 i)
 	aggr_reset_state(sta->aggr_conn);
 }
 
-static u8 ath6kl_remove_sta(struct ath6kl *ar, u8 *mac, u16 reason)
+u8 ath6kl_remove_sta(struct ath6kl *ar, u8 *mac, u16 reason)
 {
 	u8 i, removed = 0;
 
@@ -1064,6 +1064,13 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			/* send blocked client notification to user space */
 			cfg80211_conn_failed(vif->ndev, bssid,
 					     NL80211_CONN_FAIL_BLOCKED_CLIENT,
+					     GFP_KERNEL);
+		}
+
+		if (prot_reason_status == WMI_AP_REASON_NEW_STA) {
+			/* send new client notification to user space */
+			cfg80211_conn_failed(vif->ndev, bssid,
+					     NL80211_CONN_FAIL_NEW_CLIENT,
 					     GFP_KERNEL);
 		}
 

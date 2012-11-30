@@ -1571,6 +1571,7 @@ enum ap_disconnect_reason {
 	WMI_AP_REASON_ACL		= 105,
 	WMI_AP_REASON_STA_ROAM		= 106,
 	WMI_AP_REASON_DFS_CHANNEL	= 107,
+	WMI_AP_REASON_NEW_STA		= 108,
 };
 
 #define ATH6KL_COUNTRY_RD_SHIFT        16
@@ -1780,6 +1781,9 @@ struct rx_stats {
 	__le32 dupl_frame;
 	a_sle32 ucast_rate;
 } __packed;
+
+#define RATE_INDEX_WITHOUT_SGI_MASK     0x7f
+#define RATE_INDEX_MSB     0x80
 
 struct tkip_ccmp_stats {
 	__le32 tkip_local_mic_fail;
@@ -2352,6 +2356,10 @@ struct wmi_ap_acl_policy_cmd {
 	u8 policy;
 } __packed;
 
+struct wmi_ap_num_sta_cmd{
+    u8     num_sta;
+} __packed;
+
 /* End of AP mode definitions */
 
 struct wmi_remain_on_chnl_cmd {
@@ -2638,6 +2646,7 @@ int ath6kl_wmi_get_tx_pwr_cmd(struct wmi *wmi, u8 if_idx);
 int ath6kl_wmi_get_roam_tbl_cmd(struct wmi *wmi);
 
 int ath6kl_wmi_set_wmm_txop(struct wmi *wmi, u8 if_idx, enum wmi_txop_cfg cfg);
+int ath6kl_wmi_ap_set_num_sta(struct wmi *wmip, u8 if_idx, u8 num_sta);
 int ath6kl_wmi_set_keepalive_cmd(struct wmi *wmi, u8 if_idx,
 				 u8 keep_alive_intvl);
 int ath6kl_wmi_set_htcap_cmd(struct wmi *wmi, u8 if_idx,

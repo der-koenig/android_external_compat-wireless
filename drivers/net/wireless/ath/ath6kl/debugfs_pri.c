@@ -195,6 +195,31 @@ static const struct file_operations fops_bmisstime = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath6kl_max_num_sta_write(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	int ret;
+	u8 val;
+
+	ret = kstrtou8_from_user(user_buf, count, 0, &val);
+	if (ret)
+		return ret;
+
+	ret = ath6kl_wmi_ap_set_num_sta(ar->wmi, 0, val);
+	if (ret)
+		return ret;
+
+	return count;
+}
+static const struct file_operations fops_max_num_sta = {
+	.open = ath6kl_debugfs_open_pri,
+	.write = ath6kl_max_num_sta_write,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_init_debugfs_pri(struct ath6kl *ar)
 {
 	debugfs_create_file("inactivity_period", S_IWUSR, ar->debugfs_phy, ar,
@@ -202,6 +227,9 @@ int ath6kl_init_debugfs_pri(struct ath6kl *ar)
 
 	debugfs_create_file("bmiss_time", S_IRUSR | S_IWUSR, ar->debugfs_phy,
 			    ar, &fops_bmisstime);
+
+	debugfs_create_file("max_num_sta", S_IWUSR, ar->debugfs_phy,
+			    ar, &fops_max_num_sta);
 
 	return 0;
 }
