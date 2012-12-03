@@ -12,6 +12,7 @@
 #include <linux/skbuff.h>
 #include <net/sch_generic.h>
 
+#define __ARG_PLACEHOLDER_1 0,
 #define config_enabled(cfg) _config_enabled(cfg)
 #define _config_enabled(value) __config_enabled(__ARG_PLACEHOLDER_##value)
 #define __config_enabled(arg1_or_junk) ___config_enabled(arg1_or_junk 1, 0)
