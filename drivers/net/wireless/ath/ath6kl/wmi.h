@@ -114,6 +114,7 @@ struct wmi {
 	struct ath6kl *parent_dev;
 	u8 pwr_mode;
 	spinlock_t lock;
+	spinlock_t tx_frame_lock;
 	enum htc_endpoint_id ep_id;
 	struct sq_threshold_params
 	    sq_threshld[SIGNAL_QUALITY_METRICS_NUM_MAX];

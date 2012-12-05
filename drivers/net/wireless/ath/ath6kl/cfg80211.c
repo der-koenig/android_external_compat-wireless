@@ -1044,7 +1044,8 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		if (request->no_cck) {
 #ifdef CONFIG_HAS_WAKELOCK
 			ath6kl_p2p_release_wakelock(ar);
-			ath6kl_p2p_acquire_wakelock(ar , n_channels * 200);
+			ath6kl_p2p_acquire_wakelock(ar , n_channels *
+						    msecs_to_jiffies(110));
 #endif
 		}
 		ret = ath6kl_wmi_beginscan_cmd(ar->wmi, vif->fw_vif_idx,
