@@ -545,6 +545,7 @@ static int ath6kl_wmi_tx_status_event_rx(struct wmi *wmi, u8 *datap, int len,
 		}
 		memcpy(last_mgmt_tx_frame, wmi->last_mgmt_tx_frame,
 			wmi->last_mgmt_tx_frame_len);
+		last_mgmt_tx_frame_len = wmi->last_mgmt_tx_frame_len;
 		kfree(wmi->last_mgmt_tx_frame);
 		wmi->last_mgmt_tx_frame = NULL;
 		wmi->last_mgmt_tx_frame_len = 0;
