@@ -1249,6 +1249,7 @@ static int ath6kl_wmi_tkip_micerr_event_rx(struct wmi *wmi, u8 *datap, int len,
 static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 				       struct ath6kl_vif *vif)
 {
+#define _DEFAULT_SNR	(96)	/* -96 dBm */
 	struct wmi_bss_info_hdr2 *bih;
 	u8 *buf;
 	struct ieee80211_channel *channel;
@@ -1263,10 +1264,13 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	buf = datap + sizeof(struct wmi_bss_info_hdr2);
 	len -= sizeof(struct wmi_bss_info_hdr2);
 
+	if (bih->snr == 0x80)
+		return -EINVAL;		
+
 	ath6kl_dbg(ATH6KL_DBG_WMI,
 		   "bss info evt - ch %u, snr %d, rssi %d, bssid \"%pM\" "
 		   "frame_type=%d\n",
-		   bih->ch, bih->snr, bih->snr - 95, bih->bssid,
+		   bih->ch, bih->snr, (s8)bih->snr - _DEFAULT_SNR, bih->bssid,
 		   bih->frame_type);
 
 	if (bih->frame_type != BEACON_FTYPE &&
@@ -1330,7 +1334,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	ath6kl_htcoex_bss_info(vif, mgmt, 24 + len, channel);
 
 	bss = cfg80211_inform_bss_frame(ar->wiphy, channel, mgmt,
-					24 + len, (bih->snr - 95) * 100,
+					24 + len, ((s8)bih->snr - _DEFAULT_SNR) * 100,
 					GFP_ATOMIC);
 	kfree(mgmt);
 	if (bss == NULL)
@@ -1338,6 +1342,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	cfg80211_put_bss(bss);
 
 	return 0;
+#undef _DEFAULT_SNR
 }
 
 /* Inactivity timeout of a fatpipe(pstream) at the target */

@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.213)
+#define __BUILD_VERSION_ (3.5.0.220)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -177,6 +177,12 @@
 /* Remain-on-channel */
 #define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
 
+/* scan time out */
+#define ATH6KL_SCAN_TIMEOUT (5 * HZ)  /* in sec. */
+
+/* 4 way-handshake protect */
+#define ATH6KL_HANDSHAKE_PROC_TIMEOUT (3 * HZ) /* in sec. */
+
 /* includes also the null byte */
 #define ATH6KL_FIRMWARE_MAGIC               "QCA-ATH6KL"
 
@@ -188,6 +194,11 @@
 #define ATH6KL_5GHZ_HT40_DEF_WIDTH		(1)	/* HT40 enabled */
 #define ATH6KL_5GHZ_HT40_DEF_SGI		(1)	/* SGI enabled */
 #define ATH6KL_5GHZ_HT40_DEF_INTOLR40		(0)	/* disabled */
+
+/* delay around 29ms on 1/4 msg in wpa/wpa2 to avoid racing with roam
+* event in certain platform
+*/
+#define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
 
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
@@ -373,7 +384,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
 
 /* AR6004 2.1 definitions */
-#define AR6004_HW_2_1_VERSION			0x31c809da
+#define AR6004_HW_2_1_VERSION			0x31c809f0
 #define AR6004_HW_2_1_FW_DIR			"ath6k/AR6004/hw2.1"
 #define AR6004_HW_2_1_OTP_FILE			"otp.bin"
 #define AR6004_HW_2_1_FIRMWARE_2_FILE         "fw-2.bin"
@@ -852,6 +863,7 @@ enum ath6kl_vif_state {
 	CONNECTED,
 	CONNECT_PEND,
 	CONNECT_HANDSHAKE_PROTECT,
+	FIRST_EAPOL_PENDSENT,
 	WMM_ENABLED,
 	NETQ_STOPPED,
 	DTIM_EXPIRED,
@@ -905,6 +917,8 @@ struct ath6kl_vif {
 	u32 connect_ctrl_flags;
 	u8 usr_bss_filter;
 	struct cfg80211_scan_request *scan_req;
+	struct timer_list vifscan_timer;
+	struct timer_list shprotect_timer;
 	enum sme_state sme_state;
 	u8 intra_bss;
 	u8 ap_apsd;
@@ -944,6 +958,8 @@ struct ath6kl_vif {
 	u8 last_pwr_mode;
 	u8 saved_pwr_mode;
 	u8 arp_offload_ip_set;
+	struct delayed_work work_eapol_send;
+	struct sk_buff *pend_skb;
 };
 
 #define WOW_LIST_ID		0

@@ -40,6 +40,7 @@ unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
 unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
 unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
+unsigned int ath6kl_scan_timeout = ATH6KL_SCAN_TIMEOUT;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -65,6 +66,7 @@ module_param(ath6kl_wow_gpio, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
 module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
+module_param(ath6kl_scan_timeout, uint, 0644);
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
 bool ktk_enable;
 module_param(ktk_enable, bool, 0644);
@@ -206,7 +208,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0x434c00,
 		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
-						ATH6KL_HW_SINGLE_PIPE_SCHED,
+						  ATH6KL_HW_SINGLE_PIPE_SCHED |
+						ATH6KL_HW_FIRMWARE_EXT_SUPPORT,
 
 		.fw = {
 			.dir		= AR6004_HW_1_3_FW_DIR,
@@ -1311,14 +1314,18 @@ get_fw:
 			 ar->hw.fw.dir, ar->hw.fw.fw_ext);
 		ret = ath6kl_get_fw(ar, filename, &ar->fw_ext, &ar->fw_ext_len);
 		if (ret) {
-			ath6kl_err("Failed to get firmware ext file %s: %d\n",
+			/*ath6kl_err("Failed to get firmware ext file %s: %d\n",
 				   filename, ret);
 			return ret;
+			*/
+			ath6kl_err("Disable firmware ext feature\n");
+			goto get_fw_done;
 		}
 
 		set_bit(DOWNLOAD_FIRMWARE_EXT, &ar->flag);
 	}
 
+get_fw_done:
 	return 0;
 }
 
@@ -2770,6 +2777,9 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	static u8 bcast_mac[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	bool discon_issued;
 
+	if (vif->pend_skb)
+		flush_delayed_work(&vif->work_eapol_send);
+
 	netif_stop_queue(vif->ndev);
 
 	clear_bit(WLAN_ENABLED, &vif->flags);
@@ -2788,6 +2798,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	}
 
 	if (vif->scan_req) {
+		del_timer(&vif->vifscan_timer);
 		ath6kl_wmi_abort_scan_cmd(vif->ar->wmi, vif->fw_vif_idx);
 		cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;

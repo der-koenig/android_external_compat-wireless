@@ -989,20 +989,6 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "scan complete: %d\n", status);
 }
 
-/* shall be used within if_lock */
-static void ath6kl_handshake_protect(struct ath6kl_vif *vif)
-{
-
-	if (test_bit(CONNECTED, &vif->flags) &&
-		(vif->auth_mode > NONE_AUTH) &&
-		(vif->prwise_crypto > WEP_CRYPT) &&
-		(vif->nw_type == INFRA_NETWORK)) {
-		set_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
-	} else {
-		clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
-	}
-}
-
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 			  u16 listen_int, u16 beacon_int,
 			  enum network_type net_type, u8 beacon_ie_len,
@@ -1039,7 +1025,6 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	spin_lock_bh(&vif->if_lock);
 	set_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
-	ath6kl_handshake_protect(vif);
 	netif_carrier_on(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
@@ -1215,7 +1200,6 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 	if (vif->nw_type == AP_NETWORK) {
 		if ((len + 4) >= sizeof(*p)) {
 			for (ac = 0; ac < AP_MAX_NUM_STA; ac++) {
-				st_ap = &ap->sta[ac];
 				st_p = &p->sta[ac];
 
 				/*
@@ -1226,9 +1210,11 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 					(st_p->aid > AP_MAX_NUM_STA))
 					continue;
 
+				st_ap = &ap->sta[st_p->aid - 1];
 				slot = (1 << (st_p->aid - 1));
 				if ((vif->sta_list_index & slot) &&
 				    (!(updated & slot))) {
+					WARN_ON(st_ap->aid != st_p->aid);
 					updated |= slot;
 					ath6kl_add_le32(&st_ap->tx_bytes,
 							st_p->tx_bytes);
@@ -1246,7 +1232,6 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 							st_p->rx_error);
 					ath6kl_add_le32(&st_ap->rx_discard,
 							st_p->rx_discard);
-					st_ap->aid = st_p->aid;
 					st_ap->tx_ucast_rate =
 							st_p->tx_ucast_rate;
 					st_ap->last_txrx_time =
@@ -1480,6 +1465,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	spin_lock_bh(&vif->if_lock);
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	del_timer(&vif->shprotect_timer);
 	netif_carrier_off(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
@@ -1567,6 +1553,7 @@ static int ath6kl_close(struct net_device *dev)
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	del_timer(&vif->shprotect_timer);
 
 	if (test_bit(WMI_READY, &ar->flag)) {
 		if (ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0xFFFF,

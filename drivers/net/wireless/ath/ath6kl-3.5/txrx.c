@@ -1110,6 +1110,43 @@ void ath6kl_tx_data_cleanup(struct ath6kl *ar)
 }
 
 /* Rx functions */
+#ifdef CONFIG_ANDROID
+static void ath6kl_eapol_send(struct work_struct *work)
+{
+	struct ath6kl_vif *vif = NULL;
+
+	if (!work)
+		goto FAILED;
+
+	vif = container_of(work, struct ath6kl_vif,
+		work_eapol_send.work);
+
+	if (!vif)
+		goto FAILED;
+
+	if (WARN_ON(!vif->pend_skb))
+		goto FAILED;
+
+	if (!(vif->pend_skb->dev->flags & IFF_UP)) {
+		dev_kfree_skb(vif->pend_skb);
+		vif->pend_skb = NULL;
+		clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+		return;
+	}
+
+	netif_rx_ni(vif->pend_skb);
+
+	vif->pend_skb = NULL;
+
+	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+
+	return;
+FAILED:
+	ath6kl_err("%s failed\n", __func__);
+	return;
+}
+
+#endif
 
 static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 					      struct sk_buff *skb)
@@ -1143,6 +1180,25 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 	}
 
 	skb->protocol = eth_type_trans(skb, skb->dev);
+
+#ifdef CONFIG_ANDROID
+	if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
+
+		if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) &&
+			(vif->ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM)) {
+			if (vif->pend_skb != NULL)
+				flush_delayed_work(&vif->work_eapol_send);
+			if (test_bit(FIRST_EAPOL_PENDSENT, &vif->flags)) {
+				vif->pend_skb = skb;
+				INIT_DELAYED_WORK(&vif->work_eapol_send,
+					ath6kl_eapol_send);
+				schedule_delayed_work(&vif->work_eapol_send,
+					ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE);
+				return;
+			}
+		}
+	}
+#endif
 
 /*
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)) &&	\
