@@ -5179,7 +5179,7 @@ void ath6kl_shprotect_timer_handler(unsigned long ptr)
 {
 	struct ath6kl_vif *vif = (struct ath6kl_vif *)ptr;
 	struct ath6kl *ar = vif->ar;
-	u8 *bssid[ETH_ALEN];
+	u8 bssid[ETH_ALEN];
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s\n", __func__);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
@@ -5192,6 +5192,7 @@ void ath6kl_shprotect_timer_handler(unsigned long ptr)
 	if (ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM) {
 		/*trigger roam, only work if firmware support*/
 		memset(bssid, 0, ETH_ALEN);
+		bssid[0] = 0xFF;
 		ath6kl_wmi_force_roam_cmd(ar->wmi, (const u8 *)bssid);
 	}
 }

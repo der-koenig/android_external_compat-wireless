@@ -1265,7 +1265,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	len -= sizeof(struct wmi_bss_info_hdr2);
 
 	if (bih->snr == 0x80)
-		return -EINVAL;		
+		return -EINVAL;
 
 	ath6kl_dbg(ATH6KL_DBG_WMI,
 		   "bss info evt - ch %u, snr %d, rssi %d, bssid \"%pM\" "
@@ -3173,8 +3173,9 @@ static int ath6kl_wmi_delba_req_event_rx(struct wmi *wmi, u8 *datap, int len,
 					 struct ath6kl_vif *vif)
 {
 	struct wmi_delba_event *cmd = (struct wmi_delba_event *) datap;
+	u8 is_peer_initiator = cmd->is_peer_initiator;
 
-	aggr_recv_delba_req_evt(vif, cmd->tid);
+	aggr_recv_delba_req_evt(vif, cmd->tid, is_peer_initiator);
 
 	return 0;
 }

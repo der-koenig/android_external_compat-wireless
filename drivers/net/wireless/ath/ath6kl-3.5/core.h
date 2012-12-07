@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.220)
+#define __BUILD_VERSION_ (3.5.0.222)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -59,21 +59,16 @@
 /* for WMM issues, we might need to enlarge the number of cookies */
 #define ATH6KL_USE_LARGE_COOKIE      1
 
-/*only for Android-JB now. */
-#ifdef CONFIG_ANDROID
 #ifndef CONFIG_ATH6KL_MCC
 #define CONFIG_ATH6KL_MCC
-#endif
 #endif
 
 #ifdef CONFIG_ATH6KL_UB134
 #ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
 #define CONFIG_ATH6KL_UDP_TPUT_WAR
 #endif
-#undef ATH6KL_USE_LARGE_COOKIE
 #endif
 
-#ifdef CONFIG_ANDROID
 #ifdef CONFIG_ATH6KL_MCC
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
@@ -96,7 +91,6 @@
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
 	0)
-#endif
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
@@ -178,7 +172,7 @@
 #define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
 
 /* scan time out */
-#define ATH6KL_SCAN_TIMEOUT (5 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT (8 * HZ)  /* in sec. */
 
 /* 4 way-handshake protect */
 #define ATH6KL_HANDSHAKE_PROC_TIMEOUT (3 * HZ) /* in sec. */
@@ -1400,7 +1394,7 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid);
 
 void ath6kl_dtimexpiry_event(struct ath6kl_vif *vif);
 int ath6kl_disconnect(struct ath6kl_vif *vif);
-void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid);
+void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid, u8 initiator);
 void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 			     u8 win_sz);
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,

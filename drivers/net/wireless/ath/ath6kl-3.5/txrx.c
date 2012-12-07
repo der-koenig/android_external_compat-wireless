@@ -2929,10 +2929,11 @@ struct aggr_conn_info *aggr_init_conn(struct ath6kl_vif *vif)
 	return aggr_conn;
 }
 
-void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid)
+void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid, u8 initiator)
 {
 	struct aggr_conn_info *aggr_conn;
 	struct rxtid *rxtid;
+	struct txtid *txtid;
 	struct ath6kl_sta *conn;
 	u8 conn_tid, conn_aid;
 
@@ -2943,10 +2944,16 @@ void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid)
 	if (conn != NULL) {
 		WARN_ON(!conn->aggr_conn_cntxt);
 
-		aggr_conn = conn->aggr_conn_cntxt;
-		rxtid = AGGR_GET_RXTID(aggr_conn, conn_tid);
-		if (rxtid->aggr)
-			aggr_delete_tid_state(aggr_conn, conn_tid);
+                aggr_conn = conn->aggr_conn_cntxt;
+                if(initiator == 1){//no aggr tx
+                        txtid = AGGR_GET_TXTID(aggr_conn, conn_tid);
+                        if (txtid)
+                                aggr_tx_delete_tid_state(aggr_conn, conn_tid);
+                } else {
+                        rxtid = AGGR_GET_RXTID(aggr_conn, conn_tid);
+                        if (rxtid->aggr)
+                                aggr_delete_tid_state(aggr_conn, conn_tid);
+                }
 	}
 }
 
