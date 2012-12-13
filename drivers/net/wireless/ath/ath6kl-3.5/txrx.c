@@ -1641,6 +1641,7 @@ static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
 		rxtid->timerwait_seq_num != rxtid->seq_next) {
 		del_timer(&rxtid->tid_timer);
 		rxtid->tid_timer_scheduled = false;
+		rxtid->continuous_count = 0;
 	}
 
 	if (!rxtid->tid_timer_scheduled) {
@@ -1656,6 +1657,7 @@ static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
 				 */
 				rxtid->tid_timer_scheduled = true;
 				rxtid->timerwait_seq_num = rxtid->seq_next;
+				rxtid->continuous_count++;
 				mod_timer(&rxtid->tid_timer,
 					(jiffies +
 					msecs_to_jiffies(
@@ -2602,12 +2604,23 @@ static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn)
 	return 0;
 }
 
+/*
+ * For the continuous un-received packets, wait timer will be divided by 2
+ * I.E. pkt#1, pkt#2, pkt#3 don't receive,
+ * the pkt#1 will wait tid_timeout_setting
+ * the pkt#2 will wait tid_timeout_setting / 2
+ * the pkt#3 will wait tid_timeout_setting / 4
+ * If more than ATH6KL_MAX_WAIT_CONTINUOUS_PKT, move to the first
+ * un-continuous un-received packets
+*/
 static void aggr_timeout(unsigned long arg)
 {
 	u8 j;
 	struct rxtid *rxtid = (struct rxtid *) arg;
 	struct aggr_conn_info *aggr_conn = rxtid->aggr_conn;
 	struct rxtid_stats *stats;
+	u32 tid_next_timeout =
+		aggr_conn->tid_timeout_setting[rxtid->tid];
 
 	stats = AGGR_GET_RXTID_STATS(aggr_conn, rxtid->tid);
 
@@ -2625,9 +2638,26 @@ static void aggr_timeout(unsigned long arg)
 				ATH6KL_MAX_SEQ_NO), rxtid->tid);
 		spin_unlock_bh(&rxtid->lock);
 		aggr_deque_frms(aggr_conn, rxtid->tid,
-			((rxtid->issue_timer_seq + 1) & ATH6KL_MAX_SEQ_NO) , 0);
+			((rxtid->timerwait_seq_num + 1) &
+			ATH6KL_MAX_SEQ_NO) , 0);
 		/* inorder packet that after time-out packet!! */
 		aggr_deque_frms(aggr_conn, rxtid->tid, 0 , 1);
+		if (rxtid->seq_next ==
+			((rxtid->timerwait_seq_num + 1) &
+			ATH6KL_MAX_SEQ_NO)) {
+			/* Continus hole */
+			if (rxtid->continuous_count >=
+					ATH6KL_MAX_WAIT_CONTINUOUS_PKT) {
+				aggr_deque_frms(aggr_conn, rxtid->tid,
+					((rxtid->issue_timer_seq + 1) &
+					ATH6KL_MAX_SEQ_NO) , 0);
+			/* inorder packet that after time-out packet!! */
+				aggr_deque_frms(aggr_conn, rxtid->tid, 0 , 1);
+				rxtid->continuous_count = 0;
+			}
+		} else {
+			rxtid->continuous_count = 0;
+		}
 		spin_lock_bh(&rxtid->lock);
 	}
 	rxtid->tid_timer_scheduled = false;
@@ -2639,15 +2669,31 @@ static void aggr_timeout(unsigned long arg)
 					rxtid->hold_q[j].seq_no;
 				rxtid->timerwait_seq_num = rxtid->seq_next;
 				rxtid->tid_timer_scheduled = true;
+				rxtid->continuous_count++;
 				break;
 			}
 		}
 	}
 
+	if (rxtid->continuous_count > 1) {
+		if (rxtid->continuous_count <=
+				ATH6KL_MAX_WAIT_CONTINUOUS_PKT) {
+			tid_next_timeout = tid_next_timeout /
+				((rxtid->continuous_count - 1) * 2);
+			ath6kl_dbg(ATH6KL_DBG_AGGR,
+				"aggr continuous hole timeout count %d\n",
+				rxtid->continuous_count);
+		} else {
+			ath6kl_dbg(ATH6KL_DBG_AGGR,
+				"aggr continuous hole count %d larger than 3?\n",
+				rxtid->continuous_count);
+			rxtid->continuous_count = 0;
+		}
+	}
+
 	if (rxtid->tid_timer_scheduled) {
 		mod_timer(&rxtid->tid_timer,
-			  jiffies + msecs_to_jiffies(
-			  aggr_conn->tid_timeout_setting[rxtid->tid]));
+			  jiffies + msecs_to_jiffies(tid_next_timeout));
 	}
 	spin_unlock_bh(&rxtid->lock);
 }
@@ -2944,16 +2990,17 @@ void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid, u8 initiator)
 	if (conn != NULL) {
 		WARN_ON(!conn->aggr_conn_cntxt);
 
-                aggr_conn = conn->aggr_conn_cntxt;
-                if(initiator == 1){//no aggr tx
-                        txtid = AGGR_GET_TXTID(aggr_conn, conn_tid);
-                        if (txtid)
-                                aggr_tx_delete_tid_state(aggr_conn, conn_tid);
-                } else {
-                        rxtid = AGGR_GET_RXTID(aggr_conn, conn_tid);
-                        if (rxtid->aggr)
-                                aggr_delete_tid_state(aggr_conn, conn_tid);
-                }
+		aggr_conn = conn->aggr_conn_cntxt;
+		if (initiator == 1) {
+			/* no aggr tx */
+			txtid = AGGR_GET_TXTID(aggr_conn, conn_tid);
+			if (txtid)
+				aggr_tx_delete_tid_state(aggr_conn, conn_tid);
+		} else {
+			rxtid = AGGR_GET_RXTID(aggr_conn, conn_tid);
+			if (rxtid->aggr)
+				aggr_delete_tid_state(aggr_conn, conn_tid);
+		}
 	}
 }
 
@@ -3022,6 +3069,7 @@ void aggr_module_destroy_conn(struct aggr_conn_info *aggr_conn)
 	if (rxtid->tid_timer_scheduled) {
 		del_timer(&rxtid->tid_timer);
 		rxtid->tid_timer_scheduled = false;
+		rxtid->continuous_count = 0;
 	}
 
 		if (rxtid->hold_q) {

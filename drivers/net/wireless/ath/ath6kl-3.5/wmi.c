@@ -573,6 +573,39 @@ static int ath6kl_wmi_cancel_remain_on_chnl_event_rx(struct wmi *wmi,
 	dur = le32_to_cpu(ev->duration);
 	ath6kl_dbg(ATH6KL_DBG_WMI, "cancel_remain_on_chnl: freq=%u dur=%u "
 		   "status=%u\n", freq, dur, ev->status);
+
+	/*
+	 * One case is target reject RoC request because of some reasons.
+	 * Another case is user cancel a non-exist RoC.
+	 */
+	if (ev->status != 0) {
+		if (test_bit(ROC_PEND, &vif->flags)) {
+			BUG_ON(!vif->last_roc_channel);
+
+			ath6kl_err("RoC : request %d %d reject by target %d\n",
+					vif->last_roc_id,
+					vif->last_roc_channel->center_freq,
+					ev->status);
+
+			/*
+			 * Still report RoC-End, suppose the user will handle
+			 * this case.
+			 */
+			cfg80211_remain_on_channel_expired(vif->ndev,
+							vif->last_roc_id,
+							vif->last_roc_channel,
+							NL80211_CHAN_NO_HT,
+							GFP_ATOMIC);
+			vif->last_cancel_roc_id = 0;
+			clear_bit(ROC_PEND, &vif->flags);
+
+			return 0;
+		} else
+			ath6kl_dbg(ATH6KL_DBG_WMI, "RoC : cancal fail %d %d\n",
+					test_bit(ROC_ONGOING, &vif->flags),
+					ev->status);
+	}
+
 	chan = ieee80211_get_channel(ar->wiphy, freq);
 	if (!chan) {
 		spin_lock_bh(&vif->if_lock);
@@ -797,6 +830,17 @@ static int ath6kl_wmi_rx_action_event_rx(struct wmi *wmi, u8 *datap, int len,
 		return -EINVAL;
 	}
 	ath6kl_dbg(ATH6KL_DBG_WMI, "rx_action: len=%u freq=%u\n", dlen, freq);
+
+	if (vif->ar->p2p_frame_not_report &&
+	    test_bit(SCANNING, &vif->flags) &&
+	    ath6kl_p2p_is_p2p_frame(vif->ar, ev->data, dlen)) {
+		ath6kl_dbg(ATH6KL_DBG_WMI, "rx_action: not report to user!\n");
+		ath6kl_dbg_dump(ATH6KL_DBG_WMI_DUMP, __func__, "action rx ",
+				ev->data, dlen);
+
+		return 0;
+	}
+
 	cfg80211_rx_mgmt(vif->ndev, freq, ev->data, dlen, GFP_ATOMIC);
 
 	return 0;
@@ -1334,7 +1378,8 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	ath6kl_htcoex_bss_info(vif, mgmt, 24 + len, channel);
 
 	bss = cfg80211_inform_bss_frame(ar->wiphy, channel, mgmt,
-					24 + len, ((s8)bih->snr - _DEFAULT_SNR) * 100,
+					24 + len,
+					((s8)bih->snr - _DEFAULT_SNR) * 100,
 					GFP_ATOMIC);
 	kfree(mgmt);
 	if (bss == NULL)

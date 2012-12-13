@@ -1245,6 +1245,27 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 	}
 }
 
+/* assume we support not more than two differnet channels */
+static int ath6kl_scan_timeout_cal(struct ath6kl *ar)
+{
+	struct ath6kl_vif *vif;
+	u16 connected_count = 0;
+
+	if (ath6kl_scan_timeout &&
+		(ath6kl_scan_timeout < ATH6KL_SCAN_TIMEOUT_SHORT))
+		return ATH6KL_SCAN_TIMEOUT_SHORT;
+
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (test_bit(CONNECTED, &vif->flags)) {
+			connected_count++;
+			if (connected_count > 1)
+				return ATH6KL_SCAN_TIMEOUT_LONG;
+		}
+	}
+
+	return ATH6KL_SCAN_TIMEOUT_SHORT;
+}
+
 static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 				struct cfg80211_scan_request *request)
 {
@@ -1483,7 +1504,8 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		clear_bit(SCANNING, &vif->flags);
 	} else {
 		vif->scan_req = request;
-		mod_timer(&vif->vifscan_timer, jiffies + ath6kl_scan_timeout);
+		mod_timer(&vif->vifscan_timer,
+			jiffies + ath6kl_scan_timeout_cal(ar));
 	}
 
 	kfree(channels);
@@ -3794,6 +3816,7 @@ static int ath6kl_remain_on_channel(struct wiphy *wiphy,
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	u32 id;
 	int ret;
+	long left;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -3820,15 +3843,14 @@ static int ath6kl_remain_on_channel(struct wiphy *wiphy,
 		}
 	}
 
-	/* If already pending or ongoing remain-on-channel and wait it
-	 * finish.
-	 */
+	/* If already pending remain-on-channel then reject request. */
 	if (test_bit(ROC_PEND, &vif->flags)) {
 		ath6kl_err("RoC : Receive duplicate ROC.\n");
 		up(&ar->sem);
 		return -EBUSY;
 	}
 
+	/* If ongoing remain-on-channel and wait it finish. */
 	if (test_bit(ROC_ONGOING, &vif->flags)) {
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"RoC : Last RoC not yet finish, %x %d %d",
@@ -3837,9 +3859,15 @@ static int ath6kl_remain_on_channel(struct wiphy *wiphy,
 				((test_bit(ROC_ONGOING, &vif->flags)) ? 1 : 0));
 
 		set_bit(ROC_WAIT_EVENT, &vif->flags);
-		wait_event_interruptible_timeout(ar->event_wq,
+		left = wait_event_interruptible_timeout(ar->event_wq,
 			!test_bit(ROC_ONGOING, &vif->flags),
 			 MAX_ROC_PERIOD);
+
+		if (left == 0) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"RoC : wait ROC_WAIT_EVENT timeout\n");
+			clear_bit(ROC_WAIT_EVENT, &vif->flags);
+		}
 
 		if (signal_pending(current)) {
 			ath6kl_err("RoC : last RoC not yet finish?\n");
@@ -3856,6 +3884,9 @@ static int ath6kl_remain_on_channel(struct wiphy *wiphy,
 	}
 	*cookie = id;
 	spin_unlock_bh(&vif->if_lock);
+
+	/* Cache request channel and report to cfg80211 when target reject. */
+	vif->last_roc_channel = chan;
 
 	set_bit(ROC_PEND, &vif->flags);
 	ret = ath6kl_wmi_remain_on_chnl_cmd(ar->wmi, vif->fw_vif_idx,
@@ -3874,6 +3905,7 @@ static int ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int ret;
+	long left;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -3893,9 +3925,24 @@ static int ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 				vif->last_roc_id);
 
 		set_bit(ROC_WAIT_EVENT, &vif->flags);
-		wait_event_interruptible_timeout(ar->event_wq,
+		left = wait_event_interruptible_timeout(ar->event_wq,
 			test_bit(ROC_ONGOING, &vif->flags),
 			WMI_TIMEOUT);
+
+		/*
+		 * Another corner case is that last RoC not yet start & also
+		 * be rejected by target, but be canceled. In this case,
+		 * treat WMI_TIMEOUT as target reject then return.
+		 */
+		if (left == 0) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"RoC : wait ROC_WAIT_EVENT timeout, %lld %d\n",
+					cookie,
+					vif->last_roc_id);
+			clear_bit(ROC_WAIT_EVENT, &vif->flags);
+			up(&ar->sem);
+			return 0;
+		}
 
 		if (signal_pending(current)) {
 			ath6kl_err("RoC : target did not respond\n");
@@ -4492,9 +4539,6 @@ static void ath6kl_change_cfg80211_ops(struct cfg80211_ops *cfg80211_ops)
 
 	/* Support Scheduled-Scan (a.k.a. PNO) */
 	if (debug_quirks & ATH6KL_MODULE_ENABLE_SCHE_SCAN) {
-		WARN_ON(cfg80211_ops->sched_scan_start);
-		WARN_ON(cfg80211_ops->sched_scan_stop);
-
 		cfg80211_ops->sched_scan_start = ath6kl_sched_scan_start;
 		cfg80211_ops->sched_scan_stop = ath6kl_sched_scan_stop;
 	}
@@ -4566,6 +4610,7 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 		ar->max_norm_iface++;
 
 	ar->p2p_frame_retry = false;
+	ar->p2p_frame_not_report = false;
 
 	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
 		" %s dedicate p2p-device,"
@@ -4895,6 +4940,14 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		ath6kl_err("failed to initialize htcoex\n");
 		return -ENOMEM;
 	}
+
+#ifdef CONFIG_ANDROID
+	/*Enable htcoex for wlan0 in Android. Scan period is 60s*/
+	if ((vif->fw_vif_idx == 0) &&
+	    (vif->ar->target_subtype & TARGET_SUBTYPE_HT40))
+		ath6kl_htcoex_config(vif,
+			ATH6KL_HTCOEX_SCAN_PERIOD, 0);
+#endif
 
 	vif->p2p_ps_info_ctx = ath6kl_p2p_ps_init(vif);
 	if (!vif->p2p_ps_info_ctx) {

@@ -146,7 +146,9 @@ static void htcoex_scan_start(unsigned long arg)
 		goto resche;
 
 	ret = ath6kl_wmi_startscan_cmd(ar->wmi, vif->fw_vif_idx, WMI_LONG_SCAN,
-				       0, false, 0, 0, 0, NULL);
+				       0, false, 0, 0,
+				       coex->num_scan_channels,
+				       coex->scan_channels);
 	if (ret)
 		ath6kl_err("wmi_startscan_cmd failed\n");
 	else {
@@ -264,6 +266,62 @@ static void htcoex_ht40_rateset(struct ath6kl_vif *vif,
 	return;
 }
 
+static int
+htcoex_clear_scan_channels(struct ath6kl_vif *vif)
+{
+	struct htcoex *coex = vif->htcoex_ctx;
+
+	if (!coex)
+		return -EINVAL;
+
+	kfree(coex->scan_channels);
+	coex->scan_channels = NULL;
+	coex->num_scan_channels = 0;
+	return 0;
+}
+
+static int
+htcoex_set_scan_channels(struct ath6kl_vif *vif)
+{
+	struct htcoex *coex = vif->htcoex_ctx;
+	struct wiphy *wiphy = coex->request.wiphy;
+	int i;
+
+	if (!wiphy->bands[IEEE80211_BAND_2GHZ])
+		return -EINVAL;
+
+	/*If the scan channel is already set,
+	 * clear it and apply new channel list.
+	 */
+	if (coex->num_scan_channels != 0 || coex->scan_channels)
+		htcoex_clear_scan_channels(vif);
+
+	/*scan_channels may be larger than what we actually need because some
+	*  of them might be disabled so we will filter them later.
+	*/
+	coex->scan_channels =
+		kzalloc(wiphy->bands[IEEE80211_BAND_2GHZ]->n_channels *
+					sizeof(u16), GFP_KERNEL);
+
+	if (!coex->scan_channels)
+		return -ENOMEM;
+
+	/*Copy all  enabled 2G channels.*/
+	for (i = 0; i < wiphy->bands[IEEE80211_BAND_2GHZ]->n_channels; i++) {
+		struct ieee80211_channel *chan;
+
+		chan = &wiphy->bands[IEEE80211_BAND_2GHZ]->channels[i];
+
+		if (chan->flags & IEEE80211_CHAN_DISABLED)
+			continue;
+
+		coex->scan_channels[coex->num_scan_channels++] =
+					chan->center_freq;
+	}
+
+	return 0;
+}
+
 struct htcoex *ath6kl_htcoex_init(struct ath6kl_vif *vif)
 {
 	struct htcoex *coex;
@@ -289,6 +347,9 @@ struct htcoex *ath6kl_htcoex_init(struct ath6kl_vif *vif)
 	coex->request.dev = vif->ndev;
 	coex->request.wiphy = vif->ar->wiphy;
 
+	coex->num_scan_channels = 0;
+	coex->scan_channels = NULL;
+
 	spin_lock_init(&coex->bss_info_lock);
 	INIT_LIST_HEAD(&coex->bss_info_list);
 
@@ -305,9 +366,10 @@ void ath6kl_htcoex_deinit(struct ath6kl_vif *vif)
 	struct htcoex *coex = vif->htcoex_ctx;
 
 	if (coex) {
-		if (coex->flags & ATH6KL_HTCOEX_FLAGS_START)
+		if (coex->flags & ATH6KL_HTCOEX_FLAGS_START) {
 			del_timer(&coex->scan_timer);
-
+			htcoex_clear_scan_channels(vif);
+		}
 		htcoex_flush_bss_info(coex);
 
 		kfree(coex);
@@ -469,9 +531,16 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 		if (coex->scan_interval < ATH6KL_HTCOEX_SCAN_PERIOD)
 			coex->scan_interval = ATH6KL_HTCOEX_SCAN_PERIOD;
 
-		mod_timer(&coex->scan_timer, jiffies +
-			msecs_to_jiffies(coex->scan_interval));
-		coex->flags |= ATH6KL_HTCOEX_FLAGS_START;
+		/*htcoex set scan channels*/
+		if (htcoex_set_scan_channels(vif) == 0) {
+			mod_timer(&coex->scan_timer, jiffies +
+				msecs_to_jiffies(coex->scan_interval));
+			coex->flags |= ATH6KL_HTCOEX_FLAGS_START;
+		} else {
+			ath6kl_err("htcoex set scan channels failed\n");
+			WARN_ON(1);
+		}
+
 	} else
 		coex->flags &= ~ATH6KL_HTCOEX_FLAGS_START;
 
@@ -511,6 +580,8 @@ void ath6kl_htcoex_disconnect_event(struct ath6kl_vif *vif)
 		/* Back to full rates */
 		ath6kl_wmi_set_fix_rates(vif->ar->wmi, vif->fw_vif_idx,
 					 ATH6KL_HTCOEX_RATEMASK_FULL);
+		/*clear the scan channels*/
+		htcoex_clear_scan_channels(vif);
 	}
 
 	htcoex_flush_bss_info(coex);
@@ -527,6 +598,7 @@ int ath6kl_htcoex_config(struct ath6kl_vif *vif, u32 interval, u8 rate_rollback)
 
 	if (coex->flags & ATH6KL_HTCOEX_FLAGS_START) {
 		del_timer(&coex->scan_timer);
+		htcoex_clear_scan_channels(vif);
 		coex->flags &= ~ATH6KL_HTCOEX_FLAGS_START;
 		restart = 1;
 	}
@@ -540,9 +612,14 @@ int ath6kl_htcoex_config(struct ath6kl_vif *vif, u32 interval, u8 rate_rollback)
 		coex->flags |= ATH6KL_HTCOEX_FLAGS_ENABLED;
 
 		if (restart) {
-			mod_timer(&coex->scan_timer, jiffies +
-				msecs_to_jiffies(coex->scan_interval));
-			coex->flags |= ATH6KL_HTCOEX_FLAGS_START;
+			if (htcoex_set_scan_channels(vif) == 0) {
+				mod_timer(&coex->scan_timer, jiffies +
+					msecs_to_jiffies(coex->scan_interval));
+				coex->flags |= ATH6KL_HTCOEX_FLAGS_START;
+			} else {
+				ath6kl_err("htcoex set scan channels failed\n");
+				WARN_ON(1);
+			}
 		}
 
 		coex->rate_rollback_interval = rate_rollback;

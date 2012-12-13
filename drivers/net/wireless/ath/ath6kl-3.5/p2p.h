@@ -52,6 +52,13 @@ struct ieee80211_p2p_action_public {
 	u8 variable[0];
 } __packed;
 
+struct ieee80211_p2p_action_vendor {
+	u8 category;
+	u32 oui;
+	u8 action_subtype;
+	u8 variable[0];
+} __packed;
+
 struct ieee80211_p2p_noa_descriptor {
 	u8 count_or_type;	/* 255: continuous schedule, 0: reserved */
 	__le32 duration;
@@ -193,5 +200,6 @@ int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 			     u8 *buf, int buf_len);
 
 bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len);
+bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len);
 #endif
 

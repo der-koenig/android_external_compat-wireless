@@ -40,7 +40,7 @@ unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
 unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
 unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
-unsigned int ath6kl_scan_timeout = ATH6KL_SCAN_TIMEOUT;
+unsigned int ath6kl_scan_timeout;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -408,6 +408,21 @@ static int ath6kl_set_host_app_area(struct ath6kl *ar)
 		return -EIO;
 
 	return 0;
+}
+
+static u32 ath6kl_get_host_app_area(struct ath6kl *ar)
+{
+	u32 address, data;
+
+	address = ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_app_host_interest));
+	address = TARG_VTOP(ar->target_type, address);
+
+	if (ath6kl_diag_read32(ar, address, &data))
+		return -EIO;
+
+	address = TARG_VTOP(ar->target_type, data);
+
+	return address;
 }
 
 static inline void set_ac2_ep_map(struct ath6kl *ar,
@@ -2559,6 +2574,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ar->version.target_ver = le32_to_cpu(targ_info.version);
 	ar->target_type = le32_to_cpu(targ_info.type);
 	ar->wiphy->hw_version = le32_to_cpu(targ_info.version);
+
+	if (ath6kl_get_host_app_area(ar) != 0) {
+		ath6kl_err("Firmware already uploaded, reset target\n");
+		ath6kl_reset_device(ar, ar->target_type, true, true);
+		ret =  -EAGAIN;
+		goto err_power_off;
+	}
 
 	ret = ath6kl_init_hw_params(ar);
 	if (ret)

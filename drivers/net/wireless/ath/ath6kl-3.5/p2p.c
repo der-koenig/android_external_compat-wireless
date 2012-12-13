@@ -69,15 +69,25 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 
 int ath6kl_p2p_ps_reset_noa(struct p2p_ps_info *p2p_ps)
 {
-	if ((!p2p_ps) ||
-	    (p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
-		/*
-		 * This could happend if NOA_INFO event is later than
-		 * GO's DISCONNECT event.
-		 */
-		ath6kl_dbg(ATH6KL_DBG_INFO,
-			"failed to reset P2P-GO noa, %p\n", p2p_ps);
+	if (!p2p_ps)
 		return -1;
+
+	/*
+	 * This could happend if NOA_INFO event is later than
+	 * GO's DISCONNECT event.
+	 */
+	if (p2p_ps->vif->wdev.iftype != NL80211_IFTYPE_P2P_GO) {
+		/*
+		 * For P2P-Compat mode, need to clear target's
+		 * NOA if the target not to reset it after
+		 * P2P-GO teardown.
+		*/
+		if (!p2p_ps->vif->ar->p2p_compat) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"failed to reset P2P-GO noa, %p\n", p2p_ps);
+
+			return -1;
+		}
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
@@ -903,7 +913,6 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 						&container);
 
 						fw_conn->sche_re_tx_aging++;
-						fw_conn->sche_tx_queued--;
 					} else {
 						packet->recycle_count++;
 						list_add_tail(
@@ -1195,3 +1204,31 @@ bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len)
 						  (WLAN_OUI_TYPE_WFA_P2P))) &&
 		(action_frame->action_subtype == WLAN_P2P_GO_NEG_CONF));
 }
+
+bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len)
+{
+	struct ieee80211_mgmt *action = (struct ieee80211_mgmt *)frm;
+	struct ieee80211_p2p_action_public *action_public;
+	struct ieee80211_p2p_action_vendor *action_vendor;
+	u8 *action_start = (u8 *)(&action->u.action);
+
+	if (len < sizeof(struct ieee80211_p2p_action_vendor))
+		return false;
+
+	action_public = (struct ieee80211_p2p_action_public *)action_start;
+	if ((action_public->category == WLAN_CATEGORY_PUBLIC) &&
+		(action_public->action_code ==
+					WLAN_PUB_ACTION_VENDER_SPECIFIC) &&
+		(action_public->oui == cpu_to_be32((WLAN_OUI_WFA << 8) |
+						   (WLAN_OUI_TYPE_WFA_P2P))))
+		return true;
+
+	action_vendor = (struct ieee80211_p2p_action_vendor *)action_start;
+	if ((action_vendor->category == WLAN_CATEGORY_VENDOR_SPECIFIC) &&
+		(action_vendor->oui == cpu_to_be32((WLAN_OUI_WFA << 8) |
+						   (WLAN_OUI_TYPE_WFA_P2P))))
+		return true;
+
+	return false;
+}
+

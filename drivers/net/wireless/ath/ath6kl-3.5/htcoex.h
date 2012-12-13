@@ -17,7 +17,7 @@
 #ifndef HTCOEX_H
 #define HTCOEX_H
 
-#define ATH6KL_HTCOEX_SCAN_PERIOD			(30 * 1000) /* in ms */
+#define ATH6KL_HTCOEX_SCAN_PERIOD			(60 * 1000) /* in ms */
 
 /* in scan cycle */
 #define ATH6KL_HTCOEX_RATE_ROLLBACK			(0)
@@ -63,6 +63,9 @@ struct htcoex {
 
 	spinlock_t bss_info_lock;
 	struct list_head bss_info_list;
+
+	s8 num_scan_channels;
+	u16 *scan_channels;
 };
 
 enum {

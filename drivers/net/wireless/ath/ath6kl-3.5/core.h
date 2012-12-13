@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.222)
+#define __BUILD_VERSION_ (3.5.0.226)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -172,7 +172,8 @@
 #define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
 
 /* scan time out */
-#define ATH6KL_SCAN_TIMEOUT (8 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_LONG (8 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_SHORT (5 * HZ) /* in sec. */
 
 /* 4 way-handshake protect */
 #define ATH6KL_HANDSHAKE_PROC_TIMEOUT (3 * HZ) /* in sec. */
@@ -520,6 +521,14 @@ struct skb_hold_q {
 	u16 seq_no;
 };
 
+/*
+ * ATH6KL_MAX_WAIT_CONTINUS_PKT: the maximum number of rx
+ * continuous packets to be waited, the first packet will
+ * wait tid_timeout_setting time, the second will wait
+ * tid_timeout_setting / 2 etc.
+*/
+#define ATH6KL_MAX_WAIT_CONTINUOUS_PKT		3
+
 struct rxtid {
 	bool aggr;
 	u16 win_sz;
@@ -535,6 +544,7 @@ struct rxtid {
 	u8	tid;
 	u16	issue_timer_seq;
 	struct aggr_conn_info *aggr_conn;
+	u8 continuous_count;
 };
 
 struct rxtid_stats {
@@ -925,6 +935,7 @@ struct ath6kl_vif {
 	spinlock_t psq_mcast_lock;
 	int reconnect_flag;
 	u32 last_roc_id;
+	struct ieee80211_channel *last_roc_channel;
 	u32 last_cancel_roc_id;
 	u32 send_action_id;
 	bool probe_req_report;
@@ -1154,6 +1165,9 @@ struct ath6kl {
 
 	/* Retry P2P Action frame or not */
 	bool p2p_frame_retry;
+
+	/* Not to report P2P Frame to user if not in RoC period */
+	bool p2p_frame_not_report;
 
 	bool sche_scan;
 
