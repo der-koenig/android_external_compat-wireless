@@ -993,16 +993,23 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 				struct cfg80211_scan_request *request)
 {
 	struct ath6kl *ar = ath6kl_priv(ndev);
-	struct ath6kl_vif *vif = netdev_priv(ndev);
+	struct ath6kl_vif *vif = netdev_priv(ndev), *tmp_vif = NULL;
 	s8 n_channels = 0;
 	u16 *channels = NULL;
 	int ret = 0;
 	u32 force_fg_scan = 0;
+	u32 force_scan_interval = 0;
+	s8 conc_vif_active = 0;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
 	ath6kl_cfg80211_sscan_disable(vif);
+
+        list_for_each_entry(tmp_vif, &ar->vif_list, list)
+                if(test_bit(CONNECTED, &tmp_vif->flags))
+			if(tmp_vif != vif)
+				conc_vif_active = 1;
 
 	if (!ar->usr_bss_filter) {
 		clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
@@ -1049,8 +1056,15 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 			channels[i] = request->channels[i]->center_freq;
 	}
 
-	if (test_bit(CONNECTED, &vif->flags))
-		force_fg_scan = 1;
+        /* enable multi-chan-scan only if no vif is up */
+        if(!conc_vif_active) {
+                force_fg_scan = 1;
+        }
+
+        /* enable deterministic scan if sta is not in conn state */
+        if (!(test_bit(CONNECTED, &vif->flags))) {
+                force_scan_interval = ATH6KL_FG_SCAN_INTERVAL;
+        }
 
 	vif->scan_req = request;
 
@@ -1065,7 +1079,7 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		ret = ath6kl_wmi_beginscan_cmd(ar->wmi, vif->fw_vif_idx,
 						WMI_LONG_SCAN, force_fg_scan,
 						false, 0,
-						ATH6KL_FG_SCAN_INTERVAL,
+						force_scan_interval,
 						n_channels, channels,
 						request->no_cck,
 						request->rates);
@@ -1073,7 +1087,7 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		ret = ath6kl_wmi_startscan_cmd(ar->wmi, vif->fw_vif_idx,
 						WMI_LONG_SCAN, force_fg_scan,
 						false, 0,
-						ATH6KL_FG_SCAN_INTERVAL,
+						force_scan_interval,
 						n_channels, channels);
 	}
 	if (ret) {
