@@ -524,6 +524,8 @@ static int ath6kl_wmi_tx_status_event_rx(struct wmi *wmi, u8 *datap, int len,
 					 struct ath6kl_vif *vif)
 {
 	struct wmi_tx_status_event *ev;
+	u8 *last_mgmt_tx_frame;
+	size_t last_mgmt_tx_frame_len;
 	u32 id;
 
 	if (len < sizeof(*ev))
@@ -533,15 +535,28 @@ static int ath6kl_wmi_tx_status_event_rx(struct wmi *wmi, u8 *datap, int len,
 	id = le32_to_cpu(ev->id);
 	ath6kl_dbg(ATH6KL_DBG_WMI, "tx_status: id=%x ack_status=%u\n",
 		   id, ev->ack_status);
+	spin_lock_bh(&wmi->tx_frame_lock);
 	if (wmi->last_mgmt_tx_frame) {
-		cfg80211_mgmt_tx_status(vif->ndev, id,
-					wmi->last_mgmt_tx_frame,
-					wmi->last_mgmt_tx_frame_len,
-					!!ev->ack_status, GFP_ATOMIC);
+		last_mgmt_tx_frame = kmalloc(wmi->last_mgmt_tx_frame_len,
+					     GFP_ATOMIC);
+		if (!last_mgmt_tx_frame) {
+			spin_unlock_bh(&wmi->tx_frame_lock);
+			return -ENOMEM;
+		}
+		memcpy(last_mgmt_tx_frame, wmi->last_mgmt_tx_frame,
+			wmi->last_mgmt_tx_frame_len);
+		last_mgmt_tx_frame_len = wmi->last_mgmt_tx_frame_len;
 		kfree(wmi->last_mgmt_tx_frame);
 		wmi->last_mgmt_tx_frame = NULL;
 		wmi->last_mgmt_tx_frame_len = 0;
-	}
+		spin_unlock_bh(&wmi->tx_frame_lock);
+
+		cfg80211_mgmt_tx_status(vif->ndev, id, last_mgmt_tx_frame,
+					last_mgmt_tx_frame_len,
+					!!ev->ack_status, GFP_ATOMIC);
+		kfree(last_mgmt_tx_frame);
+	} else
+		spin_unlock_bh(&wmi->tx_frame_lock);
 
 	return 0;
 }
@@ -3573,10 +3588,13 @@ static int ath6kl_wmi_send_action_cmd(struct wmi *wmi, u8 if_idx, u32 id,
 		return -ENOMEM;
 	}
 
+	spin_lock_bh(&wmi->tx_frame_lock);
 	kfree(wmi->last_mgmt_tx_frame);
+
 	memcpy(buf, data, data_len);
 	wmi->last_mgmt_tx_frame = buf;
 	wmi->last_mgmt_tx_frame_len = data_len;
+	spin_unlock_bh(&wmi->tx_frame_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "send_action_cmd: id=%u freq=%u wait=%u "
 		   "len=%u\n", id, freq, wait, data_len);
@@ -3611,10 +3629,12 @@ static int __ath6kl_wmi_send_mgmt_cmd(struct wmi *wmi, u8 if_idx, u32 id,
 		return -ENOMEM;
 	}
 
+	spin_lock_bh(&wmi->tx_frame_lock);
 	kfree(wmi->last_mgmt_tx_frame);
 	memcpy(buf, data, data_len);
 	wmi->last_mgmt_tx_frame = buf;
 	wmi->last_mgmt_tx_frame_len = data_len;
+	spin_unlock_bh(&wmi->tx_frame_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "send_action_cmd: id=%u freq=%u wait=%u "
 		   "len=%u\n", id, freq, wait, data_len);
@@ -4155,6 +4175,7 @@ void *ath6kl_wmi_init(struct ath6kl *dev)
 		return NULL;
 
 	spin_lock_init(&wmi->lock);
+	spin_lock_init(&wmi->tx_frame_lock);
 
 	wmi->parent_dev = dev;
 

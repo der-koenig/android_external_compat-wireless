@@ -692,6 +692,7 @@ enum ath6kl_dev_state {
 	SKIP_SCAN,
 	ROAM_TBL_PEND,
 	FIRST_BOOT,
+	RECOVERY_CLEANUP,
 };
 
 enum ath6kl_state {
@@ -845,7 +846,6 @@ struct ath6kl {
 	struct ath6kl_btcoex btcoex_info;
 
 	struct ath6kl_fw_recovery {
-		bool enable;
 		struct work_struct recovery_work;
 		unsigned long err_reason;
 		unsigned long hb_poll;
@@ -853,6 +853,7 @@ struct ath6kl {
 		u32 seq_num;
 		bool hb_pending;
 		u8 hb_misscnt;
+		bool enable;
 	} fw_recovery;
 
 #ifdef CONFIG_ATH6KL_DEBUG

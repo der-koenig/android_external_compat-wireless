@@ -36,6 +36,7 @@ static unsigned int wow_mode;
 static unsigned int uart_debug;
 static unsigned int ar6k_clock = 19200000;
 static unsigned short locally_administered_bit;
+static unsigned int recovery_enable;
 static unsigned int heart_beat_poll = 2000;
 
 module_param(debug_mask, uint, 0644);
@@ -45,9 +46,11 @@ module_param(wow_mode, uint, 0644);
 module_param(uart_debug, uint, 0644);
 module_param(ar6k_clock, uint, 0644);
 module_param(locally_administered_bit, ushort, 0644);
+module_param(recovery_enable, uint, 0644);
 module_param(heart_beat_poll, uint, 0644);
 MODULE_PARM_DESC(heart_beat_poll, "Enable fw error detection periodic" \
 		 "polling. This also specifies the polling interval in msecs");
+MODULE_PARM_DESC(recovery_enable, "Enable recovery from firmware error");
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -1938,6 +1941,10 @@ int ath6kl_core_init(struct ath6kl *ar)
 		goto err_rxbuf_cleanup;
 	}
 #endif
+	ar->fw_recovery.enable = !!recovery_enable;
+	if (!ar->fw_recovery.enable)
+		return ret;
+
 	if (heart_beat_poll &&
 	    test_bit(ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,
 		     ar->fw_capabilities))
@@ -2051,8 +2058,6 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	spin_unlock_bh(&ar->list_lock);
 
 	clear_bit(WMI_READY, &ar->flag);
-
-	del_timer_sync(&ar->fw_recovery.hb_timer);
 
 	/*
 	 * After wmi_shudown all WMI events will be dropped. We
