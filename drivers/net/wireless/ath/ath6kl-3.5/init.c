@@ -41,6 +41,7 @@ unsigned int ath6kl_wow_gpio = 9;
 unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
 unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
 unsigned int ath6kl_scan_timeout;
+unsigned int ath6kl_roam_mode;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -67,6 +68,7 @@ module_param(ath6kl_p2p, uint, 0644);
 module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
 module_param(ath6kl_scan_timeout, uint, 0644);
+module_param(ath6kl_roam_mode, uint, 0644);
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
 bool ktk_enable;
 module_param(ktk_enable, bool, 0644);
@@ -617,10 +619,18 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 		vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
 						 SCAN_CONNECTED_CTRL_FLAGS |
 						 ACTIVE_SCAN_CTRL_FLAGS |
-						 ROAM_SCAN_CTRL_FLAGS |
 						 ENABLE_AUTO_CTRL_FLAGS);
 	}
+
+	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
+		vif->sc_params.scan_ctrl_flags |= ROAM_SCAN_CTRL_FLAGS;
+
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
+
+	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
+		vif->sc_params.pas_chdwell_time =
+			ATH6KL_SCAN_PAS_DEWELL_TIME_WITHOUT_ROAM;
+
 }
 
 /*

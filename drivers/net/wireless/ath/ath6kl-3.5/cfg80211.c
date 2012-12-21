@@ -82,6 +82,18 @@ static struct ieee80211_rate ath6kl_rates[] = {
 #define ath6kl_g_rates_size    12
 #define ath6kl_b_rates_size    4
 
+/* 802.1d to AC mapping. Refer pg 57 of WMM-test-plan-v1.2 */
+static const u8 up_to_ac[] = {
+	WMM_AC_BE,
+	WMM_AC_BK,
+	WMM_AC_BK,
+	WMM_AC_BE,
+	WMM_AC_VI,
+	WMM_AC_VI,
+	WMM_AC_VO,
+	WMM_AC_VO,
+};
+
 static struct ieee80211_channel ath6kl_2ghz_channels[] = {
 	CHAN2G(1, 2412, 0),
 	CHAN2G(2, 2417, 0),
@@ -634,6 +646,145 @@ static bool ath6kl_is_valid_iftype(struct ath6kl *ar, enum nl80211_iftype type,
 	return false;
 }
 
+/* avoid using roam in p2p, ap, adhoc mode, and  current USB devices  */
+/* use in connect_cmd, disconnect event, ap_start */
+/* only support lrssi roam at this time*/
+void ath6kl_judge_roam_parameter(
+			struct ath6kl_vif *vif,
+			bool call_on_disconnect)
+{
+	struct ath6kl *ar = vif->ar;
+	u8 connected_count = 0;
+	bool lrssi_scan_enable = true;
+	struct ath6kl_vif *vif_temp;
+
+	if (ar->roam_mode == ATH6KL_MODULEROAM_DISABLE ||
+		ar->roam_mode == ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN) {
+		lrssi_scan_enable = false;
+		goto DONE;
+	} else if (ar->roam_mode == ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI) {
+
+		lrssi_scan_enable = true;
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			if (vif->fw_vif_idx == vif_temp->fw_vif_idx)
+				continue;
+			if (test_bit(CONNECTED, &vif_temp->flags))
+				connected_count++;
+
+			if (call_on_disconnect) {
+				if ((connected_count == 1) &&
+					(vif_temp->wdev.iftype ==
+						NL80211_IFTYPE_STATION)) {
+					lrssi_scan_enable = true;
+				} else {
+					lrssi_scan_enable = false;
+				}
+			} else if (connected_count) {
+				lrssi_scan_enable = false;
+				goto DONE;
+			}
+		}
+	} else { /* ATH6KL_MODULEROAM_ENABLE_ALL */
+		lrssi_scan_enable = true;
+	}
+
+	/* disable roam when it is in any other mode */
+	if (!call_on_disconnect &&
+		vif->wdev.iftype != NL80211_IFTYPE_STATION)
+		lrssi_scan_enable = false;
+
+DONE:
+	if (lrssi_scan_enable) {
+		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+				ar->low_rssi_roam_params.lrssi_scan_period,
+				ar->low_rssi_roam_params.lrssi_scan_threshold,
+				ar->low_rssi_roam_params.lrssi_roam_threshold,
+				ar->low_rssi_roam_params.roam_rssi_floor);
+	} else {
+		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+			0xFFFF, 0, 0, 100);
+	}
+
+}
+
+static void switch_tid_rx_timeout(
+		struct ath6kl_vif *vif,
+		bool mcc)
+{
+	u8 i, j = 0;
+	struct aggr_conn_info *aggr_conn;
+	struct rxtid *rxtid;
+
+	for (i = 0; i < AP_MAX_NUM_STA; i++) {
+		aggr_conn = vif->sta_list[i].aggr_conn_cntxt;
+		for (j = 0; j < NUM_OF_TIDS; j++) {
+			rxtid = AGGR_GET_RXTID(aggr_conn, j);
+			spin_lock_bh(&rxtid->lock);
+			switch (up_to_ac[j]) {
+			case WMM_AC_BK:
+			case WMM_AC_BE:
+			case WMM_AC_VI:
+				if (mcc)
+					aggr_conn->tid_timeout_setting[j] =
+						MCC_AGGR_RX_TIMEOUT;
+				else
+					aggr_conn->tid_timeout_setting[j] =
+						AGGR_RX_TIMEOUT;
+				break;
+			case WMM_AC_VO:
+				if (mcc)
+					aggr_conn->tid_timeout_setting[j] =
+						MCC_AGGR_RX_TIMEOUT_VO;
+				else
+					aggr_conn->tid_timeout_setting[j] =
+						AGGR_RX_TIMEOUT_VO;
+				break;
+			}
+			spin_unlock_bh(&rxtid->lock);
+		}
+	}
+}
+
+/* This function is used by sta/p2pclient/go interface to switch paramters
+  * needed for MCC/connection specific parameters
+  */
+void ath6kl_switch_parameter_based_on_connection(
+			struct ath6kl_vif *vif,
+			bool call_on_disconnect)
+{
+	struct ath6kl *ar = vif->ar;
+	u8 connected_count = 0;
+	struct ath6kl_vif *vif_temp;
+	bool mcc = false;
+	u16 pre_vifch = 0;
+
+	list_for_each_entry(vif_temp, &ar->vif_list, list) {
+		if (call_on_disconnect &&
+			vif->fw_vif_idx == vif_temp->fw_vif_idx)
+			continue;
+		if (test_bit(CONNECTED, &vif_temp->flags)) {
+			connected_count++;
+			if (pre_vifch == 0) {
+				pre_vifch = vif_temp->bss_ch;
+			} else if (vif_temp->bss_ch != 0 &&
+						pre_vifch != vif_temp->bss_ch) {
+				mcc = true;
+			}
+		}
+	}
+
+	if (connected_count) {
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			if (test_bit(CONNECTED, &vif_temp->flags)) {
+				if (call_on_disconnect &&
+					vif->fw_vif_idx == vif_temp->fw_vif_idx)
+					continue;
+				switch_tid_rx_timeout(vif_temp, mcc);
+			}
+		}
+	}
+}
+
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				   struct cfg80211_connect_params *sme)
 {
@@ -691,18 +842,8 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				vif->sc_params.max_dfsch_act_time,
 				vif->sc_params.maxact_scan_per_ssid);
 
-	/* avoid using roam in p2p, ap, adhoc mode, and  current USB devices */
-	if (ar->hif_type == ATH6KL_HIF_TYPE_USB ||
-		(vif->wdev.iftype != NL80211_IFTYPE_STATION)) {
-		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
-			0xFFFF, 0, 0, 100);
-	} else {
-		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
-				ar->low_rssi_roam_params.lrssi_scan_period,
-				ar->low_rssi_roam_params.lrssi_scan_threshold,
-				ar->low_rssi_roam_params.lrssi_roam_threshold,
-				ar->low_rssi_roam_params.roam_rssi_floor);
-	}
+	ath6kl_judge_roam_parameter(vif, false);
+
 	ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi, RATECTRL_MODE_PERONLY);
 
 	if (sme->ie && (sme->ie_len > 0)) {
@@ -1250,6 +1391,9 @@ static int ath6kl_scan_timeout_cal(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif;
 	u16 connected_count = 0;
+
+	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
+		return ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM;
 
 	if (ath6kl_scan_timeout &&
 		(ath6kl_scan_timeout < ATH6KL_SCAN_TIMEOUT_SHORT))
@@ -2097,6 +2241,9 @@ static int ath6kl_cfg80211_del_iface(struct wiphy *wiphy,
 	clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx,
 				NONE_BSS_FILTER, 0);
+
+	ath6kl_judge_roam_parameter(vif, true);
+	ath6kl_switch_parameter_based_on_connection(vif, true);
 
 	spin_lock_bh(&ar->list_lock);
 	list_del(&vif->list);
@@ -4738,6 +4885,23 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 		ar->sche_scan = ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_ENABLE_SCHE_SCAN);
 
+	if (ath6kl_roam_mode == ATH6KL_MODULEROAM_DEFAULT) {
+
+		if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
+			ar->roam_mode = ATH6KL_SDIO_DEFAULT_ROAM_MODE;
+		else
+			ar->roam_mode = ATH6KL_USB_DEFAULT_ROAM_MODE;
+
+	} else {
+		ar->roam_mode = ath6kl_roam_mode;
+	}
+
+	if (ar->sche_scan &&
+		 ar->roam_mode != ATH6KL_MODULEROAM_DISABLE) {
+		ath6kl_err("Roam shall be exclusive with schedule scan. Disabled\n");
+		ar->roam_mode = ATH6KL_MODULEROAM_DISABLE;
+	}
+
 	return ar;
 }
 
@@ -4861,8 +5025,7 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 
 	wiphy->flags |= WIPHY_FLAG_AP_UAPSD;
 
-	if ((ar->hif_type == ATH6KL_HIF_TYPE_SDIO) &&
-	    (!ar->sche_scan))
+	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
 		wiphy->flags |= WIPHY_FLAG_SUPPORTS_FW_ROAM;
 
 	wiphy->wowlan.flags = WIPHY_WOWLAN_ANY |
@@ -5337,4 +5500,3 @@ bool ath6kl_android_need_wow_suspend(struct ath6kl *ar)
 	return isConnected;
 }
 #endif
-

@@ -119,5 +119,6 @@ int ath6kl_ap_acl_config_mac_list(struct ath6kl_vif *vif,
 				u8 *mac_addr, bool removed);
 int ath6kl_ap_acl_config_mac_list_reset(struct ath6kl_vif *vif);
 int ath6kl_ap_acl_dump(struct ath6kl *ar, u8 *buf, int buf_len);
+int ath6kl_ap_ht_update_ies(struct ath6kl_vif *vif);
 #endif
 

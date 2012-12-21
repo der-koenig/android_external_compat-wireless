@@ -750,3 +750,28 @@ int ath6kl_ap_acl_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 	return len;
 }
 
+int ath6kl_ap_ht_update_ies(struct ath6kl_vif *vif)
+{
+	int ret = 0;
+
+	if (vif->nw_type != AP_NETWORK)
+		return 0;
+
+	/* EV117149 WAR : Only overwrite it for 5G band. */
+	if (vif->next_chan > 4000) {
+		u8 opmode = HT_INFO_OPMODE_PROT_PURE;
+
+		if (vif->sta_no_ht_num > 0)
+			opmode = HT_INFO_OPMODE_PROT_MIXED;
+
+		/* TODO : RIFS mode & OBSS-nonHT-STA-Present */
+
+		ret = ath6kl_wmi_set_ht_op_cmd(vif->ar->wmi,
+						vif->fw_vif_idx,
+						0,
+						opmode);
+	}
+
+	return ret;
+}
+

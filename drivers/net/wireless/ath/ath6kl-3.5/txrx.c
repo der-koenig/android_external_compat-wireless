@@ -440,7 +440,7 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		ath6kl_err("wmi ctrl ep full, dropping pkt : 0x%p, len:%d\n",
 			   skb, skb->len);
 	} else
-		cookie = ath6kl_alloc_cookie(ar);
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (cookie == NULL) {
 		spin_unlock_bh(&ar->lock);
@@ -632,7 +632,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar);
+	cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
@@ -873,7 +873,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 	 */
 	if (ar->ac_stream_pri_map[ar->ep2ac_map[endpoint]] <
 	    ar->hiac_stream_active_pri &&
-	    ar->cookie_count <=
+	    ar->cookie_data.cookie_count <=
 			target->endpoint[endpoint].tx_drop_packet_threshold){
 		/*
 		 * Give preference to the highest priority stream by
@@ -2512,7 +2512,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar);
+	cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);

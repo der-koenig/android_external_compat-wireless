@@ -756,7 +756,7 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 cleanup_recv_urb:
 	ath6kl_usb_cleanup_recv_urb(urb_context);
 
-	if (status == 0) {
+	if (status == 0 || urb->status == -EPROTO) {
 		if (pipe->urb_cnt >= pipe->urb_cnt_thresh) {
 			/* our free urbs are piling up, post more transfers */
 			ath6kl_usb_post_recv_transfers(pipe,
@@ -920,7 +920,7 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 
 	ath6kl_usb_free_urb_to_pipe(urb_context->pipe, urb_context);
 
-	if (status == 0) {
+	if (status == 0 || urb->status == -EPROTO) {
 		if (pipe->urb_cnt >= pipe->urb_cnt_thresh)
 			/* our free urbs are piling up, post more transfers */
 			hif_usb_post_recv_bundle_transfers(pipe,

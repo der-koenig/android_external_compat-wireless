@@ -27,7 +27,7 @@ extern unsigned int ath6kl_p2p;
 extern unsigned int ath6kl_vap;
 extern unsigned int ath6kl_wow_ext;
 extern unsigned int ath6kl_scan_timeout;
-
+extern unsigned int ath6kl_roam_mode;
 
 struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 					enum nl80211_iftype type,
@@ -71,5 +71,12 @@ bool ath6kl_sched_scan_trigger(struct ath6kl_vif *vif);
 void ath6kl_scan_timer_handler(unsigned long ptr);
 
 void ath6kl_shprotect_timer_handler(unsigned long ptr);
+
+void ath6kl_judge_roam_parameter(struct ath6kl_vif *vif,
+				bool call_on_disconnect);
+
+void ath6kl_switch_parameter_based_on_connection(
+			struct ath6kl_vif *vif,
+			bool call_on_disconnect);
 
 #endif /* ATH6KL_CFG80211_H */

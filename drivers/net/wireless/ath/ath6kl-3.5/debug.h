@@ -108,6 +108,23 @@ enum ATH6KL_MODULE_P2P {
 	ATH6KL_MODULEP2P_CONCURRENT_AP			= BIT(8),
 };
 
+enum ATH6KL_MODULE_ROAM {
+	/* Not set, obey driver default */
+	ATH6KL_MODULEROAM_DEFAULT		= BIT(0),
+
+	/* Enable roam but disable at multiple connection */
+	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI		= BIT(1),
+
+	/* Enabel roam but disable lrssi scan */
+	ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN		= BIT(2),
+
+	/* Enable roam at all time */
+	ATH6KL_MODULEROAM_ENABLE_ALL		= BIT(3),
+
+	/* Disable roam */
+	ATH6KL_MODULEROAM_DISABLE		= BIT(4),
+};
+
 enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_CREDIT	= BIT(0),
 	/* hole */

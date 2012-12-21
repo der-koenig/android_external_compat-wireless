@@ -2660,6 +2660,17 @@ struct wmi_set_ht_cap {
 	u8 max_ampdu_len_exp;
 } __packed;
 
+#define HT_INFO_OPMODE_PROT_PURE	(0)	/* No protection mode */
+#define HT_INFO_OPMODE_PROT_MAY_LEGACY	(1)	/* Nonmember protection mode */
+#define HT_INFO_OPMODE_PROT_HT20_ASSOC	(2)	/* HT20 protection mode */
+#define HT_INFO_OPMODE_PROT_MIXED	(3)	/* NonHT mixed mode */
+
+/* HT Info parameters */
+struct wmi_set_ht_op {
+	u8 sta_chan_width;
+	u8 ap_ht_info;	/* BO-B1 : ht_opmode */
+} __packed;
+
 /* beacon interval */
 struct wmi_set_beacon_intvl {
 	u16 beacon_interval;
@@ -2995,14 +3006,15 @@ struct wmi_set_arp_ns_offload_cmd {
  *
  */
 enum WMI_MCC_PROFILE {
-	WMI_MCC_PROFILE_STA50 = 0,
-	WMI_MCC_PROFILE_STA20 = 1,
-	WMI_MCC_PROFILE_STA80 = 2,
-	WMI_MCC_PROFILE_MAX = 3,
+	WMI_MCC_PROFILE_STA50 = BIT(0),
+	WMI_MCC_PROFILE_STA20 = BIT(1),
+	WMI_MCC_PROFILE_STA80 = BIT(2),
+	WMI_MCC_CTS_ENABLE    = BIT(4),
+	WMI_MCC_PSPOLL_ENABLE = BIT(5),
 };
 
 struct wmi_set_mcc_profile_cmd {
-	u8 mcc_profile;
+	u32 mcc_profile;
 } __packed;
 
 
@@ -3209,6 +3221,9 @@ int ath6kl_wmi_set_ht_cap_cmd(struct wmi *wmi, u8 if_idx,
 	u8 band, u8 chan_width_40M_supported,
 	u8 short_GI, u8 intolerance_40MHz);
 
+int ath6kl_wmi_set_ht_op_cmd(struct wmi *wmi, u8 if_idx,
+	u8 sta_chan_width, u8 opmode);
+
 int ath6kl_wmi_set_dtim_cmd(struct wmi *wmi, u8 if_idx, u32 dtim);
 
 int ath6kl_wmi_ap_set_apsd(struct wmi *wmi, u8 if_idx, u8 enable);
@@ -3263,5 +3278,5 @@ int ath6kl_wmi_allow_aggr_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wmi_set_credit_bypass(struct wmi *wmi, u8 if_idx, u8 eid,
 	u8 restore, u16 threshold);
 int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs);
-int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u8 mcc_profile);
+int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile);
 #endif /* WMI_H */
