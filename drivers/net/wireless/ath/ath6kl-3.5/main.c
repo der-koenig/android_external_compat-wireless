@@ -878,6 +878,48 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 	return;
 }
 
+int ath6kl_fw_watchdog_enable(struct ath6kl *ar)
+{
+	u32 param;
+	int ret;
+
+	ret = ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param);
+
+	if (ret != 0)
+		return ret;
+
+	param |= HI_OPTION_FW_WATCHDOG_ENABLE;
+
+	ret = ath6kl_diag_write32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		param);
+
+	return ret;
+}
+
+int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar)
+{
+	u32 param;
+	int ret;
+
+	ret = ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param);
+
+	if (ret != 0)
+		return ret;
+
+	param |= HI_OPTION_FW_CRASH_COLD_RESET;
+
+	ret = ath6kl_diag_write32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		param);
+
+	return ret;
+}
+
 static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 {
 	u8 index;
@@ -1512,9 +1554,6 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 {
 	struct ath6kl *ar = vif->ar;
 
-	ath6kl_judge_roam_parameter(vif, true);
-	ath6kl_switch_parameter_based_on_connection(vif, true);
-
 	if (vif->nw_type == AP_NETWORK) {
 		if (!ath6kl_remove_sta(vif, bssid, prot_reason_status))
 			return;
@@ -1540,6 +1579,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			vif->bss_ch = 0;
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
+			ath6kl_judge_roam_parameter(vif, true);
+			ath6kl_switch_parameter_based_on_connection(vif, true);
 		}
 		return;
 	} else if (vif->nw_type == INFRA_NETWORK) {
@@ -1578,6 +1619,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		    ((reason == ASSOC_FAILED) && (prot_reason_status == 0x0)
 		     && (vif->reconnect_flag == 1))) {
 			set_bit(CONNECTED, &vif->flags);
+			ath6kl_judge_roam_parameter(vif, false);
+			ath6kl_switch_parameter_based_on_connection(vif, false);
 			return;
 		}
 	}
@@ -1604,6 +1647,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 
 	/* Hook disconnection event */
 	ath6kl_htcoex_disconnect_event(vif);
+	ath6kl_judge_roam_parameter(vif, true);
+	ath6kl_switch_parameter_based_on_connection(vif, true);
 }
 
 struct ath6kl_vif *ath6kl_vif_first(struct ath6kl *ar)

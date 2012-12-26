@@ -337,6 +337,12 @@ struct host_interest {
 /* Ext patch download finished after WMI ready*/
 #define HI_OPTION_EXT_FW_DOWNLOAD_DONE          0x80000
 
+/*Enable cold reset when firmware crash*/
+#define HI_OPTION_FW_CRASH_COLD_RESET          0x100000
+
+/*Enable watchdog*/
+#define HI_OPTION_FW_WATCHDOG_ENABLE          0x200000
+
 /* Fw Mode/SubMode Mask
 |------------------------------------------------------------------------------|
 |   SUB   |   SUB   |   SUB   |  SUB    |         |         |         |

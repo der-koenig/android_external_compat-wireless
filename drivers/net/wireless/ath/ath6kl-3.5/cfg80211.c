@@ -759,9 +759,6 @@ void ath6kl_switch_parameter_based_on_connection(
 	u16 pre_vifch = 0;
 
 	list_for_each_entry(vif_temp, &ar->vif_list, list) {
-		if (call_on_disconnect &&
-			vif->fw_vif_idx == vif_temp->fw_vif_idx)
-			continue;
 		if (test_bit(CONNECTED, &vif_temp->flags)) {
 			connected_count++;
 			if (pre_vifch == 0) {
@@ -783,6 +780,11 @@ void ath6kl_switch_parameter_based_on_connection(
 			}
 		}
 	}
+
+	if (mcc)
+		set_bit(MCC_ENABLED, &ar->flag);
+	else
+		clear_bit(MCC_ENABLED, &ar->flag);
 }
 
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
@@ -2606,6 +2608,7 @@ static int ath6kl_get_station(struct wiphy *wiphy, struct net_device *dev,
 			return 0;
 		}
 	} else {
+		sinfo->txrate.flags = 0;
 		if (is_rate_legacy(rate)) {
 			sinfo->txrate.legacy = rate / 100;
 		} else if (is_rate_ht20(rate, &mcs, &sgi)) {
@@ -3874,6 +3877,8 @@ static int ath6kl_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 
 	ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
 	clear_bit(CONNECTED, &vif->flags);
+	ath6kl_judge_roam_parameter(vif, true);
+	ath6kl_switch_parameter_based_on_connection(vif, true);
 
 	up(&ar->sem);
 

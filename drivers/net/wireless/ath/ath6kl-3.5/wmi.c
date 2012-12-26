@@ -1943,8 +1943,11 @@ int ath6kl_wmi_cmd_send(struct wmi *wmi, u8 if_idx, struct sk_buff *skb,
 	int ret;
 	u16 info1;
 
-	if (WARN_ON(skb == NULL || (if_idx > (wmi->parent_dev->vif_max - 1))))
+	if (WARN_ON(skb == NULL ||
+			(if_idx > (wmi->parent_dev->vif_max - 1)))) {
+		dev_kfree_skb(skb);
 		return -EINVAL;
+	}
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "wmi tx id %d len %d flag %d\n",
 		   cmd_id, skb->len, sync_flag);
@@ -2481,8 +2484,10 @@ static int ath6kl_wmi_data_sync_send(struct wmi *wmi, struct sk_buff *skb,
 	struct wmi_data_hdr *data_hdr;
 	int ret;
 
-	if (WARN_ON(skb == NULL || ep_id == wmi->ep_id))
+	if (WARN_ON(skb == NULL || ep_id == wmi->ep_id)) {
+		dev_kfree_skb(skb);
 		return -EINVAL;
+	}
 
 	skb_push(skb, sizeof(struct wmi_data_hdr));
 
@@ -2522,10 +2527,8 @@ static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx)
 	spin_unlock_bh(&wmi->lock);
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
-	if (!skb) {
-		ret = -ENOMEM;
-		goto free_skb;
-	}
+	if (!skb)
+		return -ENOMEM;
 
 	cmd = (struct wmi_sync_cmd *) skb->data;
 
@@ -2548,7 +2551,7 @@ static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx)
 	 * then do not send the Synchronize cmd on the control ep
 	 */
 	if (ret)
-		goto free_skb;
+		goto free_cmd_skb;
 
 	/*
 	 * Send sync cmd followed by sync data messages on all
@@ -2558,7 +2561,7 @@ static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx)
 				  NO_SYNC_WMIFLAG);
 
 	if (ret)
-		goto free_skb;
+		goto free_data_skb;
 
 	/* cmd buffer sent, we no longer own it */
 	skb = NULL;
@@ -2575,24 +2578,25 @@ static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx)
 		    ath6kl_wmi_data_sync_send(wmi, data_sync_bufs[index].skb,
 					      ep_id, if_idx);
 
-		if (ret)
-			break;
-
 		data_sync_bufs[index].skb = NULL;
+
+		if (ret)
+			goto free_data_skb;
 	}
 
-free_skb:
+	return 0;
+free_cmd_skb:
 	/* free up any resources left over (possibly due to an error) */
 	if (skb)
 		dev_kfree_skb(skb);
 
+free_data_skb:
 	for (index = 0; index < num_pri_streams; index++) {
 		if (data_sync_bufs[index].skb != NULL) {
 			dev_kfree_skb((struct sk_buff *)data_sync_bufs[index].
 				      skb);
 		}
 	}
-
 	return ret;
 }
 
@@ -3137,18 +3141,22 @@ int ath6kl_wmi_test_cmd(struct wmi *wmi, void *buf, size_t len)
 
 s32 ath6kl_wmi_get_rate(s8 rate_index)
 {
+	u32 sgi = 0;
 	if (rate_index == RATE_AUTO)
 		return 0;
 
-	return wmi_rate_tbl[(u32) rate_index][0];
+	sgi = (rate_index & 0x80) ? 1 : 0;
+	return wmi_rate_tbl[(u32) (rate_index&0x7f)][sgi];
 }
 
 s32 ath6kl_wmi_get_rate_ar6004(s8 rate_index)
 {
+	u32 sgi = 0;
 	if (rate_index == RATE_AUTO)
 		return 0;
 
-	return wmi_rate_tbl_ar6004[(u32) (rate_index&0x7f)][0];
+	sgi = (rate_index & 0x80) ? 1 : 0;
+	return wmi_rate_tbl_ar6004[(u32) (rate_index&0x7f)][sgi];
 }
 
 static int ath6kl_wmi_get_pmkid_list_event_rx(struct wmi *wmi, u8 *datap,

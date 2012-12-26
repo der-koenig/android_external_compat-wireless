@@ -959,16 +959,18 @@ void ath6kl_tx_complete(struct htc_target *target,
 {
 	struct ath6kl *ar = target->dev->ar;
 	struct sk_buff_head skb_queue;
-	struct htc_packet *packet;
+	struct htc_packet *packet = NULL;
 	struct sk_buff *skb;
 	struct ath6kl_cookie *ath6kl_cookie;
 	u32 map_no = 0;
 	int status;
-	enum htc_endpoint_id eid;
+	enum htc_endpoint_id eid = 0;
 	bool wake_event = false;
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
 	struct ath6kl_vif *vif;
+	struct htc_endpoint *endpoint = NULL;
+	int txq_depth;
 
 	skb_queue_head_init(&skb_queue);
 
@@ -1073,18 +1075,41 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 	__skb_queue_purge(&skb_queue);
 
-	/* FIXME: Locking */
-	spin_lock_bh(&ar->list_lock);
-	list_for_each_entry(vif, &ar->vif_list, list) {
-		if ((test_bit(CONNECTED, &vif->flags) ||
-			 test_bit(TESTMODE_EPPING, &ar->flag)) &&
-		    !flushing[vif->fw_vif_idx]) {
-			spin_unlock_bh(&ar->list_lock);
-			netif_wake_queue(vif->ndev);
-			spin_lock_bh(&ar->list_lock);
+
+	if (test_bit(MCC_ENABLED, &ar->flag)) {
+		endpoint = &ar->htc_target->endpoint[eid];
+		if (ar && endpoint && packet && ar->htc_target &&
+			eid >= ENDPOINT_2 && eid <= ENDPOINT_5) {
+			struct list_head *tx_queue;
+
+			tx_queue = &endpoint->txq;
+			spin_lock_bh(&ar->htc_target->tx_lock);
+			txq_depth = get_queue_depth(tx_queue);
+			spin_unlock_bh(&ar->htc_target->tx_lock);
+
+			if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
+				ath6kl_p2p_flowctrl_netif_state_transition(
+					ar, packet->connid,
+					ATH6KL_P2P_FLOWCTRL_NETIF_WAKE, 0);
+			else
+				ath6kl_p2p_flowctrl_netif_state_transition(
+					ar, packet->connid,
+					ATH6KL_P2P_FLOWCTRL_NETIF_STOP, 0);
 		}
+	} else {
+		/* FIXME: Locking */
+		spin_lock_bh(&ar->list_lock);
+		list_for_each_entry(vif, &ar->vif_list, list) {
+			if ((test_bit(CONNECTED, &vif->flags) ||
+				test_bit(TESTMODE_EPPING, &ar->flag)) &&
+				!flushing[vif->fw_vif_idx]) {
+				spin_unlock_bh(&ar->list_lock);
+				netif_wake_queue(vif->ndev);
+				spin_lock_bh(&ar->list_lock);
+			}
+		}
+		spin_unlock_bh(&ar->list_lock);
 	}
-	spin_unlock_bh(&ar->list_lock);
 
 	if (wake_event)
 		wake_up(&ar->event_wq);

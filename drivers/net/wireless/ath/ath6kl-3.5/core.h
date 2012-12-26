@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.232)
+#define __BUILD_VERSION_ (3.5.0.234)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -289,6 +289,12 @@ struct ath6kl_android_wifi_priv_cmd {
 	char *buf;
 	int used_len;
 	int total_len;
+};
+
+enum ath6kl_recovery_mode {
+	ATH6KL_RECOVERY_MODE_NONE = 0,
+	ATH6KL_RECOVERY_MODE_WARM,
+	ATH6KL_RECOVERY_MODE_COLD,
 };
 
 #define ATH6KL_FW_API2_FILE "fw-2.bin"
@@ -1023,6 +1029,7 @@ enum ath6kl_dev_state {
 	USB_REMOTE_WKUP,
 	INIT_DEFER_PROGRESS,
 	DOWNLOAD_FIRMWARE_EXT,
+	MCC_ENABLED,
 };
 
 enum ath6kl_state {
@@ -1503,8 +1510,10 @@ int ath6kl_android_enable_wow_default(struct ath6kl *ar);
 bool ath6kl_android_need_wow_suspend(struct ath6kl *ar);
 #endif
 
+int ath6kl_fw_watchdog_enable(struct ath6kl *ar);
+int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar);
+
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
 extern unsigned int htc_bundle_send_timer;
-
 #endif /* CORE_H */
