@@ -2256,7 +2256,7 @@ struct wmi_tx_complete_event {
  * !!! Warning !!!
  * -Changing the following values needs compilation of both driver and firmware
  */
-#define AP_MAX_NUM_STA          10
+#define AP_MAX_NUM_STA          15
 
 /* Spl. AID used to set DTIM flag in the beacons */
 #define MCAST_AID               0xFF
