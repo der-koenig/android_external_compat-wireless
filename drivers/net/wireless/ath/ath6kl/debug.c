@@ -104,8 +104,8 @@ static const struct ath6kl_diag_reg_info diag_reg[] = {
 	{ 0x28000, 0x28900, "MAC PCU register & keycache" },
 	{ 0x20800, 0x20a40, "QCU" },
 	{ 0x21000, 0x212f0, "DCU" },
-	{ 0x4000,  0x42e4, "RTC" },
-	{ 0x540000, 0x540000 + (256 * 1024), "RAM" },
+	{ 0x900000, 0x9bffff, "IRAM"},
+	{ 0x400000, 0x43ffff, "DRAM" },
 	{ 0x29800, 0x2B210, "Base Band" },
 	{ 0x1C000, 0x1C748, "Analog" },
 };
@@ -932,7 +932,7 @@ static int ath6kl_regdump_open(struct inode *inode, struct file *file)
 				goto fail_reg_read;
 
 			len += scnprintf(buf + len, reg_len - len,
-					"0x%06x 0x%08x\n",
+					"0x%04x:0x%04x\n",
 					addr, le32_to_cpu(reg_val));
 		}
 	}

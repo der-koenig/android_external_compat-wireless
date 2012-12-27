@@ -1015,7 +1015,8 @@ static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 	struct htc_packet *packet;
 	struct htc_endpoint *ep;
 	u16 payload_len;
-	int status = 0;
+	int status = 0, i;
+	static u32 assert_pattern = cpu_to_be32(0x0000c600);
 
 	/*
 	 * ar->htc_target can be NULL due to a race condition that can occur
@@ -1036,6 +1037,22 @@ static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 	netdata = skb->data;
 	netlen = skb->len;
 
+	if (!memcmp(netdata, &assert_pattern, sizeof(assert_pattern))) {
+#define REG_DUMP_COUNT_AR6004   60
+		netdata += 4;
+		ath6kl_info("Firmware crash detected...\n");
+		for (i = 0; i < REG_DUMP_COUNT_AR6004 * 4; i += 16) {
+			ath6kl_info("%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
+				be32_to_cpu(*(u32 *)(netdata+i)),
+				be32_to_cpu(*(u32 *)(netdata+i + 4)),
+				be32_to_cpu(*(u32 *)(netdata+i + 8)),
+				be32_to_cpu(*(u32 *)(netdata+i + 12)));
+		}
+		dev_kfree_skb(skb);
+		skb = NULL;
+		goto free_skb;
+	}
+ 
 	htc_hdr = (struct htc_frame_hdr *) netdata;
 
 	ep = &target->endpoint[htc_hdr->eid];
