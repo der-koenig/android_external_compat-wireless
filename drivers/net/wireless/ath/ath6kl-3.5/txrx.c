@@ -1149,13 +1149,19 @@ static void ath6kl_eapol_send(struct work_struct *work)
 	if (!vif)
 		goto FAILED;
 
-	if (WARN_ON(!vif->pend_skb))
+	spin_lock_bh(&vif->pend_skb_lock);
+
+	if (!vif->pend_skb) {
+		clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+		spin_unlock_bh(&vif->pend_skb_lock);
 		goto FAILED;
+	}
 
 	if (!(vif->pend_skb->dev->flags & IFF_UP)) {
 		dev_kfree_skb(vif->pend_skb);
 		vif->pend_skb = NULL;
 		clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+		spin_unlock_bh(&vif->pend_skb_lock);
 		return;
 	}
 
@@ -1165,8 +1171,11 @@ static void ath6kl_eapol_send(struct work_struct *work)
 
 	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
 
+	spin_unlock_bh(&vif->pend_skb_lock);
+
 	return;
 FAILED:
+	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
 	ath6kl_err("%s failed\n", __func__);
 	return;
 }

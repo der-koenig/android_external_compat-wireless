@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.237)
+#define __BUILD_VERSION_ (3.5.0.238)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1010,6 +1010,7 @@ struct ath6kl_vif {
 	u8 arp_offload_ip_set;
 	struct delayed_work work_eapol_send;
 	struct sk_buff *pend_skb;
+	spinlock_t pend_skb_lock;
 };
 
 #define WOW_LIST_ID		0

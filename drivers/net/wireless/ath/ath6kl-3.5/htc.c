@@ -2393,6 +2393,12 @@ static void ath6kl_htc_mbox_flush_rx_buf(struct htc_target *target)
 				   packet, packet->buf_len,
 				   packet->endpoint);
 			dev_kfree_skb(packet->pkt_cntxt);
+			/* free rx control bufs allocated in ath6kl_htc_reset */
+			if (packet->endpoint == ENDPOINT_0 &&
+				packet->buf_len != ATH6KL_BUFFER_SIZE) {
+				kfree(packet->buf_start);
+				kfree(packet);
+			}
 			spin_lock_bh(&target->rx_lock);
 		}
 		spin_unlock_bh(&target->rx_lock);
