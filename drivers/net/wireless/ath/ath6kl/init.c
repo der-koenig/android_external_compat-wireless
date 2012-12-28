@@ -35,7 +35,7 @@
 #include "htc-ops.h"
 
 /* assume string is "00:11:22:33:44:55".  used to override the default MAC of MAC from softmac.bin file*/
-char *ath6kl_wifi_mac = "00:11:22:33:44:55";
+char ath6kl_wifi_mac[] = "00:11:22:33:44:55";
 
 module_param(ath6kl_wifi_mac, charp, 0000);
 
