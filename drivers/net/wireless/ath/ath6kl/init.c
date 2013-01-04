@@ -177,11 +177,11 @@ static const struct ath6kl_hw hw_list[] = {
 	{
 		.id				= AR6004_HW_1_6_VERSION,
 		.name				= "ar6004 hw 1.6",
-		.dataset_patch_addr		= 0,
+		.dataset_patch_addr		= 0x437de8,
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 7168,
-		.board_addr			= 0x43e400,
+		.board_addr			= 0x436400,
 		.refclk_hz                      = 26000000,
 		.uarttx_pin                     = 11,
 		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
