@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2004-2011 Atheros Communications Inc.
- * Copyright (c) 2011-2012 Qualcomm Atheros, Inc.
+ * Copyright (c) 2011-2013 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -3835,9 +3835,11 @@ int ath6kl_cfg80211_init(struct ath6kl *ar)
 		wiphy->n_iface_combinations = 1;
 	}
 
-	/* FIXME: add firmware capability */
-	if (config_enabled(CONFIG_ATH6KL_REGDOMAIN))
-		wiphy->reg_notifier = ath6kl_cfg80211_reg_notify;
+	if (!test_bit(TESTMODE_EPPING, &ar->flag)) {
+		/* FIXME: add firmware capability */
+		if (config_enabled(CONFIG_ATH6KL_REGDOMAIN))
+			wiphy->reg_notifier = ath6kl_cfg80211_reg_notify;
+	}
 
 	/* max num of ssids that can be probed during scanning */
 	wiphy->max_scan_ssids = MAX_PROBED_SSIDS;
@@ -3848,6 +3850,7 @@ int ath6kl_cfg80211_init(struct ath6kl *ar)
 		wiphy->max_match_sets = MAX_PROBED_SSIDS;
 
 	wiphy->max_scan_ie_len = 1000; /* FIX: what is correct limit? */
+
 	switch (ar->hw.cap) {
 	case WMI_11AN_CAP:
 		ht = true;

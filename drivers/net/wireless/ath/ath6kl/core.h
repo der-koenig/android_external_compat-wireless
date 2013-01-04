@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2010-2011 Atheros Communications Inc.
- * Copyright (c) 2011-2012 Qualcomm Atheros, Inc.
+ * Copyright (c) 2011-2013 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,6 +24,7 @@
 #include <linux/sched.h>
 #include <linux/circ_buf.h>
 #include <net/cfg80211.h>
+#include <linux/wireless.h>
 #include "htc.h"
 #include "wmi.h"
 #include "bmi.h"
@@ -160,6 +161,22 @@ enum ath6kl_hw_flags {
 	ATH6KL_HW_FLAG_AP_INACTIVITY_MINS	= BIT(1),
 };
 
+/* Linux Wirelesss Extensions, private ioctl interface */
+#define ATH6KL_IOCTL_EXTENDED       (SIOCIWFIRSTPRIV+26)
+
+/* TBD: ioctl number is aligned to olca branch
+ *      will refine one the loopback tool is ready for native ath6kl
+ */
+typedef enum {
+	ATH6KL_XIOCTL_TRAFFIC_ACTIVITY_CHANGE = 80,
+} XTND_IOCLTS;
+
+
+struct ath6kl_traffic_activity_change {
+	u32    stream_id;   /* stream ID to indicate activity change */
+	u32    active;     /* active (1) or inactive (0) */
+};
+
 #define ATH6KL_FW_API2_FILE "fw-2.bin"
 #define ATH6KL_FW_API3_FILE "fw-3.bin"
 
@@ -195,25 +212,27 @@ enum ath6kl_hw_flags {
 #define AR6004_HW_1_0_VERSION                 0x30000623
 #define AR6004_HW_1_0_FW_DIR			"ath6k/AR6004/hw1.0"
 #define AR6004_HW_1_0_FIRMWARE_FILE		"fw.ram.bin"
-#define AR6004_HW_1_0_BOARD_DATA_FILE         AR6004_HW_1_0_FW_DIR "/bdata.bin"
+#define AR6004_HW_1_0_BOARD_DATA_FILE         AR6004_HW_1_0_FW_DIR"/bdata.bin"
 #define AR6004_HW_1_0_DEFAULT_BOARD_DATA_FILE \
 	AR6004_HW_1_0_FW_DIR "/bdata.DB132.bin"
 
 /* AR6004 1.1 definitions */
-#define AR6004_HW_1_1_VERSION                 0x30000001
+#define AR6004_HW_1_1_VERSION			0x30000001
 #define AR6004_HW_1_1_FW_DIR			"ath6k/AR6004/hw1.1"
 #define AR6004_HW_1_1_FIRMWARE_FILE		"fw.ram.bin"
-#define AR6004_HW_1_1_BOARD_DATA_FILE         AR6004_HW_1_1_FW_DIR "/bdata.bin"
+#define AR6004_HW_1_1_BOARD_DATA_FILE		AR6004_HW_1_1_FW_DIR"/bdata.bin"
 #define AR6004_HW_1_1_DEFAULT_BOARD_DATA_FILE \
 	AR6004_HW_1_1_FW_DIR "/bdata.DB132.bin"
+#define AR6004_HW_1_1_EPPING_FILE		"epping.bin"
 
 /* AR6004 1.2 definitions */
-#define AR6004_HW_1_2_VERSION                 0x300007e8
+#define AR6004_HW_1_2_VERSION			0x300007e8
 #define AR6004_HW_1_2_FW_DIR			"ath6k/AR6004/hw1.2"
-#define AR6004_HW_1_2_FIRMWARE_FILE           "fw.ram.bin"
-#define AR6004_HW_1_2_BOARD_DATA_FILE         AR6004_HW_1_2_FW_DIR "/bdata.bin"
+#define AR6004_HW_1_2_FIRMWARE_FILE		"fw.ram.bin"
+#define AR6004_HW_1_2_BOARD_DATA_FILE		AR6004_HW_1_2_FW_DIR"/bdata.bin"
 #define AR6004_HW_1_2_DEFAULT_BOARD_DATA_FILE \
 	AR6004_HW_1_2_FW_DIR "/bdata.bin"
+#define AR6004_HW_1_2_EPPING_FILE		"epping.bin"
 
 /* AR6004 1.3 definitions */
 #define AR6004_HW_1_3_VERSION			0x31c8088a
@@ -222,17 +241,19 @@ enum ath6kl_hw_flags {
 #define AR6004_HW_1_3_BOARD_DATA_FILE		"ath6k/AR6004/hw1.3/bdata.bin"
 #define AR6004_HW_1_3_DEFAULT_BOARD_DATA_FILE	"ath6k/AR6004/hw1.3/bdata.bin"
 #define AR6004_HW_1_3_TCMD_FIRMWARE_FILE	"utf.bin"
-#define AR6004_HW_1_3_UTF_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_1_3_UTF_FIRMWARE_FILE		"utf.bin"
+#define AR6004_HW_1_3_EPPING_FILE		"epping.bin"
 
 /* AR6004 1.6 definitions */
 #define AR6004_HW_1_6_VERSION                 0x31c80958
 #define AR6004_HW_1_6_FW_DIR			"ath6k/AR6004/hw1.6"
-#define AR6004_HW_1_6_FIRMWARE_FILE           "fw.ram.bin"
-#define AR6004_HW_1_6_TCMD_FIRMWARE_FILE      "utf.bin"
-#define AR6004_HW_1_6_UTF_FIRMWARE_FILE	"utf.bin"
-#define AR6004_HW_1_6_BOARD_DATA_FILE         "ath6k/AR6004/hw1.6/bdata.bin"
+#define AR6004_HW_1_6_FIRMWARE_FILE		"fw.ram.bin"
+#define AR6004_HW_1_6_TCMD_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_1_6_UTF_FIRMWARE_FILE		"utf.bin"
+#define AR6004_HW_1_6_BOARD_DATA_FILE		"ath6k/AR6004/hw1.6/bdata.bin"
 #define AR6004_HW_1_6_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6004/hw1.6/bdata.bin"
+#define AR6004_HW_1_6_EPPING_FILE		"epping.bin"
 
 /* Per STA data, used in AP mode */
 #define STA_PS_AWAKE		BIT(0)
@@ -651,7 +672,8 @@ enum ath6kl_dev_state {
 	WMI_ENABLED,
 	WMI_READY,
 	WMI_CTRL_EP_FULL,
-	TESTMODE,
+	TESTMODE_TCMD,
+	TESTMODE_EPPING,
 	DESTROY_IN_PROGRESS,
 	SKIP_SCAN,
 	ROAM_TBL_PEND,
@@ -769,6 +791,7 @@ struct ath6kl {
 			const char *patch;
 			const char *utf;
 			const char *testscript;
+			const char *epping;
 		} fw;
 
 		const char *fw_board;

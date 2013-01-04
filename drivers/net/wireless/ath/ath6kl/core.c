@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2004-2011 Atheros Communications Inc.
- * Copyright (c) 2011-2012 Qualcomm Atheros, Inc.
+ * Copyright (c) 2011-2013 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -115,16 +115,20 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 
 	/* FIXME: we should free all firmwares in the error cases below */
 
-	/* Indicate that WMI is enabled (although not ready yet) */
-	set_bit(WMI_ENABLED, &ar->flag);
-	ar->wmi = ath6kl_wmi_init(ar);
-	if (!ar->wmi) {
-		ath6kl_err("failed to initialize wmi\n");
-		ret = -EIO;
-		goto err_htc_cleanup;
-	}
+	if ( test_bit(TESTMODE_EPPING, &ar->flag) ) {
+		ath6kl_info("%s: endpoint loopback mode, ignore wmi init!\n", __func__);
+	} else {
+		/* Indicate that WMI is enabled (although not ready yet) */
+		set_bit(WMI_ENABLED, &ar->flag);
+		ar->wmi = ath6kl_wmi_init(ar);
+		if (!ar->wmi) {
+			ath6kl_err("failed to initialize wmi\n");
+			ret = -EIO;
+			goto err_htc_cleanup;
+		}
 
-	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: got wmi @ 0x%p.\n", __func__, ar->wmi);
+		ath6kl_dbg(ATH6KL_DBG_TRC, "%s: got wmi @ 0x%p.\n", __func__, ar->wmi);
+	}
 
 	/* setup access class priority mappings */
 	ar->ac_stream_pri_map[WMM_AC_BK] = 0; /* lowest  */
@@ -170,6 +174,13 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	/* give our connected endpoints some buffers */
 	ath6kl_rx_refill(ar->htc_target, ar->ctrl_ep);
 	ath6kl_rx_refill(ar->htc_target, ar->ac2ep_map[WMM_AC_BE]);
+
+	if ( test_bit(TESTMODE_EPPING, &ar->flag) ) {
+		ath6kl_info("bypass wmi, and post receive buffer for each endpoint here!\n");
+		ath6kl_rx_refill(ar->htc_target, ar->ac2ep_map[WMM_AC_BK]);
+		ath6kl_rx_refill(ar->htc_target, ar->ac2ep_map[WMM_AC_VI]);
+		ath6kl_rx_refill(ar->htc_target, ar->ac2ep_map[WMM_AC_VO]);
+	}
 
 	ret = ath6kl_cfg80211_init(ar);
 	if (ret)

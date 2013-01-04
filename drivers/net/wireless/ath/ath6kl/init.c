@@ -1,7 +1,7 @@
 
 /*
  * Copyright (c) 2011 Atheros Communications Inc.
- * Copyright (c) 2011-2012 Qualcomm Atheros, Inc.
+ * Copyright (c) 2011-2013 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -127,6 +127,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw = {
 			.dir		= AR6004_HW_1_1_FW_DIR,
 			.fw		= AR6004_HW_1_1_FIRMWARE_FILE,
+			.epping 	= AR6004_HW_1_1_EPPING_FILE,
 		},
 
 		.fw_board		= AR6004_HW_1_1_BOARD_DATA_FILE,
@@ -148,6 +149,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw = {
 			.dir		= AR6004_HW_1_2_FW_DIR,
 			.fw		= AR6004_HW_1_2_FIRMWARE_FILE,
+			.epping 	= AR6004_HW_1_2_EPPING_FILE,
 		},
 		.fw_board		= AR6004_HW_1_2_BOARD_DATA_FILE,
 		.fw_default_board	= AR6004_HW_1_2_DEFAULT_BOARD_DATA_FILE,
@@ -169,6 +171,7 @@ static const struct ath6kl_hw hw_list[] = {
 			.fw             = AR6004_HW_1_3_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_3_TCMD_FIRMWARE_FILE,
 			.utf		= AR6004_HW_1_3_UTF_FIRMWARE_FILE,
+			.epping 	= AR6004_HW_1_3_EPPING_FILE,
 		},
 
 		.fw_board               = AR6004_HW_1_3_BOARD_DATA_FILE,
@@ -191,6 +194,7 @@ static const struct ath6kl_hw hw_list[] = {
 			.fw		= AR6004_HW_1_6_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_6_TCMD_FIRMWARE_FILE,
 			.utf		= AR6004_HW_1_6_UTF_FIRMWARE_FILE,
+			.epping 	= AR6004_HW_1_6_EPPING_FILE,
 		},
 
 		.fw_board		= AR6004_HW_1_6_BOARD_DATA_FILE,
@@ -887,6 +891,16 @@ static int ath6kl_fetch_testmode_file(struct ath6kl *ar)
 
 		snprintf(filename, sizeof(filename), "%s/%s",
 			 ar->hw.fw.dir, ar->hw.fw.utf);
+		set_bit(TESTMODE_TCMD, &ar->flag);
+	} else if (ar->testmode == 4) { /* epping mode */
+		if (ar->hw.fw.epping == NULL) {
+			ath6kl_warn("EPPing is not supported\n");
+			return -EOPNOTSUPP;
+		}
+
+		snprintf(filename, sizeof(filename), "%s/%s",
+			 ar->hw.fw.dir, ar->hw.fw.epping);
+		set_bit(TESTMODE_EPPING, &ar->flag);
 	} else {
 		if (ar->hw.fw.tcmd == NULL) {
 			ath6kl_warn("testmode 1 not supported\n");
@@ -895,9 +909,9 @@ static int ath6kl_fetch_testmode_file(struct ath6kl *ar)
 
 		snprintf(filename, sizeof(filename), "%s/%s",
 			 ar->hw.fw.dir, ar->hw.fw.tcmd);
+		set_bit(TESTMODE_TCMD, &ar->flag);
 	}
 
-	set_bit(TESTMODE, &ar->flag);
 
 	ret = ath6kl_get_fw(ar, filename, &ar->fw, &ar->fw_len);
 	if (ret) {
@@ -1691,48 +1705,67 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 		goto err_cleanup_scatter;
 	}
 
-	/* Wait for Wmi event to be ready */
-	timeleft = wait_event_interruptible_timeout(ar->event_wq,
-						    test_bit(WMI_READY,
-							     &ar->flag),
-						    WMI_TIMEOUT);
+	if (!test_bit(TESTMODE_EPPING, &ar->flag)) {
+	    /* Wait for Wmi event to be ready */
+	    timeleft = wait_event_interruptible_timeout(ar->event_wq,
+		    test_bit(WMI_READY,
+			&ar->flag),
+		    WMI_TIMEOUT);
 
-	ath6kl_dbg(ATH6KL_DBG_BOOT, "firmware booted\n");
+	    ath6kl_dbg(ATH6KL_DBG_BOOT, "firmware booted\n");
 
 
-	if (test_and_clear_bit(FIRST_BOOT, &ar->flag)) {
+	    if (test_and_clear_bit(FIRST_BOOT, &ar->flag)) {
 		ath6kl_info("%s %s fw %s api %d%s\n",
-			    ar->hw.name,
-			    ath6kl_init_get_hif_name(ar->hif_type),
-			    ar->wiphy->fw_version,
-			    ar->fw_api,
-			    test_bit(TESTMODE, &ar->flag) ? " testmode" : "");
-	}
+			ar->hw.name,
+			ath6kl_init_get_hif_name(ar->hif_type),
+			ar->wiphy->fw_version,
+			ar->fw_api,
+			test_bit(TESTMODE_TCMD, &ar->flag) ? " testmode_tcmd" : "");
+	    }
 
-	if (ar->version.abi_ver != ATH6KL_ABI_VERSION) {
+	    if (ar->version.abi_ver != ATH6KL_ABI_VERSION) {
 		ath6kl_err("abi version mismatch: host(0x%x), target(0x%x)\n",
-			   ATH6KL_ABI_VERSION, ar->version.abi_ver);
+			ATH6KL_ABI_VERSION, ar->version.abi_ver);
 		ret = -EIO;
 		goto err_htc_stop;
-	}
+	    }
 
-	if (!timeleft || signal_pending(current)) {
+	    if (!timeleft || signal_pending(current)) {
 		ath6kl_err("wmi is not ready or wait was interrupted\n");
 		ret = -EIO;
 		goto err_htc_stop;
-	}
+	    }
 
-	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: wmi is ready\n", __func__);
+	    ath6kl_dbg(ATH6KL_DBG_TRC, "%s: wmi is ready\n", __func__);
 
-	/* communicate the wmi protocol verision to the target */
-	/* FIXME: return error */
-	if ((ath6kl_set_host_app_area(ar)) != 0)
+	    /* communicate the wmi protocol verision to the target */
+	    /* FIXME: return error */
+	    if ((ath6kl_set_host_app_area(ar)) != 0)
 		ath6kl_err("unable to set the host app area\n");
 
-	for (i = 0; i < ar->vif_max; i++) {
+	    for (i = 0; i < ar->vif_max; i++) {
 		ret = ath6kl_target_config_wlan_params(ar, i);
 		if (ret)
-			goto err_htc_stop;
+		    goto err_htc_stop;
+	    }
+	} else {
+	    if (test_and_clear_bit(FIRST_BOOT, &ar->flag)) {
+		ath6kl_info("%s %s fw %s%s\n",
+			ar->hw.name,
+			ath6kl_init_get_hif_name(ar->hif_type),
+			ar->wiphy->fw_version,
+			test_bit(TESTMODE_EPPING, &ar->flag) ?  " testmode_epping" : "");
+	    }
+
+	    ar->mac_addr[0] = 0x65;
+	    ar->mac_addr[1] = 0x70;
+	    ar->mac_addr[2] = 0x70;
+	    ar->mac_addr[3] = 0x69;
+	    ar->mac_addr[4] = 0x6E;
+	    ar->mac_addr[5] = 0x67;
+	    ar->hw.cap = WMI_11G_CAP;
+
 	}
 
 	ar->state = ATH6KL_STATE_ON;

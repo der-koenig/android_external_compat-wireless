@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2004-2011 Atheros Communications Inc.
- * Copyright (c) 2011-2012 Qualcomm Atheros, Inc.
+ * Copyright (c) 2011-2013 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,6 +23,7 @@
 #include "core.h"
 #include "debug.h"
 #include "htc-ops.h"
+#include "epping.h"
 
 /*
  * tid - tid_mux0..tid_mux3
@@ -365,13 +366,15 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		   skb, skb->data, skb->len);
 
 	/* If target is not associated */
-	if (!test_bit(CONNECTED, &vif->flags))
+	if (!test_bit(CONNECTED, &vif->flags) &&
+		!test_bit(TESTMODE_EPPING, &ar->flag))
 		goto fail_tx;
 
 	if (WARN_ON_ONCE(ar->state != ATH6KL_STATE_ON))
 		goto fail_tx;
 
-	if (!test_bit(WMI_READY, &ar->flag))
+	if (!test_bit(WMI_READY, &ar->flag) &&
+		!test_bit(TESTMODE_EPPING, &ar->flag))
 		goto fail_tx;
 
 	/* AP mode Power saving processing */
@@ -441,6 +444,35 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 			if (ret)
 				goto fail_tx;
 		}
+	} else if (test_bit(TESTMODE_EPPING, &ar->flag)) {
+		struct epping_header    *epping_hdr;
+
+		epping_hdr = (struct epping_header *)skb->data;
+
+		if (IS_EPPING_PACKET(epping_hdr)) {
+			ac = epping_hdr->stream_no_h;
+
+			/* some EPPING packets cannot be dropped no matter what access class it was
+			 * sent on. Change the packet tag to guarantee it will not get dropped */
+			if (IS_EPING_PACKET_NO_DROP(epping_hdr)) {
+				htc_tag = ATH6KL_CONTROL_PKT_TAG;
+			}
+
+			if (ac == HCI_TRANSPORT_STREAM_NUM) {
+				goto fail_tx;
+			} else {
+				/* The payload of the frame is 32-bit aligned and thus the addition
+				 * of the HTC header will mis-align the start of the HTC frame,
+				 * the padding will be stripped off in the target */
+				if (EPPING_ALIGNMENT_PAD > 0) {
+					skb_push(skb, EPPING_ALIGNMENT_PAD);
+				}
+			}
+		} else {
+			/* In loopback mode, drop non-loopback packet */
+			goto fail_tx;
+		}
+
 	} else
 		goto fail_tx;
 
@@ -452,9 +484,14 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		eid = ar->ac2ep_map[ac];
 
 	if (eid == 0 || eid == ENDPOINT_UNUSED) {
-		ath6kl_err("eid %d is not mapped!\n", eid);
-		spin_unlock_bh(&ar->lock);
-		goto fail_tx;
+		if ((ac == WMM_NUM_AC) && test_bit(TESTMODE_EPPING, &ar->flag)) {
+			/* for epping testing, the last AC maps to the control endpoint */
+			eid = ar->ctrl_ep;
+		} else {
+			ath6kl_err("eid %d is not mapped!\n", eid);
+			spin_unlock_bh(&ar->lock);
+			goto fail_tx;
+		}
 	}
 
 	/* allocate resource for this packet */
@@ -584,6 +621,36 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 	struct ath6kl_vif *vif;
 	enum htc_endpoint_id endpoint = packet->endpoint;
 	enum htc_send_full_action action = HTC_SEND_FULL_KEEP;
+
+	if (test_bit(TESTMODE_EPPING, &ar->flag)) {
+		int ac;
+
+		if (packet->info.tx.tag == ATH6KL_CONTROL_PKT_TAG) {
+			/* don't drop special control packets */
+			return HTC_SEND_FULL_KEEP;
+		}
+
+		ac = ar->ep2ac_map[endpoint];
+
+		/* for endpoint ping testing drop Best Effort and Background
+		 * if any of the higher priority traffic is active */
+		if ((ar->ac_stream_active[WMM_AC_VO] || ar->ac_stream_active[WMM_AC_BE])
+				&& ((ac == WMM_AC_BE) || (ac == WMM_AC_BK))) {
+			return HTC_SEND_FULL_DROP;
+		} else {
+			spin_lock_bh(&ar->list_lock);
+			list_for_each_entry(vif, &ar->vif_list, list) {
+				spin_unlock_bh(&ar->list_lock);
+
+				/* keep but stop the netqueues */
+				spin_lock_bh(&vif->if_lock);
+				set_bit(NETQ_STOPPED, &vif->flags);
+				spin_unlock_bh(&vif->if_lock);
+				netif_stop_queue(vif->ndev);
+			}
+			return HTC_SEND_FULL_KEEP;
+		}
+	}
 
 	if (endpoint == ar->ctrl_ep) {
 		/*
@@ -717,23 +784,30 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 		ar->tx_pending[eid]--;
 
-		if (eid != ar->ctrl_ep)
-			ar->total_tx_data_pend--;
+		if (!test_bit(TESTMODE_EPPING, &ar->flag)) {
+			if (eid != ar->ctrl_ep)
+				ar->total_tx_data_pend--;
 
-		if (eid == ar->ctrl_ep) {
-			if (test_bit(WMI_CTRL_EP_FULL, &ar->flag))
-				clear_bit(WMI_CTRL_EP_FULL, &ar->flag);
+			if (eid == ar->ctrl_ep) {
+				if (test_bit(WMI_CTRL_EP_FULL, &ar->flag))
+					clear_bit(WMI_CTRL_EP_FULL, &ar->flag);
 
-			if (ar->tx_pending[eid] == 0)
-				wake_event = true;
-		}
+				if (ar->tx_pending[eid] == 0)
+					wake_event = true;
+			}
 
-		if (eid == ar->ctrl_ep) {
-			if_idx = wmi_cmd_hdr_get_if_idx(
-				(struct wmi_cmd_hdr *) packet->buf);
+			if (eid == ar->ctrl_ep) {
+				if_idx = wmi_cmd_hdr_get_if_idx(
+						(struct wmi_cmd_hdr *) packet->buf);
+			} else {
+				if_idx = wmi_data_hdr_get_if_idx(
+						(struct wmi_data_hdr *) packet->buf);
+			}
 		} else {
-			if_idx = wmi_data_hdr_get_if_idx(
-				(struct wmi_data_hdr *) packet->buf);
+			/* The epping packet is not coming from wmi, skip the index
+			 * retrival, epping assume using the first if_idx anyway
+			 */
+			if_idx = 0;
 		}
 
 		vif = ath6kl_get_vif_by_index(ar, if_idx);
@@ -782,8 +856,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 	/* FIXME: Locking */
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry(vif, &ar->vif_list, list) {
-		if (test_bit(CONNECTED, &vif->flags) &&
-		    !flushing[vif->fw_vif_idx]) {
+		if ((test_bit(CONNECTED, &vif->flags) ||
+			test_bit(TESTMODE_EPPING, &ar->flag)) &&
+			!flushing[vif->fw_vif_idx]) {
 			spin_unlock_bh(&ar->list_lock);
 			netif_wake_queue(vif->ndev);
 			spin_lock_bh(&ar->list_lock);
@@ -1319,17 +1394,24 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "rx ",
 			skb->data, skb->len);
 
-	if (ept == ar->ctrl_ep) {
-		if (test_bit(WMI_ENABLED, &ar->flag)) {
-			ath6kl_check_wow_status(ar);
-			ath6kl_wmi_control_rx(ar->wmi, skb);
-			return;
+	if (!test_bit(TESTMODE_EPPING, &ar->flag)) {
+		if (ept == ar->ctrl_ep) {
+			if (test_bit(WMI_ENABLED, &ar->flag)) {
+				ath6kl_check_wow_status(ar);
+				ath6kl_wmi_control_rx(ar->wmi, skb);
+				return;
+			}
+			if_idx =
+				wmi_cmd_hdr_get_if_idx((struct wmi_cmd_hdr *) skb->data);
+		} else {
+			if_idx =
+				wmi_data_hdr_get_if_idx((struct wmi_data_hdr *) skb->data);
 		}
-		if_idx =
-		wmi_cmd_hdr_get_if_idx((struct wmi_cmd_hdr *) skb->data);
 	} else {
-		if_idx =
-		wmi_data_hdr_get_if_idx((struct wmi_data_hdr *) skb->data);
+		/* The epping packet is not coming from wmi, skip the index
+		 * retrival, epping assume using the first if_idx anyway
+		 */
+		if_idx = 0;
 	}
 
 	vif = ath6kl_get_vif_by_index(ar, if_idx);

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2004-2011 Atheros Communications Inc.
- * Copyright (c) 2011-2012 Qualcomm Atheros, Inc.
+ * Copyright (c) 2011-2013 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -22,6 +22,7 @@
 
 #include "core.h"
 #include "hif-ops.h"
+#include "htc-ops.h"
 #include "cfg80211.h"
 #include "target.h"
 #include "debug.h"
@@ -1128,10 +1129,12 @@ struct ath6kl_vif *ath6kl_vif_first(struct ath6kl *ar)
 static int ath6kl_open(struct net_device *dev)
 {
 	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct ath6kl *ar = ath6kl_priv(dev);
 
 	set_bit(WLAN_ENABLED, &vif->flags);
 
-	if (test_bit(CONNECTED, &vif->flags)) {
+	if (test_bit(CONNECTED, &vif->flags) ||
+		test_bit(TESTMODE_EPPING, &ar->flag)) {
 		netif_carrier_on(dev);
 		netif_wake_queue(dev);
 	} else
@@ -1324,6 +1327,54 @@ out:
 	list_splice_tail(&mc_filter_new, &vif->mc_filter);
 }
 
+int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+{
+	struct ath6kl *ar = ath6kl_priv(dev);
+	int ret = true;
+	s8 *userdata;
+
+	/*
+	 * ioctl operations may have to wait for the Target, so we cannot hold
+	 * rtnl. Prevent the device from disappearing under us and release the
+	 * lock during the ioctl operation.
+	 */
+	dev_hold(dev);
+	rtnl_unlock();
+
+	if (cmd == ATH6KL_IOCTL_EXTENDED) {
+		get_user(cmd, (int *)rq->ifr_data);
+		userdata = (char *)(((unsigned int *)rq->ifr_data)+1);
+	}
+	else {
+		ret = -EOPNOTSUPP;
+		goto ioctl_done;
+	}
+
+	switch(cmd) {
+	case ATH6KL_XIOCTL_TRAFFIC_ACTIVITY_CHANGE:
+		/* No opp for now */
+		if (ar->htc_target!= NULL) {
+			struct ath6kl_traffic_activity_change data;
+			if (copy_from_user(&data, userdata, sizeof(data)))
+			{
+				ret = -EFAULT;
+				goto ioctl_done;
+			}
+			ath6kl_htc_activity_changed(ar->htc_target,
+					(u8)data.stream_id,
+					data.active ?  true : false);
+		}
+		break;
+	}
+
+ioctl_done:
+	rtnl_lock();
+	/* restore rtnl state */
+	dev_put(dev);
+
+	return ret;
+}
+
 static const struct net_device_ops ath6kl_netdev_ops = {
 	.ndo_open               = ath6kl_open,
 	.ndo_stop               = ath6kl_close,
@@ -1333,6 +1384,7 @@ static const struct net_device_ops ath6kl_netdev_ops = {
 	.ndo_set_features       = ath6kl_set_features,
 #endif
 	.ndo_set_rx_mode	= ath6kl_set_multicast_list,
+	.ndo_do_ioctl           = ath6kl_ioctl,
 };
 
 void init_netdev(struct net_device *dev)
