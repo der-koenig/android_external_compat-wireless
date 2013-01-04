@@ -206,6 +206,60 @@ void ath6kl_cookie_cleanup(struct ath6kl *ar)
 	ar->wmi_cookie_count = 0;
 }
 
+void ath6kl_cookie_vif_balance_init(struct ath6kl *ar)
+{
+	int ave_cookie_vif;
+	unsigned int vif_max = ar->vif_max;
+	struct ath6kl_vif_cookie_cfg *cfg;
+
+	ave_cookie_vif = MAX_COOKIE_NUM/vif_max;
+
+	cfg = &ar->vif_cookie_cfg;
+	cfg->min_cookies = ave_cookie_vif/8;
+	cfg->mid_cookies = ave_cookie_vif + cfg->min_cookies;
+	cfg->max_cookies = MAX_COOKIE_NUM - cfg->min_cookies * (vif_max - 1);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "cookie:min:%d mid:%d max:%d\n",
+		   cfg->min_cookies, cfg->mid_cookies, cfg->max_cookies);
+}
+
+bool ath6kl_is_other_vif_cookie_busy(struct ath6kl *ar,
+				     struct ath6kl_vif *cur_vif)
+{
+	struct ath6kl_vif *vif, *tmp_vif;
+	struct ath6kl_vif_cookie_cfg *cfg;
+	bool busy = false;
+
+	cfg = &ar->vif_cookie_cfg;
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		if (vif == cur_vif)
+			continue;
+		if (vif->cur_data_cookies > cfg->min_cookies) {
+			busy = true;
+			break;
+		}
+	}
+
+	return busy;
+}
+
+bool ath6kl_is_other_vif_connected(struct ath6kl *ar,
+				   struct ath6kl_vif *cur_vif)
+{
+	struct ath6kl_vif *vif, *tmp_vif;
+	bool connected = false;
+
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		if (vif == cur_vif)
+			continue;
+		if (test_bit(CONNECTED, &vif->flags)) {
+			connected = true;
+			break;
+		}
+	}
+
+	return connected;
+}
+
 void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie,
 			bool isctrl)
 {
@@ -610,6 +664,13 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 {
 	struct ath6kl *ar = vif->ar;
 	bool aborted = false;
+
+	if (!test_bit(ATH6KL_FW_CAPABILITY_REGDOMAIN_V2, ar->fw_capabilities)) {
+		if (test_bit(SCHED_SCANNING, &vif->flags)) {
+			/* when schedule scan, should not come here */
+			WARN_ON(1);
+		}
+	}
 
 	if (status != WMI_SCAN_STATUS_SUCCESS)
 		aborted = true;

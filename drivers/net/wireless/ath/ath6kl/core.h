@@ -160,6 +160,13 @@ enum ath6kl_fw_capability {
 	 */
 	ATH6KL_FW_CAPABILITY_MAC_ACL,
 
+	/*
+	* Firmware with capability regdomain-v2 can support
+	* set regdomain immediately. The firmware without this
+	* capability need start scan for new regdomain take effect
+	*/
+	ATH6KL_FW_CAPABILITY_REGDOMAIN_V2,
+
 	/* this needs to be last */
 	ATH6KL_FW_CAPABILITY_MAX,
 };
@@ -616,6 +623,19 @@ struct ath6kl_vif_bcn_info {
 	u8 sta_cap_req;
 };
 
+struct ath6kl_vif_tp_status {
+	unsigned int cur_level;
+	unsigned long cur_tp;
+	unsigned long cur_txrx; /* net_device_stats */
+};
+
+struct ath6kl_vif_cookie_cfg {
+	bool load_balance;
+	int min_cookies; /* the min cookies reserved for vif */
+	int mid_cookies; /* middle of cookies */
+	int max_cookies; /* max number assigned for vif */
+};
+
 struct ath6kl_vif {
 	struct list_head list;
 	struct wireless_dev wdev;
@@ -673,6 +693,9 @@ struct ath6kl_vif {
 
 	struct list_head mc_filter;
 	struct ath6kl_vif_bcn_info bcn_info;
+
+	struct ath6kl_vif_tp_status vif_tp_status;
+	unsigned int cur_data_cookies; /* current cookies used */
 };
 
 #define WOW_LIST_ID		0
@@ -713,6 +736,41 @@ enum ath6kl_fw_err {
 	ATH6KL_FW_ASSERT,
 	ATH6KL_FW_HB_RESP_FAILURE,
 	ATH6KL_FW_EP_FULL,
+};
+
+#define TP_MONITOR_TIMER_INTERVAL_S	3
+#define TP_THR_PKS_A_DEFAULT		500
+#define TP_THR_PKS_B_DEFAULT		1500
+#define TP_THR_PKS_C_DEFAULT		5000
+#define TP_THR_BYTES_A_DEFAULT		500000
+#define TP_THR_BYTES_B_DEFAULT		1500000
+#define TP_THR_BYTES_C_DEFAULT		5000000
+
+#define TP_MONITOR_MAX_INTERVEL_S	20 /* max interval seconds */
+#define TP_THR_MIN			100 /* min thr setting */
+#define TP_THR_MAX			100000000 /* max thr setting */
+
+enum ath6kl_tp_level {
+	ATH6KL_TP_LOW,			/* throughput range:[0, a) */
+	ATH6KL_TP_NORMAL_A,		/* throughput range:[a, b) */
+	ATH6KL_TP_HIGH_B,		/* throughput range:[b, c) */
+	ATH6KL_TP_SUPER_C,		/* throughput range:[c, ...) */
+};
+
+enum ath6kl_tp_type {
+	ATH6KL_TP_TYPE_DISABLED,
+	ATH6KL_TP_TYPE_PACKETS,
+	ATH6KL_TP_TYPE_BYTES,
+	ATH6KL_TP_TYPE_MAX,
+};
+
+struct ath6kl_tp_ctl {
+	unsigned int interval_s; /* tp control interval */
+	struct timer_list tp_monitor_timer;
+	enum ath6kl_tp_type thr_type; /* type for monitor throughput */
+	unsigned long thr_a; /* threshold for monitor throughput */
+	unsigned long thr_b;
+	unsigned long thr_c;
 };
 
 struct ath6kl {
@@ -855,6 +913,9 @@ struct ath6kl {
 		u8 hb_misscnt;
 		bool enable;
 	} fw_recovery;
+
+	struct ath6kl_tp_ctl tp_ctl;
+	struct ath6kl_vif_cookie_cfg vif_cookie_cfg;
 
 #ifdef CONFIG_ATH6KL_DEBUG
 	struct {
@@ -1000,6 +1061,17 @@ int ath6kl_wait_for_init_comp(void);
 void ath6kl_notify_init_done(void);
 
 u8 ath6kl_remove_sta(struct ath6kl *ar, u8 *mac, u16 reason);
+
+void ath6kl_tp_monitor_timer(unsigned long data);
+void ath6kl_tp_cfg(struct ath6kl *ar, unsigned int interval_s,
+		   unsigned int type, unsigned long thr_a,
+		   unsigned long thr_b, unsigned long thr_c);
+void ath6kl_cookie_vif_balance_init(struct ath6kl *ar);
+bool ath6kl_is_other_vif_cookie_busy(struct ath6kl *ar,
+				    struct ath6kl_vif *cur_vif);
+bool ath6kl_is_other_vif_connected(struct ath6kl *ar,
+				   struct ath6kl_vif *cur_vif);
+
 /* Fw error recovery */
 void ath6kl_init_hw_restart(struct ath6kl *ar);
 void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason);

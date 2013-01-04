@@ -11,7 +11,7 @@
 
 /*
  * Example automatically generated C config: don't edit
- * Thu Dec 10 10:34:11 PST 2009
+ * Thu Dec 10 10:34:11 PST 2009 
  * compat-wireless-2.6: master-2009-11-19-5-gb4fd4dd
  * linux-2.6: next-20091208
  */
@@ -21,7 +21,7 @@
 /* Example kernel version minimum requirement */
 //#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10))
 //#error Compat-wireless requirement: Linux >= 2,6,10
-//#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10) */
+//#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10) */ 
 
 /* Example hard requirement */
 //#error Compat-wireless requirement: CONFIG_WIRELESS_EXT must be enabled in your kernel

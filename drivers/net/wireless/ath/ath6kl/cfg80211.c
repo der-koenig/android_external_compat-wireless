@@ -1065,19 +1065,27 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 {
 	struct ath6kl *ar = vif->ar;
+	struct cfg80211_scan_request *request = NULL;
 	int i;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: status%s\n", __func__,
 		   aborted ? " aborted" : "");
 
-	if (!vif->scan_req)
+	spin_lock_bh(&vif->if_lock);
+	if (!vif->scan_req) {
+		spin_unlock_bh(&vif->if_lock);
 		return;
+	}
+	request = vif->scan_req;
+	vif->scan_req = NULL;
+	spin_unlock_bh(&vif->if_lock);
 
 	if (aborted)
 		goto out;
 
-	if (vif->scan_req->n_ssids && vif->scan_req->ssids[0].ssid_len) {
-		for (i = 0; i < vif->scan_req->n_ssids; i++) {
+	if (request->n_ssids && request->ssids &&
+	    request->ssids[0].ssid_len) {
+		for (i = 0; i < request->n_ssids; i++) {
 			ath6kl_wmi_probedssid_cmd(ar->wmi, vif->fw_vif_idx,
 						  i + 1, DISABLE_SSID_FLAG,
 						  0, NULL);
@@ -1085,8 +1093,7 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	}
 
 out:
-	cfg80211_scan_done(vif->scan_req, aborted);
-	vif->scan_req = NULL;
+	cfg80211_scan_done(request, aborted);
 }
 
 void ath6kl_cfg80211_ch_switch_notify(struct ath6kl_vif *vif, int freq,
@@ -3801,6 +3808,9 @@ static int ath6kl_cfg80211_reg_notify(struct wiphy *wiphy,
 		return ret;
 	}
 
+	if (test_bit(ATH6KL_FW_CAPABILITY_REGDOMAIN_V2, ar->fw_capabilities))
+		return 0;
+
 	/*
 	 * Firmware will apply the regdomain change only after a scan is
 	 * issued and it will send a WMI_REGDOMAIN_EVENTID when it has been
@@ -4085,6 +4095,150 @@ err:
 	aggr_module_destroy(vif->aggr_cntxt);
 	free_netdev(ndev);
 	return NULL;
+}
+
+static unsigned long ath6kl_get_tp_cur_value(struct ath6kl_vif *vif,
+					     enum ath6kl_tp_type type)
+{
+	unsigned long value = 0;
+
+	if (type == ATH6KL_TP_TYPE_PACKETS)
+		value = vif->net_stats.tx_packets + vif->net_stats.rx_packets;
+	else if (type == ATH6KL_TP_TYPE_BYTES)
+		value = vif->net_stats.tx_bytes + vif->net_stats.rx_bytes;
+
+	return value;
+}
+
+static unsigned int ath6kl_get_tp_level(unsigned long cur_tp,
+					unsigned long thr_a,
+					unsigned long thr_b,
+					unsigned long thr_c)
+{
+	unsigned int level = ATH6KL_TP_LOW;
+
+	if (cur_tp >= thr_c)
+		level = ATH6KL_TP_SUPER_C;
+	else if (cur_tp >= thr_b)
+		level = ATH6KL_TP_HIGH_B;
+	else if (cur_tp >= thr_a)
+		level = ATH6KL_TP_NORMAL_A;
+
+	return level;
+}
+static void ath6kl_tp_changed_notify(struct ath6kl_vif *vif,
+				     unsigned int old_level,
+				     unsigned int new_level,
+				     unsigned long cur_tp)
+{
+	ath6kl_dbg(ATH6KL_DBG_WLAN_TX, "tp changed: %s old:%d, new:%d, tp:%ld\n",
+		   vif->ndev->name, old_level, new_level, cur_tp);
+
+	/* do the control if needed */
+	return;
+}
+
+void ath6kl_tp_cfg(struct ath6kl *ar, unsigned int interval_s,
+		   unsigned int type, unsigned long thr_a,
+		   unsigned long thr_b, unsigned long thr_c)
+{
+	struct ath6kl_vif *vif, *tmp_vif;
+	struct ath6kl_vif_tp_status *vif_tp_status;
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		   "cfg tp interval:%d, type:%d a:%ld, b:%ld, c:%ld\n",
+		   interval_s, type, thr_a, thr_b, thr_c);
+
+	/* use default setting if all threshold are zero */
+	if (thr_a == 0 && thr_b == 0 && thr_c == 0) {
+		if (type == ATH6KL_TP_TYPE_BYTES) {
+			thr_a = TP_THR_BYTES_A_DEFAULT;
+			thr_b = TP_THR_BYTES_B_DEFAULT;
+			thr_c = TP_THR_BYTES_C_DEFAULT;
+		} else {
+			thr_a = TP_THR_PKS_A_DEFAULT;
+			thr_b = TP_THR_PKS_B_DEFAULT;
+			thr_c = TP_THR_PKS_C_DEFAULT;
+		}
+	}
+
+	if (!(thr_a < thr_b && thr_b < thr_c)) {
+		ath6kl_err("threshold error, a < b < c, a:%ld, b:%ld, c:%ld\n",
+			   thr_a, thr_b, thr_c);
+		return;
+	}
+
+	if (interval_s == 0 ||
+	    interval_s > TP_MONITOR_MAX_INTERVEL_S ||
+	    type >= ATH6KL_TP_TYPE_MAX ||
+	    thr_a < TP_THR_MIN ||
+	    thr_c > TP_THR_MAX) {
+		ath6kl_err("parameter out of range, interval:%d, type:%d, a:%ld, c:%ld\n",
+			   interval_s, type, thr_a, thr_c);
+		return;
+	}
+
+	del_timer_sync(&ar->tp_ctl.tp_monitor_timer);
+
+	/* clear the previous status */
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		vif_tp_status = &vif->vif_tp_status;
+		vif_tp_status->cur_level = 0;
+		vif_tp_status->cur_tp = 0;
+		vif_tp_status->cur_txrx = ath6kl_get_tp_cur_value(vif, type);
+	}
+	spin_unlock_bh(&ar->list_lock);
+
+	ar->tp_ctl.interval_s = interval_s;
+	ar->tp_ctl.thr_type = type;
+	ar->tp_ctl.thr_a = thr_a;
+	ar->tp_ctl.thr_b = thr_b;
+	ar->tp_ctl.thr_c = thr_c;
+
+	if (type != ATH6KL_TP_TYPE_DISABLED)
+		mod_timer(&ar->tp_ctl.tp_monitor_timer, jiffies +
+			  msecs_to_jiffies(ar->tp_ctl.interval_s*1000));
+}
+
+void ath6kl_tp_monitor_timer(unsigned long data)
+{
+	struct ath6kl *ar = (struct ath6kl *) data;
+	struct ath6kl_vif_tp_status *vif_tp_sts;
+	struct ath6kl_vif *vif, *tmp_vif;
+	struct ath6kl_tp_ctl *tp_ctl = &ar->tp_ctl;
+	unsigned long cur_txrx, cur_tp;
+	unsigned int cur_level;
+
+	if (!tp_ctl->interval_s ||
+	    tp_ctl->thr_type == ATH6KL_TP_TYPE_DISABLED)
+		return;
+
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		vif_tp_sts = &vif->vif_tp_status;
+		cur_txrx = ath6kl_get_tp_cur_value(vif, tp_ctl->thr_type);
+
+		/* Avoid override */
+		if (cur_txrx >= vif_tp_sts->cur_txrx) {
+			cur_tp = cur_txrx - vif_tp_sts->cur_txrx;
+			cur_tp = cur_tp/(tp_ctl->interval_s);
+			cur_level = ath6kl_get_tp_level(cur_tp,
+							tp_ctl->thr_a,
+							tp_ctl->thr_b,
+							tp_ctl->thr_c);
+			if (cur_level != vif_tp_sts->cur_level)
+				ath6kl_tp_changed_notify(vif,
+							 vif_tp_sts->cur_level,
+							 cur_level, cur_tp);
+
+			vif_tp_sts->cur_level = cur_level;
+			vif_tp_sts->cur_tp = cur_tp;
+		}
+		vif_tp_sts->cur_txrx = cur_txrx;
+	}
+
+	mod_timer(&tp_ctl->tp_monitor_timer, jiffies +
+		  msecs_to_jiffies(tp_ctl->interval_s*1000));
 }
 
 void ath6kl_deinit_ieee80211_hw(struct ath6kl *ar)

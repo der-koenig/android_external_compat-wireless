@@ -303,6 +303,9 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	struct ath6kl *ar = devt;
 	int status = 0;
 	struct ath6kl_cookie *cookie = NULL;
+	struct ath6kl_vif *vif;
+	struct wmi_data_hdr *data_hdr;
+	u8 if_idx;
 
 	if (WARN_ON_ONCE(ar->state == ATH6KL_STATE_WOW)) {
 		dev_kfree_skb(skb);
@@ -337,6 +340,18 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		status = -ENOMEM;
 		goto fail_ctrl_tx;
 	}
+	if (ar->vif_cookie_cfg.load_balance && eid != ar->ctrl_ep) {
+		data_hdr = (struct wmi_data_hdr *)skb->data;
+		if_idx = wmi_data_hdr_get_if_idx(data_hdr);
+		vif = ath6kl_get_vif_by_index(ar, if_idx);
+		if (vif) {
+			spin_lock_bh(&vif->if_lock);
+			vif->cur_data_cookies++;
+			spin_unlock_bh(&vif->if_lock);
+		} else
+			WARN_ON_ONCE(1);
+	}
+
 
 	ar->tx_pending[eid]++;
 
@@ -488,6 +503,11 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
 	}
+	if (ar->vif_cookie_cfg.load_balance && eid != ar->ctrl_ep) {
+		spin_lock_bh(&vif->if_lock);
+		vif->cur_data_cookies++;
+		spin_unlock_bh(&vif->if_lock);
+	}
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;
@@ -605,8 +625,14 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 {
 	struct ath6kl *ar = target->dev->ar;
 	struct ath6kl_vif *vif;
+	u8 if_idx;
+	struct ath6kl_vif_cookie_cfg *cookie_cfg;
+	struct wmi_data_hdr *data_hdr;
+
 	enum htc_endpoint_id endpoint = packet->endpoint;
 	enum htc_send_full_action action = HTC_SEND_FULL_KEEP;
+
+	cookie_cfg = &ar->vif_cookie_cfg;
 
 	if (endpoint == ar->ctrl_ep) {
 		/*
@@ -637,6 +663,25 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 * dropping the packets which overflowed.
 		 */
 		action = HTC_SEND_FULL_DROP;
+
+	if (cookie_cfg->load_balance &&
+	    action != HTC_SEND_FULL_DROP) {
+		data_hdr = (struct wmi_data_hdr *) packet->buf;
+		if_idx = wmi_data_hdr_get_if_idx(data_hdr);
+		vif = ath6kl_get_vif_by_index(ar, if_idx);
+		if (vif) {
+			/* drop if it reaches max and other vif is conntected */
+			if (vif->cur_data_cookies > cookie_cfg->max_cookies &&
+				ath6kl_is_other_vif_connected(ar, vif))
+				action = HTC_SEND_FULL_DROP;
+			/* drop if it reaches mid and other vif is busy */
+			else if (vif->cur_data_cookies >
+				 cookie_cfg->mid_cookies) {
+				if (ath6kl_is_other_vif_cookie_busy(ar, vif))
+					action = HTC_SEND_FULL_DROP;
+			}
+		}
+	}
 
 	/* FIXME: Locking */
 	spin_lock_bh(&ar->list_lock);
@@ -803,6 +848,14 @@ void ath6kl_tx_complete(void *context, struct list_head *packet_queue)
 		}
 
 		ath6kl_tx_clear_node_map(vif, eid, map_no);
+
+		if (ar->vif_cookie_cfg.load_balance &&
+		    eid != ar->ctrl_ep) {
+			spin_lock_bh(&vif->if_lock);
+			vif->cur_data_cookies--;
+			spin_unlock_bh(&vif->if_lock);
+			WARN_ON_ONCE(vif->cur_data_cookies < 0);
+		}
 
 		ath6kl_free_cookie(ar, ath6kl_cookie, eid == ar->ctrl_ep);
 

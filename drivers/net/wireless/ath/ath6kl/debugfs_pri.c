@@ -220,6 +220,124 @@ static const struct file_operations fops_max_num_sta = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath6kl_tp_track_write(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl_tp_ctl tp_ctl;
+	struct ath6kl *ar = file->private_data;
+	char *sptr, *token;
+	char buf[200];
+	ssize_t len;
+	u32 val32;
+
+	len = min(count, sizeof(buf) - 1);
+
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[len] = '\0';
+	sptr = buf;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtou32(token, 0, &val32))
+		return -EINVAL;
+	tp_ctl.thr_type = (unsigned int)(val32);
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou32(token, 0, &val32))
+		return -EINVAL;
+	tp_ctl.thr_a = (unsigned long)(val32);
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou32(token, 0, &val32))
+		return -EINVAL;
+	tp_ctl.thr_b = (unsigned long)(val32);
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou32(token, 0, &val32))
+		return -EINVAL;
+	tp_ctl.thr_c = (unsigned long)(val32);
+
+	ath6kl_tp_cfg(ar, ar->tp_ctl.interval_s, tp_ctl.thr_type,
+		      tp_ctl.thr_a, tp_ctl.thr_b, tp_ctl.thr_c);
+
+	return len;
+}
+
+static ssize_t ath6kl_tp_track_read(struct file *file, char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_tp_ctl *tp_ctl = &ar->tp_ctl;
+	char buf[200];
+	unsigned int len = 0, buf_len = 0;
+	ssize_t ret_cnt;
+
+	buf_len = sizeof(buf)-1;
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "%d %ld %ld %ld\n",
+			 tp_ctl->thr_type, tp_ctl->thr_a,
+			 tp_ctl->thr_b, tp_ctl->thr_c);
+
+	if (WARN_ON(len > buf_len))
+		len = buf_len;
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	return ret_cnt;
+}
+
+static const struct file_operations fops_throughput_track = {
+	.read = ath6kl_tp_track_read,
+	.write = ath6kl_tp_track_write,
+	.open = ath6kl_debugfs_open_pri,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath6kl_tp_current_read(struct file *file, char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif, *tmp_vif;
+	struct ath6kl_vif_tp_status *vif_tp_status;
+	char buf[200];
+	unsigned int len = 0, buf_len = 0;
+	ssize_t ret_cnt;
+
+	buf_len = sizeof(buf)-1;
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		vif_tp_status = &vif->vif_tp_status;
+		len += scnprintf(buf + len, buf_len - len, "%s %d %ld\n",
+			vif->ndev->name, vif_tp_status->cur_level,
+				vif_tp_status->cur_tp);
+	}
+
+	if (WARN_ON(len > buf_len))
+		len = buf_len;
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	return ret_cnt;
+}
+
+static const struct file_operations fops_throughput_current = {
+	.read = ath6kl_tp_current_read,
+	.open = ath6kl_debugfs_open_pri,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_init_debugfs_pri(struct ath6kl *ar)
 {
 	debugfs_create_file("inactivity_period", S_IWUSR, ar->debugfs_phy, ar,
@@ -230,6 +348,12 @@ int ath6kl_init_debugfs_pri(struct ath6kl *ar)
 
 	debugfs_create_file("max_num_sta", S_IWUSR, ar->debugfs_phy,
 			    ar, &fops_max_num_sta);
+
+	debugfs_create_file("throughput_track", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_throughput_track);
+
+	debugfs_create_file("throughput_current", S_IRUSR,
+			    ar->debugfs_phy, ar, &fops_throughput_current);
 
 	return 0;
 }
