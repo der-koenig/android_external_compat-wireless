@@ -858,6 +858,10 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 	if ((dev->wiphy.flags & WIPHY_FLAG_TDLS_EXTERNAL_SETUP) &&
 	    nla_put_flag(msg, NL80211_ATTR_TDLS_EXTERNAL_SETUP))
 		goto nla_put_failure;
+	if ((dev->wiphy.flags & WIPHY_FLAG_OFFCHAN_TX) &&
+           nla_put_flag(msg, NL80211_ATTR_OFFCHANNEL_TX_OK))
+		goto nla_put_failure;
+
 
 	if (nla_put(msg, NL80211_ATTR_CIPHER_SUITES,
 		    sizeof(u32) * dev->wiphy.n_cipher_suites,

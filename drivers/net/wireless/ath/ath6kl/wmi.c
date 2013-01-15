@@ -3503,9 +3503,6 @@ static int ath6kl_wmi_send_action_cmd(struct wmi *wmi, u8 if_idx, u32 id,
 	struct wmi_send_action_cmd *p;
 	u8 *buf;
 
-	if (wait)
-		return -EINVAL; /* Offload for wait not supported */
-
 	buf = kmalloc(data_len, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
