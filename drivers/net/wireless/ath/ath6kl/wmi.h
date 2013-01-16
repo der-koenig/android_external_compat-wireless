@@ -672,6 +672,7 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_AP_POLL_STA_CMDID,
     WMI_AP_PSBUF_OFFLOAD_CMDID,
     WMI_SET_REGDOMAIN_CMDID,
+    WMI_ARGOS_CMDID,
     WMI_SEND_MGMT_CMDID,
     WMI_BEGIN_SCAN_CMDID,
     WMI_SET_IE_CMDID,
