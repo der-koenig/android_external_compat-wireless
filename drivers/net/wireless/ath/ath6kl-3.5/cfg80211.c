@@ -785,6 +785,35 @@ void ath6kl_switch_parameter_based_on_connection(
 		set_bit(MCC_ENABLED, &ar->flag);
 	else
 		clear_bit(MCC_ENABLED, &ar->flag);
+
+	if (mcc) {
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			if (test_bit(CONNECTED, &vif_temp->flags)) {
+				if (call_on_disconnect &&
+					vif->fw_vif_idx == vif_temp->fw_vif_idx)
+					continue;
+				if (vif_temp->nw_type == AP_NETWORK) {
+					ath6kl_ap_keepalive_config(vif_temp,
+						ATH6KL_AP_KA_INTERVAL_DEFAULT,
+						ATH6KL_AP_KA_RECLAIM_CYCLE_MCC);
+				}
+			}
+		}
+	} else {
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			if (test_bit(CONNECTED, &vif_temp->flags)) {
+				if (call_on_disconnect &&
+					vif->fw_vif_idx == vif_temp->fw_vif_idx)
+					continue;
+				if (vif_temp->nw_type == AP_NETWORK) {
+					ath6kl_ap_keepalive_config(vif_temp,
+						ATH6KL_AP_KA_INTERVAL_DEFAULT,
+						ATH6KL_AP_KA_RECLAIM_CYCLE_SCC);
+				}
+			}
+		}
+	}
+
 }
 
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
@@ -4890,16 +4919,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 		ar->sche_scan = ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_ENABLE_SCHE_SCAN);
 
-	if (ath6kl_roam_mode == ATH6KL_MODULEROAM_DEFAULT) {
-
-		if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
-			ar->roam_mode = ATH6KL_SDIO_DEFAULT_ROAM_MODE;
-		else
-			ar->roam_mode = ATH6KL_USB_DEFAULT_ROAM_MODE;
-
-	} else {
-		ar->roam_mode = ath6kl_roam_mode;
-	}
+	ar->roam_mode = ath6kl_roam_mode;
 
 	if (ar->sche_scan &&
 		 ar->roam_mode != ATH6KL_MODULEROAM_DISABLE) {
@@ -5123,16 +5143,18 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
-	if (ath6kl_mod_debug_quirks(vif->ar, ATH6KL_MODULE_ENABLE_KEEPALIVE))
+	if (ath6kl_mod_debug_quirks(vif->ar, ATH6KL_MODULE_ENABLE_KEEPALIVE)) {
 		vif->ap_keepalive_ctx =
 			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_ENABLE);
-	else if (ath6kl_mod_debug_quirks(vif->ar,
-		ATH6KL_MODULE_KEEPALIVE_BY_SUPP))
+	} else if (ath6kl_mod_debug_quirks(vif->ar,
+		ATH6KL_MODULE_KEEPALIVE_BY_SUPP)) {
 		vif->ap_keepalive_ctx =
 			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_BYSUPP);
-	else
+	} else {
 		vif->ap_keepalive_ctx =
 			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_DISABLE);
+	}
+
 	if (!vif->ap_keepalive_ctx) {
 		ath6kl_err("failed to initialize ap_keepalive\n");
 		return -ENOMEM;
@@ -5154,6 +5176,7 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 
 	setup_timer(&vif->shprotect_timer, ath6kl_shprotect_timer_handler,
 			(unsigned long) vif);
+	spin_lock_init(&vif->pend_skb_lock);
 
 	vif->scan_req = NULL;
 	vif->pend_skb = NULL;
@@ -5183,6 +5206,11 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 
 		aggr_module_destroy_conn(vif->sta_list[ctr].aggr_conn_cntxt);
 	}
+
+	netif_carrier_off(vif->ndev);
+	netif_stop_queue(vif->ndev);
+	ath6kl_tx_data_cleanup_by_if(vif);
+
 	aggr_module_destroy(vif->aggr_cntxt);
 
 	ath6kl_htcoex_deinit(vif);
@@ -5485,6 +5513,12 @@ bool ath6kl_android_need_wow_suspend(struct ath6kl *ar)
 
 	if (!test_bit(WLAN_WOW_ENABLE, &vif->flags))
 		return false;
+
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+	/* Always allow WoW suspend in discovery mode */
+	if (ar->disc_active)
+		return true;
+#endif
 
 	/*If p2p-GO or softAP interface is connected, we don't do Wow suspend.
 	  *Otherwise, if one of the interfaces is connected, we do WoW

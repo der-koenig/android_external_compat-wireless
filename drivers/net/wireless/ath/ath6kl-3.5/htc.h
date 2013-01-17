@@ -333,6 +333,8 @@ struct htc_packet {
 	/* P2P flowctrl */
 	u8 connid;
 	u8 recycle_count;
+
+	struct ath6kl_vif *vif;
 };
 
 enum htc_send_full_action {

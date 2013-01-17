@@ -303,7 +303,7 @@ u8 ath6kl_wmi_determine_user_priority(u8 *pkt, u32 layer2_pri)
 int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 				       struct sk_buff *skb,
 				       u32 layer2_priority, bool wmm_enabled,
-				       u8 *ac)
+				       u8 *ac, u16 *phtc_tag)
 {
 	struct wmi_data_hdr *data_hdr;
 	struct ath6kl_llc_snap_hdr *llc_hdr;
@@ -350,8 +350,10 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 		 * Queue the EAPOL frames in the same WMM_AC_VO queue
 		 * as that of management frames.
 		 */
-		if (skb->protocol == cpu_to_be16(ETH_P_PAE))
+		if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
 			usr_pri = WMI_VOICE_USER_PRIORITY;
+			*phtc_tag = ATH6KL_CONTROL_PKT_TAG;
+		}
 	}
 
 	/*
@@ -5191,5 +5193,21 @@ int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile)
 	cmd->mcc_profile = mcc_profile;
 
 	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_MCC_PROFILE_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_set_inact_cmd(struct wmi *wmi, u32 inacperiod)
+{
+	struct sk_buff *skb;
+	struct wmi_ap_conn_inact_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_ap_conn_inact_cmd *)skb->data;
+	cmd->period = inacperiod;
+
+	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_AP_CONN_INACT_CMDID,
 				NO_SYNC_WMIFLAG);
 }

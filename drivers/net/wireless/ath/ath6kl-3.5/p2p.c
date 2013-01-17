@@ -739,6 +739,98 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar)
 	return;
 }
 
+static u8 _find_parent_conn_id(struct ath6kl_p2p_flowctrl *p2p_flowctrl,
+				struct ath6kl_vif *hint_vif)
+{
+	struct ath6kl_fw_conn_list *fw_conn;
+	u8 connId = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
+	int i;
+
+	/* Need protected in p2p_flowctrl_lock by caller. */
+	fw_conn = &p2p_flowctrl->fw_conn_list[0];
+	for (i = 0; i < NUM_CONN; i++, fw_conn++) {
+		if (fw_conn->connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID)
+			continue;
+
+		if ((fw_conn->vif == hint_vif) &&
+		    (fw_conn->parent_connId == fw_conn->connId)) {
+			connId = fw_conn->connId;
+			break;
+		}
+	}
+
+	return connId;
+}
+
+void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(
+	struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	struct htc_packet *packet, *tmp_pkt;
+	struct list_head container;
+	int i, reclaim = 0;
+	u8 vif_conn_id = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
+
+	if (!p2p_flowctrl)
+		return;
+
+	INIT_LIST_HEAD(&container);
+
+	vif_conn_id = _find_parent_conn_id(p2p_flowctrl, vif);
+
+	if (vif_conn_id == ATH6KL_P2P_FLOWCTRL_NULL_CONNID)
+		return;
+
+	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+	for (i = 0; i < NUM_CONN; i++) {
+		fw_conn = &p2p_flowctrl->fw_conn_list[i];
+
+		if (fw_conn->parent_connId != vif_conn_id)
+			continue;
+
+		if (!list_empty(&fw_conn->re_queue)) {
+			list_for_each_entry_safe(packet,
+					tmp_pkt,
+					&fw_conn->re_queue,
+					list) {
+
+				list_del(&packet->list);
+				packet->status = 0;
+				list_add_tail(&packet->list,
+					&container);
+				fw_conn->sche_tx_queued--;
+				reclaim++;
+			}
+		}
+
+		if (!list_empty(&fw_conn->conn_queue)) {
+			list_for_each_entry_safe(packet,
+					tmp_pkt,
+					&fw_conn->conn_queue,
+					list) {
+				list_del(&packet->list);
+				packet->status = 0;
+				list_add_tail(&packet->list,
+					&container);
+				fw_conn->sche_tx_queued--;
+				reclaim++;
+			}
+		}
+	}
+	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+
+	ath6kl_tx_complete(ar->htc_target, &container);
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		   "p2p_flowctrlif cleanup %p reclaim %d\n",
+		   ar,
+		   reclaim);
+
+	return;
+}
+
 static inline bool _check_can_send(struct ath6kl_fw_conn_list *fw_conn)
 {
 	bool can_send = false;
@@ -1034,31 +1126,6 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 		   ac_map[0], ac_map[1], ac_map[2], ac_map[3]);
 
 	return;
-}
-
-static u8 _find_parent_conn_id(struct ath6kl_p2p_flowctrl *p2p_flowctrl,
-				struct ath6kl_vif *hint_vif)
-{
-	struct ath6kl_fw_conn_list *fw_conn;
-	u8 connId = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
-	int i;
-
-	/* Need protected in p2p_flowctrl_lock by caller. */
-	fw_conn = &p2p_flowctrl->fw_conn_list[0];
-	for (i = 0; i < NUM_CONN; i++, fw_conn++) {
-		if (fw_conn->connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID)
-			continue;
-
-		if ((fw_conn->vif == hint_vif) &&
-		    (fw_conn->parent_connId == fw_conn->connId)) {
-			connId = fw_conn->connId;
-			break;
-		}
-	}
-
-	WARN_ON(connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID);
-
-	return connId;
 }
 
 void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif,

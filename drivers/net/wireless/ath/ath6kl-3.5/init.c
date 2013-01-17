@@ -285,26 +285,26 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_softmac		= AR6004_HW_2_0_SOFTMAC_FILE,
 	},
 	{
-		.id				= AR6004_HW_2_1_VERSION,
-		.name				= "ar6004 hw 2.1",
+		.id				= AR6004_HW_3_0_VERSION,
+		.name				= "ar6004 hw 3.0",
 		.dataset_patch_addr		= 0,
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
-		.reserved_ram_size		= 11264,
-		.board_addr			= 0x43e400,
-		.testscript_addr		= 0x43d400,
+		.reserved_ram_size		= 7168,
+		.board_addr			= 0x436400,
+		.testscript_addr		= 0,
 		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
-			.dir		= AR6004_HW_2_1_FW_DIR,
-			.fw		= AR6004_HW_2_1_FIRMWARE_FILE,
+			.dir		= AR6004_HW_3_0_FW_DIR,
+			.fw		= AR6004_HW_3_0_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
 		},
 
-		.fw_board		= AR6004_HW_2_1_BOARD_DATA_FILE,
-		.fw_default_board	= AR6004_HW_2_1_DEFAULT_BOARD_DATA_FILE,
-		.fw_epping		= AR6004_HW_2_1_EPPING_FILE,
-		.fw_softmac		= AR6004_HW_2_1_SOFTMAC_FILE,
+		.fw_board		= AR6004_HW_3_0_BOARD_DATA_FILE,
+		.fw_default_board	= AR6004_HW_3_0_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6004_HW_3_0_EPPING_FILE,
+		.fw_softmac		= AR6004_HW_3_0_SOFTMAC_FILE,
 	},
 	{
 		.id				= AR6006_HW_1_0_VERSION,
@@ -487,7 +487,7 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	memset(&connect, 0, sizeof(connect));
 
 	if (ar->version.target_ver == AR6004_HW_2_0_VERSION ||
-	    ar->version.target_ver == AR6004_HW_2_1_VERSION ||
+	    ar->version.target_ver == AR6004_HW_3_0_VERSION ||
 	    ar->version.target_ver == AR6006_HW_1_0_VERSION) {
 		connect.conn_flags |= HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL;
 	}
@@ -991,6 +991,9 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	destroy_workqueue(ar->ath6kl_wq);
 
+	if (ar->p2p_flowctrl_ctx)
+		ath6kl_p2p_flowctrl_conn_list_cleanup(ar);
+
 	if (ar->htc_target)
 		ath6kl_htc_cleanup(ar->htc_target);
 
@@ -1334,6 +1337,11 @@ get_fw:
 		ath6kl_err("Failed to get firmware file %s: %d\n",
 			   filename, ret);
 		return ret;
+	}
+
+	if (ar->version.target_ver == AR6004_HW_1_3_VERSION &&
+		ar->fw_len > AR6004_MAX_64K_FW_SIZE) {
+		ar->hw.flags &= ~ATH6KL_HW_FIRMWARE_EXT_SUPPORT;
 	}
 
 	if (ar->hw.flags & ATH6KL_HW_FIRMWARE_EXT_SUPPORT) {
@@ -1719,16 +1727,6 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 				 (unsigned char *) &param, 4);
 	}
 
-	/* AR6004 hw2.1 are loading fake board data ignore checking */
-	if (!(ar->version.target_ver == AR6004_HW_2_1_VERSION)) {
-		if (ar->fw_board_len < board_data_size) {
-			ath6kl_err("Too small board file: %zu, need: %zu\n",
-				ar->fw_board_len, board_data_size);
-			ret = -EINVAL;
-			return ret;
-		}
-	}
-
 	ath6kl_dbg(ATH6KL_DBG_BOOT, "writing board file to 0x%x (%d B)\n",
 		   board_address, board_data_size);
 
@@ -2062,18 +2060,6 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		status = ath6kl_bmi_reg_write(ar, address, param);
 		if (status)
 			return status;
-	} else if (ar->version.target_ver == AR6004_HW_2_1_VERSION) {
-		param = 0;
-		address = RTC_BASE_ADDRESS + CPU_CLOCK_ADDRESS;
-		status = ath6kl_bmi_reg_write(ar, address, param);
-		if (status)
-			return status;
-
-		param = 26*1000000;
-		status = ath6kl_bmi_write(ar,
-				     ath6kl_get_hi_item_addr(ar,
-				     HI_ITEM(hi_refclk_hz)),
-				     (u8 *)&param, 4);
 	}
 
 	if (ath6kl_mod_debug_quirks(ar, AT6HKL_MODULE_LPL_ENABLE)) {
@@ -2254,11 +2240,6 @@ static int ath6kl_init_hw_params(struct ath6kl *ar)
 	}
 
 	ar->hw = *hw;
-
-#ifdef ATH6KL_SUPPORT_WIFI_KTK
-	if (ktk_enable)
-		ar->hw.fw.fw = AR6004_HW_1_3_MOCHA_FIRMWARE_FILE;
-#endif
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT,
 		   "target_ver 0x%x target_type 0x%x dataset_patch "
@@ -2629,6 +2610,10 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ar->ktk_active = false;
 #endif
 
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+	ar->disc_active = false;
+#endif
+
 /*
  * For backward compatible, keep ATH6KL_MODULE_TESTMODE_ENABLE as testmode = 1.
  * Note that if want to configure as testmode=2,
@@ -2663,6 +2648,15 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 		ath6kl_dbg(ATH6KL_DBG_TRC, "%s: got wmi @ 0x%p.\n",
 			__func__, ar->wmi);
+	}
+
+	if (ar->roam_mode == ATH6KL_MODULEROAM_DEFAULT) {
+
+		if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
+			ar->roam_mode = ATH6KL_SDIO_DEFAULT_ROAM_MODE;
+		else
+			ar->roam_mode = ATH6KL_USB_DEFAULT_ROAM_MODE;
+
 	}
 
 	ret = ath6kl_register_ieee80211_hw(ar);

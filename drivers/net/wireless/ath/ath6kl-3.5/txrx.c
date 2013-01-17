@@ -467,6 +467,9 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		cookie->htc_pkt.recycle_count = 0;
 	}
 
+	/*null data's vif since it is not applied */
+	cookie->htc_pkt.vif = NULL;
+
 	/*
 	 * This interface is asynchronous, if there is an error, cleanup
 	 * will happen in the TX completion callback.
@@ -550,8 +553,9 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 		else {
 			/* get the stream mapping */
 			ret = ath6kl_wmi_implicit_create_pstream(ar->wmi,
-				    vif->fw_vif_idx, skb,
-				    0, test_bit(WMM_ENABLED, &vif->flags), &ac);
+					vif->fw_vif_idx, skb,
+					0, test_bit(WMM_ENABLED, &vif->flags),
+					&ac, &htc_tag);
 			if (ret)
 				goto fail_tx;
 		}
@@ -632,7 +636,10 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
+	if (htc_tag == ATH6KL_DATA_PKT_TAG)
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
+	else
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
@@ -683,6 +690,8 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 		else if (ret < 0)	/* Error, drop it. */
 			goto fail_tx;
 	}
+
+	cookie->htc_pkt.vif = vif;
 
 	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
 
@@ -1120,6 +1129,51 @@ fatal:
 	WARN_ON(1);
 	spin_unlock_bh(&ar->lock);
 	return;
+}
+
+static void ath6kl_flush_data_in_ep_by_if(struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	struct htc_packet *packet, *tmp_pkt;
+	struct htc_endpoint *endpoint;
+	struct list_head    *tx_queue, container;
+	int eid;
+
+	INIT_LIST_HEAD(&container);
+
+	spin_lock_bh(&ar->htc_target->tx_lock);
+	for (eid = ENDPOINT_2; eid <= ENDPOINT_5; eid++) {
+
+		endpoint = &ar->htc_target->endpoint[eid];
+		tx_queue = &endpoint->txq;
+
+		if (list_empty(tx_queue))
+			continue;
+
+		list_for_each_entry_safe(packet,
+					tmp_pkt,
+					tx_queue,
+					list) {
+			if (packet->vif != vif)
+				continue;
+			list_del(&packet->list);
+			packet->status = 0;
+			list_add_tail(
+				&packet->list,
+				&container);
+		}
+	}
+	spin_unlock_bh(&ar->htc_target->tx_lock);
+
+	ath6kl_tx_complete(ar->htc_target, &container);
+
+	return;
+}
+
+void ath6kl_tx_data_cleanup_by_if(struct ath6kl_vif *vif)
+{
+	ath6kl_flush_data_in_ep_by_if(vif);
+	ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(vif);
 }
 
 void ath6kl_tx_data_cleanup(struct ath6kl *ar)
@@ -2581,6 +2635,8 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 		else if (ret < 0)	/* Error, drop it. */
 			goto fail_tx;
 	}
+
+	cookie->htc_pkt.vif = vif;
 
 	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
 

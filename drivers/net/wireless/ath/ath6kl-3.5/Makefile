@@ -70,5 +70,6 @@ ccflags-$(CONFIG_QC_INTERNAL) += -DCONFIG_QC_INTERNAL
 ccflags-$(CONFIG_FPGA) += -DCONFIG_FPGA
 ccflags-y += -D__CHECK_ENDIAN__
 ccflags-y += -DCONFIG_BTCOEX_OLCA_3_5
+ccflags-$(CONFIG_ATH6KL_UB134) += -DCONFIG_ATH6KL_UDP_TPUT_WAR
 
 EXTRA_CFLAGS += -I${KBUILDPATH}/drivers/net/wireless/ath/ath6kl

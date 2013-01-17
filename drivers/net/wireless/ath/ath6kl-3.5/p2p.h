@@ -191,6 +191,7 @@ struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 	struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar);
+void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(struct ath6kl_vif *vif);
 void ath6kl_p2p_flowctrl_netif_state_transition(struct ath6kl *ar,
 			u8 connId, u8 new_state, u8 forced);
 void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar);

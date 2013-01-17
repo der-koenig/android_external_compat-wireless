@@ -1105,6 +1105,7 @@ enum wmi_adhoc_ps_type {
 	ADHOC_PS_ATH = 2,
 	ADHOC_PS_IEEE = 3,
 	ADHOC_PS_OTHER = 4,
+	ADHOC_PS_KTK = 5,
 };
 
 struct wmi_ibss_pm_caps_cmd {
@@ -3022,6 +3023,10 @@ struct wmi_set_mcc_profile_cmd {
 	u32 mcc_profile;
 } __packed;
 
+#define DISALBE_AP_INACTIVE_TIMEMER 0
+struct wmi_ap_conn_inact_cmd {
+	u32	period;
+} __packed;
 
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
@@ -3035,8 +3040,9 @@ u8 ath6kl_wmi_determine_user_priority(u8 *pkt, u32 layer2_pri);
 int ath6kl_wmi_dot11_hdr_remove(struct wmi *wmi, struct sk_buff *skb);
 int ath6kl_wmi_dot3_2_dix(struct sk_buff *skb);
 int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
-				       struct sk_buff *skb, u32 layer2_priority,
-				       bool wmm_enabled, u8 *ac);
+			struct sk_buff *skb, u32 layer2_priority,
+			bool wmm_enabled, u8 *ac,
+			u16 *phtc_tag);
 
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb);
 
@@ -3079,6 +3085,10 @@ int ath6kl_wmi_pmparams_cmd(struct wmi *wmi, u8 if_idx, u16 idle_period,
 			    u16 ps_poll_num, u16 dtim_policy,
 			    u16 tx_wakup_policy, u16 num_tx_to_wakeup,
 			    u16 ps_fail_event_policy);
+int ath6kl_wmi_ibss_pm_caps_cmd(struct wmi *wmi, u8 if_idx, u8 adhoc_ps_type,
+			    u8 ttl,
+			    u16 atim_windows,
+			    u16 timeout_value);
 int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 				  struct wmi_create_pstream_cmd *pstream);
 int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
@@ -3286,5 +3296,5 @@ int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs);
 int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile);
 
 int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2);
-
+int ath6kl_wmi_set_inact_cmd(struct wmi *wmi, u32 inacperiod);
 #endif /* WMI_H */

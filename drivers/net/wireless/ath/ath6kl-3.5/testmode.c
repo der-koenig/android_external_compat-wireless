@@ -601,7 +601,12 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 						__func__);
 				return -EINVAL;
 			}
+
+			/* change disc state to active */
+			ar->disc_active = true;
 		} else if (disc_params->cmd == NL80211_WIFI_DISC_STOP) {
+			/* change disc state to inactive */
+			ar->disc_active = false;
 			if (ath6kl_wmi_disc_mode_cmd(ar->wmi, vif->fw_vif_idx,
 							0, 0, 0, 0, 0, 0, 0)) {
 				printk(KERN_ERR "%s: wifi discovery stop fail\n",
@@ -690,21 +695,52 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 		} else if (ktk_params->cmd == NL80211_WIFI_KTK_START) {
 			ar->ktk_active = true;
 
+			/* Clear the legacy ie pattern and filter */
+			if (ath6kl_wmi_disc_ie_cmd(ar->wmi, vif->fw_vif_idx,
+					0,
+					0,
+					NULL,
+					0)) {
+				printk(KERN_ERR "%s: wifi ktk clear ie filter fail\n",
+					__func__);
+				return -EINVAL;
+			}
+
 			memcpy(ar->ktk_passphrase,
 				ktk_params->params.start_params.passphrase,
 				16);
 
 			if (ath6kl_wmi_probedssid_cmd(ar->wmi, vif->fw_vif_idx,
-				1, SPECIFIC_SSID_FLAG,
-				ktk_params->params.start_params.ssid_len,
-				ktk_params->params.start_params.ssid)) {
-				printk(KERN_ERR
-					"%s: wifi ktk set probedssid fail\n",
+					1, SPECIFIC_SSID_FLAG,
+					ktk_params->params.start_params.ssid_len,
+					ktk_params->params.start_params.ssid)) {
+				printk(KERN_ERR "%s: wifi ktk set probedssid fail\n",
 					__func__);
 				return -EINVAL;
 			}
-		} else if (ktk_params->cmd == NL80211_WIFI_KTK_STOP) {
+
+			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi, vif->fw_vif_idx,
+					ADHOC_PS_KTK,
+					5,
+					10,
+					10)) {
+				printk(KERN_ERR "%s: wifi ktk set power save mode on fail\n",
+					__func__);
+				return -EINVAL;
+			}
+		}
+		else if (ktk_params->cmd == NL80211_WIFI_KTK_STOP) {
 			ar->ktk_active = false;
+
+			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi, vif->fw_vif_idx,
+					ADHOC_PS_DISABLE,
+					0,
+					0,
+					0)) {
+				printk(KERN_ERR "%s: wifi ktk set power save mode off fail\n",
+					__func__);
+				return -EINVAL;
+			}
 		}
 	}
 

@@ -20,7 +20,8 @@
 /* Time defines */
 #define ATH6KL_AP_KA_INTERVAL_DEFAULT		(15 * 1000)	/* in ms. */
 #define ATH6KL_AP_KA_INTERVAL_MIN		(5 * 1000)	/* in ms. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT	(4)		/* 1 min. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_SCC	(4)		/* 1 min. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_MCC	(12)	/* 3 min. */
 #define ATH6KL_AP_KA_RECLAIM_TIME_MAX		((15 * 60) * 1000)
 
 /* At least WMI_TIMEOUT */

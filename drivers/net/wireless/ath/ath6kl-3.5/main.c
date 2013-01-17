@@ -1579,6 +1579,9 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			vif->bss_ch = 0;
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
+			netif_carrier_off(vif->ndev);
+			netif_stop_queue(vif->ndev);
+			ath6kl_tx_data_cleanup_by_if(vif);
 			ath6kl_judge_roam_parameter(vif, true);
 			ath6kl_switch_parameter_based_on_connection(vif, true);
 		}
@@ -1643,7 +1646,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	memset(vif->bssid, 0, sizeof(vif->bssid));
 	vif->bss_ch = 0;
 
-	ath6kl_tx_data_cleanup(ar);
+	ath6kl_tx_data_cleanup_by_if(vif);
 
 	/* Hook disconnection event */
 	ath6kl_htcoex_disconnect_event(vif);

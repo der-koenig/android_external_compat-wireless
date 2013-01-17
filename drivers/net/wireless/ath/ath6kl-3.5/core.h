@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.238)
+#define __BUILD_VERSION_ (3.5.0.247)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -77,7 +77,7 @@
 
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_P2P_FLOWCTRL |			\
-	 /* ATH6KL_MODULE_ENABLE_KEEPALIVE | */		\
+		ATH6KL_MODULE_ENABLE_KEEPALIVE |		\
 	 /* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	 /* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
 	 0)
@@ -372,7 +372,6 @@ enum ath6kl_recovery_mode {
 #define AR6004_HW_1_3_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_3_FIRMWARE_FILE           "fw.ram.bin"
 #define AR6004_HW_1_3_FIRMWARE_EXT_FILE       "fw_ext.ram.bin"
-#define AR6004_HW_1_3_MOCHA_FIRMWARE_FILE     "fw.ram_mocha.bin"
 #define AR6004_HW_1_3_TCMD_FIRMWARE_FILE      "utf.bin"
 #define AR6004_HW_1_3_UTF_FIRMWARE_FILE	"utf.bin"
 #define AR6004_HW_1_3_TESTSCRIPT_FILE	"nullTestFlow.bin"
@@ -397,20 +396,20 @@ enum ath6kl_recovery_mode {
 #define AR6004_HW_2_0_EPPING_FILE             "ath6k/AR6004/hw2.0/epping.bin"
 #define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
 
-/* AR6004 2.1 definitions */
-#define AR6004_HW_2_1_VERSION			0x31c809f0
-#define AR6004_HW_2_1_FW_DIR			"ath6k/AR6004/hw2.1"
-#define AR6004_HW_2_1_OTP_FILE			"otp.bin"
-#define AR6004_HW_2_1_FIRMWARE_2_FILE         "fw-2.bin"
-#define AR6004_HW_2_1_FIRMWARE_FILE           "fw.ram.bin"
-#define AR6004_HW_2_1_TCMD_FIRMWARE_FILE      "utf.bin"
-#define AR6004_HW_2_1_UTF_FIRMWARE_FILE	"utf.bin"
-#define AR6004_HW_2_1_TESTSCRIPT_FILE	"nullTestFlow.bin"
-#define AR6004_HW_2_1_BOARD_DATA_FILE         "ath6k/AR6004/hw2.1/bdata.bin"
-#define AR6004_HW_2_1_DEFAULT_BOARD_DATA_FILE \
-	"ath6k/AR6004/hw2.1/bdata.bin"
-#define AR6004_HW_2_1_EPPING_FILE             "ath6k/AR6004/hw2.1/epping.bin"
-#define AR6004_HW_2_1_SOFTMAC_FILE            "ath6k/AR6004/hw2.1/softmac.bin"
+/* AR6004 3.0 definitions */
+#define AR6004_HW_3_0_VERSION			0x31C809F8
+#define AR6004_HW_3_0_FW_DIR			"ath6k/AR6004/hw3.0"
+#define AR6004_HW_3_0_OTP_FILE			"otp.bin"
+#define AR6004_HW_3_0_FIRMWARE_2_FILE         "fw-2.bin"
+#define AR6004_HW_3_0_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_3_0_TCMD_FIRMWARE_FILE      "utf.bin"
+#define AR6004_HW_3_0_UTF_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_3_0_TESTSCRIPT_FILE	"nullTestFlow.bin"
+#define AR6004_HW_3_0_BOARD_DATA_FILE         "ath6k/AR6004/hw3.0/bdata.bin"
+#define AR6004_HW_3_0_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6004/hw3.0/bdata.bin"
+#define AR6004_HW_3_0_EPPING_FILE             "ath6k/AR6004/hw3.0/epping.bin"
+#define AR6004_HW_3_0_SOFTMAC_FILE            "ath6k/AR6004/hw3.0/softmac.bin"
 
 /* AR6006 1.0 definitions */
 #define AR6006_HW_1_0_VERSION                 0x31c80997
@@ -1228,6 +1227,11 @@ struct ath6kl {
 	u8 ktk_passphrase[16];
 #endif
 
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+	/* discovery feature is started ot not */
+	bool disc_active;
+#endif
+
 	struct ath6kl_btcoex btcoex_info;
 	u32 mod_debug_quirks;
 
@@ -1396,6 +1400,7 @@ int ath6kl_diag_read(struct ath6kl *ar, u32 address, void *data, u32 length);
 int ath6kl_read_fwlogs(struct ath6kl *ar);
 void ath6kl_init_profile_info(struct ath6kl_vif *vif);
 void ath6kl_tx_data_cleanup(struct ath6kl *ar);
+void ath6kl_tx_data_cleanup_by_if(struct ath6kl_vif *vif);
 
 struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
 	enum cookie_type cookie_type);
