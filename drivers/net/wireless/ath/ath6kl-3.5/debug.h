@@ -84,6 +84,10 @@ enum ATH6KL_MODULE_QUIRKS {
 
 	/* enable fw crash notify function */
 	ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY = BIT(21),
+
+	/* enable usb auto power management feathre */
+	ATH6KL_MODULE_ENABLE_USB_AUTO_PM = BIT(22),
+
 };
 
 enum ATH6KL_MODULE_P2P {

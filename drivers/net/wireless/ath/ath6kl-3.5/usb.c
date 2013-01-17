@@ -1963,6 +1963,10 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	ar->bmi.max_data_size = 252;
 
 	ar_usb->ar = ar;
+#ifdef CONFIG_ANDROID
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_USB_AUTO_PM))
+		usb_disable_autosuspend(ar_usb->udev);
+#endif
 
 	ath6kl_htc_pipe_attach(ar);
 	ret = ath6kl_core_init(ar);
