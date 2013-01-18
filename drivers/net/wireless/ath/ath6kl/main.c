@@ -212,10 +212,10 @@ void ath6kl_cookie_vif_balance_init(struct ath6kl *ar)
 	unsigned int vif_max = ar->vif_max;
 	struct ath6kl_vif_cookie_cfg *cfg;
 
-	ave_cookie_vif = MAX_COOKIE_NUM/vif_max;
+	ave_cookie_vif = MAX_COOKIE_NUM / vif_max;
 
 	cfg = &ar->vif_cookie_cfg;
-	cfg->min_cookies = ave_cookie_vif/8;
+	cfg->min_cookies = ave_cookie_vif / 16;
 	cfg->mid_cookies = ave_cookie_vif + cfg->min_cookies;
 	cfg->max_cookies = MAX_COOKIE_NUM - cfg->min_cookies * (vif_max - 1);
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "cookie:min:%d mid:%d max:%d\n",

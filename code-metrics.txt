@@ -14,5 +14,5 @@
 [31m    0.0034[00m - % of code not yet merged
 
 Base tree: [01;32m3.2-rel.git[00m
-Base tree version: [35mbranching-msm-3.2.3-93-gf8f1928[00m
-compat-wireless release: [01;33m3.3-OSR-2012-10-11-15-gdf59e37-p[00m
+Base tree version: [35mbranching-msm-3.2.3-97-gdb33fd1[00m
+compat-wireless release: [01;33mbranching-3.2.3-54-g5db5d6d-p[00m

@@ -660,7 +660,12 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
-	vfree(ar->fw);
+
+	if (test_bit(TESTMODE, &ar->flag))
+		kfree(ar->fw);
+	else
+		vfree(ar->fw);
+
 	kfree(ar->fw_patch);
 	kfree(ar->fw_testscript);
 
