@@ -54,5 +54,16 @@ ccflags-y += -include ../../include/linux/nl80211.h
 ccflags-y += -include ../../include/net/cfg80211.h
 ccflags-y += -include ../../include/linux/compat-2.6.h
 ccflags-y += -include ../../$(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/linux/version.h
+else
+ifeq ($(HAVE_CFG80211_KERNEL3_4), 1)
+ccflags-y += -DATH6KL_SUPPORT_NL80211_KERNEL3_4
 endif
-
+ifeq ($(HAVE_CFG80211_KERNEL3_7), 1)
+ccflags-y += -DATH6KL_SUPPORT_NL80211_KERNEL3_6
+ccflags-y += -DATH6KL_SUPPORT_NETLINK_KERNEL3_6
+ccflags-y += -DATH6KL_SUPPORT_NETLINK_KERNEL3_7
+endif
+ccflags-y += -DCONFIG_ATH6KL_DEBUG
+ccflags-y += -DCONFIG_ATH6KL_REGDOMAIN
+ccflags-y += -D__CHECK_ENDIAN__
+endif
