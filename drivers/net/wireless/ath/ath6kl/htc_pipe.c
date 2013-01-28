@@ -1005,6 +1005,33 @@ static void recv_packet_completion(struct htc_target *target,
 	do_recv_completion(ep, &container);
 }
 
+int ath6kl_queue_crashdump(struct ath6kl *ar,struct sk_buff *skb)
+{
+
+#define ATH6KL_CDLOG_MAX_ENTRIES 400
+
+        struct sk_buff *skbcp;
+
+        skbcp = skb_copy(skb, GFP_KERNEL);
+        if (!skbcp)
+                return -1;
+
+         spin_lock(&ar->debug.cdlog_queue.lock);
+
+        __skb_queue_tail(&ar->debug.cdlog_queue, skbcp);
+
+        while (skb_queue_len(&ar->debug.cdlog_queue) >
+               ATH6KL_CDLOG_MAX_ENTRIES) {
+                skbcp = __skb_dequeue(&ar->debug.cdlog_queue);
+                kfree_skb(skbcp);
+        }
+
+        spin_unlock(&ar->debug.cdlog_queue.lock);
+
+        return 0;
+}
+
+
 static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 				       u8 pipeid)
 {
@@ -1017,6 +1044,7 @@ static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 	u16 payload_len;
 	int status = 0, i;
 	static u32 assert_pattern = cpu_to_be32(0x0000c600);
+	static u32 reg_pattern = cpu_to_be32(0x0000d600);
 
 	/*
 	 * ar->htc_target can be NULL due to a race condition that can occur
@@ -1036,6 +1064,15 @@ static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 
 	netdata = skb->data;
 	netlen = skb->len;
+
+	/* compare the reg dump pattern during assert and copy skb for user
+	 * selection and release the original one */
+	if (!memcmp(netdata, &reg_pattern, sizeof(reg_pattern))) {
+		status = ath6kl_queue_crashdump(ar,skb);
+		dev_kfree_skb(skb);
+		skb = NULL;
+		goto free_skb;
+	}
 
 	if (!memcmp(netdata, &assert_pattern, sizeof(assert_pattern))) {
 #define REG_DUMP_COUNT_AR6004   60

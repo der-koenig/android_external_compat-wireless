@@ -854,6 +854,8 @@ struct ath6kl {
 
 		u8 keepalive;
 		u8 disc_timeout;
+
+		struct sk_buff_head cdlog_queue;
 	} debug;
 #endif /* CONFIG_ATH6KL_DEBUG */
 };

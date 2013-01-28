@@ -1728,6 +1728,7 @@ static const struct file_operations fops_power_params = {
 void ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
+	skb_queue_head_init(&ar->debug.cdlog_queue);
 	init_completion(&ar->debug.fwlog_completion);
 
 	/*
@@ -1736,6 +1737,81 @@ void ath6kl_debug_init(struct ath6kl *ar)
 	 */
 	ar->debug.fwlog_mask = 0;
 }
+
+
+static int ath6kl_crashdump_open(struct inode *inode, struct file *file)
+{
+	struct ath6kl *ar = inode->i_private;
+	u8 *buf;
+	unsigned long int reg_len;
+	unsigned int len = 0, n_reg;
+	u32 addr;
+	int i;
+	struct sk_buff *skb;
+	u8 *netdata;
+   static u32 reg_pattern = cpu_to_be32(0x0000d600);
+	static u32 regend_pattern =cpu_to_be32(0x0000e600);
+
+#define AR6004_CRASHDUMP_REGCOUNT 370
+
+	/* check if the crash dump log queue is empty */
+	if (skb_queue_len((&ar->debug.cdlog_queue)) == 0) return -1;
+
+	/* Dump all the registers if no register is specified */
+	if (!ar->debug.dbgfs_diag_reg)
+		n_reg = ath6kl_get_num_reg();
+	else
+		n_reg = 1;
+
+	reg_len = n_reg * REG_OUTPUT_LEN_PER_LINE;
+	if (n_reg > 1)
+		reg_len += REGTYPE_STR_LEN;
+
+	buf = vmalloc(reg_len);
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock(&ar->debug.cdlog_queue.lock);
+
+	while ((skb = __skb_dequeue(&ar->debug.cdlog_queue))) {
+
+		if(skb == NULL ) return -1;
+		netdata = skb->data;
+		if (!memcmp(netdata, &reg_pattern, sizeof(reg_pattern))) {
+
+			netdata += 4;
+			addr = be32_to_cpu(*(u32 *)(netdata));
+			netdata += 4;
+			for (i = 0; i < AR6004_CRASHDUMP_REGCOUNT * 4; i += 4) {
+
+				/* if this is end if registry type , go to next */
+				if ( regend_pattern == be32_to_cpu(*(u32 *)(netdata+i)))
+					break;
+				len += scnprintf(buf + len, reg_len - len,
+					"0x%04x:0x%04x\n",
+					addr, be32_to_cpu(*(u32 *)(netdata+i)));
+	                addr +=4;
+			}
+
+		}
+		kfree_skb(skb);
+		skb = NULL;
+	}
+
+	file->private_data = buf;
+
+	spin_unlock(&ar->debug.cdlog_queue.lock);
+
+	return 0;
+}
+
+static const struct file_operations fops_crash_dump = {
+        .open = ath6kl_crashdump_open,
+        .read = ath6kl_regdump_read,
+        .release = ath6kl_regdump_release,
+        .owner = THIS_MODULE,
+        .llseek = default_llseek,
+};
 
 /*
  * Initialisation needs to happen in two stages as fwlog events can come
@@ -1812,6 +1888,8 @@ int ath6kl_debug_init_fs(struct ath6kl *ar)
 	debugfs_create_file("power_params", S_IWUSR, ar->debugfs_phy, ar,
 			    &fops_power_params);
 
+	debugfs_create_file("crash_dump", S_IRUSR, ar->debugfs_phy, ar,
+			    &fops_crash_dump);
 	return 0;
 }
 
