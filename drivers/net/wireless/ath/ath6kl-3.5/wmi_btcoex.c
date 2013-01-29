@@ -71,7 +71,19 @@ static inline struct sk_buff *ath6kl_wmi_btcoex_get_new_buf(u32 size)
 /*  This is a temporary WAR since BTC related NL80211 commands are
  *  defined in Linux nl80211.h.
  */
-#define NL80211_WMI_SET_BT_HID_CONFIG 12
+#define NL80211_WMI_SET_BT_STATUS		0
+#define NL80211_WMI_SET_BT_PARAMS		1
+#define NL80211_WMI_SET_BT_FT_ANT		2
+#define NL80211_WMI_SET_COLOCATED_BT_DEV	3
+#define NL80211_WMI_SET_BT_INQUIRY_PAGE_CONFIG	4
+#define NL80211_WMI_SET_BT_SCO_CONFIG		5
+#define NL80211_WMI_SET_BT_A2DP_CONFIG		6
+#define NL80211_WMI_SET_BT_ACLCOEX_CONFIG	7
+#define NL80211_WMI_SET_BT_DEBUG		8
+#define NL80211_WMI_SET_BT_OPSTATUS		9
+#define NL80211_WMI_GET_BT_CONFIG		10
+#define NL80211_WMI_GET_BT_STATS		11
+#define NL80211_WMI_SET_BT_HID_CONFIG		12
 
 static int ath6kl_get_wmi_cmd(int nl_cmd)
 {
@@ -236,9 +248,9 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				pspoll_config->a2dp_wlan_max_dur =
 					BTCOEX_APMODE_A2DP_BDR_WLAN_MAX_DUR;
 				a2dp_config->a2dp_flags |= cpu_to_le32(
-					BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME);
+				BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME);
 			}
-			
+
 			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
 				BTCOEX_APMODE_A2DP_MIN_BURST_CNT);
 		}

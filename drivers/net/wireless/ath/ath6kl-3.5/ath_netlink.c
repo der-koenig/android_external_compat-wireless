@@ -52,7 +52,11 @@ void ath_netlink_send(char *event_data, u32 event_datalen)
 
 	memcpy(NLMSG_DATA(nlh), event_data, event_datalen);
 
+#ifdef ATH6KL_SUPPORT_NETLINK_KERNEL3_7
+	NETLINK_CB(skb).portid = 0;        /* from kernel */
+#else
 	NETLINK_CB(skb).pid = 0;        /* from kernel */
+#endif
 	NETLINK_CB(skb).dst_group = 0;  /* unicast */
 	netlink_unicast(ath_nl_sock, skb, gpid, MSG_DONTWAIT);
 }
@@ -92,6 +96,43 @@ static void ath_netlink_receive(struct sk_buff *__skb)
 
 int ath_netlink_init()
 {
+#ifdef ATH6KL_SUPPORT_NETLINK_KERNEL3_7
+	struct netlink_kernel_cfg netlink_cfg;
+
+	if (ath_nl_sock == NULL) {
+		netlink_cfg.groups = 1;
+		netlink_cfg.input = ath_netlink_receive;
+		netlink_cfg.cb_mutex = NULL;
+		netlink_cfg.bind = NULL;
+		netlink_cfg.flags = 0;
+
+		ath_nl_sock = (struct sock *)netlink_kernel_create(
+					&init_net, NETLINK_ATH_EVENT,
+					&netlink_cfg);
+		if (ath_nl_sock == NULL) {
+			ath6kl_err("%s NetLink Create Failed\n", __func__);
+			return -ENODEV;
+		}
+	}
+#elif defined(ATH6KL_SUPPORT_NETLINK_KERNEL3_6)
+	struct netlink_kernel_cfg netlink_cfg;
+
+	if (ath_nl_sock == NULL) {
+		netlink_cfg.groups = 1;
+		netlink_cfg.input = ath_netlink_receive;
+		netlink_cfg.cb_mutex = NULL;
+		netlink_cfg.bind = NULL;
+
+		ath_nl_sock = (struct sock *)netlink_kernel_create(
+					&init_net, NETLINK_ATH_EVENT,
+					THIS_MODULE,
+					&netlink_cfg);
+		if (ath_nl_sock == NULL) {
+			ath6kl_err("%s NetLink Create Failed\n", __func__);
+			return -ENODEV;
+		}
+	}
+#else
 	if (ath_nl_sock == NULL) {
 		ath_nl_sock = (struct sock *)netlink_kernel_create(
 					&init_net, NETLINK_ATH_EVENT,
@@ -102,6 +143,7 @@ int ath_netlink_init()
 			return -ENODEV;
 		}
 	}
+#endif
 
 	return 0;
 }

@@ -344,7 +344,11 @@ struct htcoex *ath6kl_htcoex_init(struct ath6kl_vif *vif)
 	coex->scan_timer.function = htcoex_scan_start;
 	coex->scan_timer.data = (unsigned long) coex;
 
+#ifdef CFG80211_NETDEV_REPLACED_BY_WDEV
+	coex->request.wdev = &vif->wdev;
+#else
 	coex->request.dev = vif->ndev;
+#endif
 	coex->request.wiphy = vif->ar->wiphy;
 
 	coex->num_scan_channels = 0;

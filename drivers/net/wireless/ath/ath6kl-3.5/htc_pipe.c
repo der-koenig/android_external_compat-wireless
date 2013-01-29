@@ -1191,9 +1191,8 @@ static int htc_send_pkts_sched_queue(struct htc_target *target,
 		}
 	} else if (test_bit(MCC_ENABLED, &ar->flag)) {
 		if (get_queue_depth(tx_queue) > ATH6KL_P2P_FLOWCTRL_TXQ_LIMIT)
-			ath6kl_p2p_flowctrl_netif_state_transition(
-				ar, ATH6KL_P2P_FLOWCTRL_NULL_CONNID,
-				ATH6KL_P2P_FLOWCTRL_NETIF_STOP, 1);
+			ath6kl_p2p_flowctrl_netif_transition(
+				ar, ATH6KL_P2P_FLOWCTRL_NETIF_STOP);
 	}
 
 	spin_unlock_bh(&target->tx_lock);

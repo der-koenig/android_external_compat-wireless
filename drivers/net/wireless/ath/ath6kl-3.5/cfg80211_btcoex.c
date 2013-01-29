@@ -51,6 +51,7 @@ bool ath6kl_btcoex_cfg80211_ready(struct ath6kl_vif *vif)
 	return true;
 }
 
+#ifdef NL80211_CMD_BTCOEX_QCA
 int ath6kl_notify_btcoex(struct wiphy *wiphy, u8 *buf,
 					int len)
 {
@@ -78,3 +79,4 @@ int ath6kl_notify_btcoex(struct wiphy *wiphy, u8 *buf,
 
 	return ret;
 }
+#endif

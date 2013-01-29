@@ -1248,6 +1248,57 @@ static const struct file_operations fops_driver_version = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath6kl_rx_drop_operation_read(struct file *file,
+				      char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[64];
+	unsigned int len;
+
+	len = snprintf(buf, sizeof(buf), "RX aggregation drop packets %s\n",
+			(ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP)
+			? "disabled" : "enabled");
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath6kl_rx_drop_operation_write(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[20];
+	size_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (len > 0 && buf[len - 1] == '\n')
+		buf[len - 1] = '\0';
+
+	if (strcasecmp(buf, "enable") == 0)
+		ar->conf_flags &=
+			~ATH6KL_CONF_DISABLE_RX_AGGR_DROP;
+	else if (strcasecmp(buf, "disable") == 0)
+		ar->conf_flags |=
+			ATH6KL_CONF_DISABLE_RX_AGGR_DROP;
+	else
+		return -EINVAL;
+
+	return count;
+}
+
+static const struct file_operations fops_rx_drop_operation = {
+	.read = ath6kl_rx_drop_operation_read,
+	.write = ath6kl_rx_drop_operation_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath6kl_regwrite_read(struct file *file,
 				    char __user *user_buf,
 				    size_t count, loff_t *ppos)
@@ -4375,6 +4426,155 @@ static const struct file_operations p2p_frame_cond_reject = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath6kl_debug_quirks_write(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[32];
+	ssize_t len;
+	char *p;
+	u32 quirks, reset;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	p = buf;
+
+	SKIP_SPACE;
+
+	sscanf(p, "0x%x", &quirks);
+
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &reset);
+
+	debug_quirks = quirks;
+	ar->mod_debug_quirks = debug_quirks;
+
+	if (reset)
+		ath6kl_reset_device(ar, ar->target_type, true, true);
+
+	return count;
+}
+
+static ssize_t ath6kl_debug_quirks_read(struct file *file,
+					char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	char buf[32];
+	int len;
+
+	len = snprintf(buf, sizeof(buf), "debug_quirks: 0x%x\n", debug_quirks);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_debug_quirks = {
+	.read = ath6kl_debug_quirks_read,
+	.write = ath6kl_debug_quirks_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath6kl_debug_disable_scan(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[32];
+	ssize_t len;
+	u32 value;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &value))
+		return -EINVAL;
+
+	if (value)
+		set_bit(DISABLE_SCAN, &ar->flag);
+	else
+		clear_bit(DISABLE_SCAN, &ar->flag);
+
+	return count;
+}
+
+static const struct file_operations fops_disable_scan = {
+	.write = ath6kl_debug_disable_scan,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+/* File operation for P2P Frame Conditional Reject */
+static ssize_t ath6kl_disable_runtime_flowctrl_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u32 value;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &value))
+		return -EINVAL;
+
+	if (value) {
+		ar->conf_flags |= ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL;
+	} else {
+		ar->conf_flags &= ~ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL;
+	}
+	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
+		if (ar->conf_flags & ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL) {
+			clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+                } else {
+			if (test_bit(MCC_ENABLED, &ar->flag)) {
+				clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+			} else {
+				set_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+			}       
+		}       
+	} else {
+		clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+	}
+
+	return count;
+}
+
+static ssize_t ath6kl_disable_runtime_flowctrl_read(struct file *file, char __user *user_buf,
+                                      size_t count, loff_t *ppos)
+{
+        struct ath6kl *ar = file->private_data;
+        char buf[16];
+        int len;
+
+        len = snprintf(buf, sizeof(buf), "%d %d\n", 
+                       (ar->conf_flags & ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL)?1:0,
+		       test_bit(SKIP_FLOWCTRL_EVENT, &ar->flag)) ;
+
+        return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+
+static const struct file_operations fops_disable_runtime_flowctrl = {
+	.read = ath6kl_disable_runtime_flowctrl_read,
+	.write = ath6kl_disable_runtime_flowctrl_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -4420,6 +4620,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("driver_version", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_driver_version);
+
+	debugfs_create_file("rx_drop_operation", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_rx_drop_operation);
 
 	debugfs_create_file("reg_write", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_diag_reg_write);
@@ -4549,6 +4752,15 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("p2p_frame_cond_reject", S_IWUSR,
 			    ar->debugfs_phy, ar, &p2p_frame_cond_reject);
+
+	debugfs_create_file("debug_quirks", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_debug_quirks);
+
+	debugfs_create_file("disable_scan", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_disable_scan);
+
+	debugfs_create_file("disable_runtime_flowctrl", S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_disable_runtime_flowctrl);
 
 	return 0;
 }

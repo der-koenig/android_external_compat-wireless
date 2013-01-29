@@ -3171,7 +3171,8 @@ int ath6kl_wmi_set_rx_frame_format_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wmi_set_appie_cmd(struct wmi *wmi, u8 if_idx, u8 mgmt_frm_type,
 			     const u8 *ie, u8 ie_len);
 
-int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi, u32 ratemode);
+int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi,
+				u8 if_idx, u32 ratemode);
 
 /* P2P */
 int ath6kl_wmi_disable_11b_rates_cmd(struct wmi *wmi, u8 if_idx, bool disable);

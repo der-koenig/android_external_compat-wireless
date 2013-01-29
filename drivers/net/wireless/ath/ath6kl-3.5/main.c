@@ -987,6 +987,9 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 	set_bit(CONNECTED, &vif->flags);
 	ath6kl_judge_roam_parameter(vif, false);
+	if (ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi,
+				vif->fw_vif_idx, RATECTRL_MODE_PERONLY))
+		ath6kl_err("set rate_ctrl failed\n");
 	ath6kl_switch_parameter_based_on_connection(vif, false);
 	netif_carrier_on(vif->ndev);
 }
@@ -2008,6 +2011,33 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 		}
 		break;
 	}
+	case ATH6KL_IOCTL_STANDARD03:
+	{
+		struct btcoex_ioctl btcoex_cmd;
+		char *user_cmd;
+
+		if (copy_from_user(&btcoex_cmd,
+				data,
+				sizeof(struct btcoex_ioctl)))
+			ret = -EIO;
+		else {
+			user_cmd = kzalloc(btcoex_cmd.cmd_len, GFP_KERNEL);
+			if (!user_cmd) {
+				ret = -ENOMEM;
+				break;
+			}
+			if (copy_from_user(user_cmd,
+					btcoex_cmd.cmd,
+					btcoex_cmd.cmd_len))
+				ret = -EIO;
+			else {
+				ret = ath6kl_wmi_send_btcoex_cmd(vif->ar,
+					(u8 *)user_cmd, btcoex_cmd.cmd_len);
+			}
+			kfree(user_cmd);
+		}
+		break;
+	}
 	default:
 		ret = -EOPNOTSUPP;
 		break;
@@ -2057,8 +2087,10 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 	    (ar->p2p_concurrent) &&
 	    (ar->p2p_dedicate)) {
 		vif = ath6kl_get_vif_by_index(ar, ar->vif_max - 2);
-		if (!vif)
+		if (!vif) {
+			up(&ar->sem);
 			return -EFAULT;
+		}
 	}
 #endif
 
@@ -2128,6 +2160,7 @@ int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	case ATH6KL_IOCTL_STANDARD01:	/* Android privacy command */
 	case ATH6KL_IOCTL_STANDARD02:	/* supplicant escape purpose to
 					   support WiFi-Direct Cert. */
+	case ATH6KL_IOCTL_STANDARD03:	/* BTC command */
 	case ATH6KL_IOCTL_STANDARD12:	/* hole, please reserved */
 	case ATH6KL_IOCTL_STANDARD13:	/* TX99 */
 	case ATH6KL_IOCTL_STANDARD15:	/* hole, please reserved */

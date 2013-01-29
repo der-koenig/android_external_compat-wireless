@@ -873,7 +873,8 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		return action;
 	}
 
-	if (packet->info.tx.tag == ATH6KL_CONTROL_PKT_TAG)
+	if ((packet->info.tx.tag == ATH6KL_CONTROL_PKT_TAG) ||
+			(packet->info.tx.tag == ATH6KL_PRI_DATA_PKT_TAG))
 		return action;
 
 	/*
@@ -977,7 +978,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 	bool wake_event = false;
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif = NULL;
 	struct htc_endpoint *endpoint = NULL;
 	int txq_depth;
 
@@ -1084,26 +1085,22 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 	__skb_queue_purge(&skb_queue);
 
-
 	if (test_bit(MCC_ENABLED, &ar->flag)) {
 		endpoint = &ar->htc_target->endpoint[eid];
-		if (ar && endpoint && packet && ar->htc_target &&
-			eid >= ENDPOINT_2 && eid <= ENDPOINT_5) {
+		if (ar && endpoint && packet && ar->htc_target) {
 			struct list_head *tx_queue;
 
 			tx_queue = &endpoint->txq;
-			spin_lock_bh(&ar->htc_target->tx_lock);
-			txq_depth = get_queue_depth(tx_queue);
-			spin_unlock_bh(&ar->htc_target->tx_lock);
+			if (tx_queue && vif && !flushing[vif->fw_vif_idx]) {
+				spin_lock_bh(&ar->htc_target->tx_lock);
+				txq_depth = get_queue_depth(tx_queue);
+				spin_unlock_bh(&ar->htc_target->tx_lock);
 
-			if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
-				ath6kl_p2p_flowctrl_netif_state_transition(
-					ar, packet->connid,
-					ATH6KL_P2P_FLOWCTRL_NETIF_WAKE, 0);
-			else
-				ath6kl_p2p_flowctrl_netif_state_transition(
-					ar, packet->connid,
-					ATH6KL_P2P_FLOWCTRL_NETIF_STOP, 0);
+				if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
+					ath6kl_p2p_flowctrl_netif_transition(
+						ar,
+						ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
+			}
 		}
 	} else {
 		/* FIXME: Locking */
@@ -1592,8 +1589,9 @@ static void aggr_deque_frms(struct aggr_conn_info *aggr_conn, u8 tid,
 	spin_unlock_bh(&rxtid->lock);
 }
 
-static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
-				  u16 seq_no,
+static bool aggr_process_recv_frm(struct ath6kl *ar,
+				  struct aggr_conn_info *aggr_conn,
+				  u8 tid, u16 seq_no,
 				  bool is_amsdu, struct sk_buff *frame)
 {
 	struct rxtid *rxtid;
@@ -1685,7 +1683,8 @@ static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
 		stats->num_oow++;
 	}
 
-	if (drop_it == true) {
+	if ((drop_it == true) &&
+			!(ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP)) {
 		dev_kfree_skb(frame);
 		is_queued = true;
 		spin_unlock_bh(&rxtid->lock);
@@ -2248,8 +2247,8 @@ rx_aggr_process:
 	datap = (struct ethhdr *) skb->data;
 
 	if (is_unicast_ether_addr(datap->h_dest) &&
-	    aggr_process_recv_frm(conn->aggr_conn_cntxt, tid, seq_no,
-				  is_amsdu, skb))
+		aggr_process_recv_frm(ar, conn->aggr_conn_cntxt, tid,
+			seq_no, is_amsdu, skb))
 		/* aggregation code will handle the skb */
 		return;
 

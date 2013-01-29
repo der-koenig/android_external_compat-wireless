@@ -41,12 +41,13 @@
 #include "p2p.h"
 #include "ap.h"
 #include <linux/wireless.h>
+#include <linux/interrupt.h>
 
 #define MAKE_STR(symbol) #symbol
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.247)
+#define __BUILD_VERSION_ (3.5.0.270)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -74,23 +75,25 @@
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
 	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
-
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
-	(ATH6KL_MODULE_P2P_FLOWCTRL |			\
-		ATH6KL_MODULE_ENABLE_KEEPALIVE |		\
-	 /* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
-	 /* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	 0)
 #else
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
+#endif
 
+#ifdef CONFIG_ANDROID
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
-	(ATH6KL_MODULE_ENABLE_KEEPALIVE |		\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	0)
+	 0)
+#else
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
+	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
+	 0)
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
@@ -115,6 +118,89 @@
 
 #ifndef ATH6KL_DEVNAME_DEF_STA
 #define ATH6KL_DEVNAME_DEF_STA		"sta%d"
+#endif
+
+
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_4
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_4
+#endif
+#endif
+
+/*
+ * NOT to touch origional branches's Makefile and therefore turn-on
+ * ATH6KL_SUPPORT_NL80211_QCA by default for all Android releases.
+ *
+ * For JB_2.5, Android.mk will append ATH6KL_SUPPORT_NL80211_KERNEL3_4
+ * For JB_MR1, Android.mk will append ATH6KL_SUPPORT_NL80211_KERNEL3_6
+ *                                    ATH6KL_SUPPORT_NETLINK_KERNEL3_6
+ *                                    ATH6KL_SUPPORT_NETLINK_KERNEL3_7
+ *
+ * For ATH6KL_SUPPORT_NETLINK_KERNEL3_6 & ATH6KL_SUPPORT_NETLINK_KERNEL3_7,
+ * not really need if compat.ko used.
+ */
+#ifdef CONFIG_ANDROID
+#define ATH6KL_SUPPORT_NL80211_QCA
+
+#if defined(ATH6KL_SUPPORT_NL80211_KERNEL3_4) ||	\
+	defined(ATH6KL_SUPPORT_NL80211_KERNEL3_6)
+/*
+ * New Android (after JB_2.5/JB_MR1) use build-in cfg80211.ko and
+ * need to remove QCA's cfg80211 implementations.
+ */
+#undef ATH6KL_SUPPORT_NL80211_QCA
+#endif
+#endif
+
+/*
+ * No good way to support every version of cfg80211.ko so far, especially
+ * we sometimes change the default behavior of public cfg80211.ko.
+ *
+ * To let driver code could compiler between different cfg80211.ko and using
+ * these flags now.
+ * Newer NL80211.h may has the similiar definitions to used by application
+ * or the driver but, unfortunately, all are not we want.
+ *
+ * Please add ATH6KL_SUPPORT_NL80211_QCA or ATH6KL_SUPPORT_NL80211_KERNEL3_x
+ * in your BSP's Makefiles based on the cfg80211.ko you used.
+ */
+#ifdef ATH6KL_SUPPORT_NL80211_QCA
+/*
+ * Means the cfg80211.ko is older version (as least older than built-in
+ * version of kernel3.3) and had QCA's special implementations.
+ *
+ * NL80211_CMD_GET_WOWLAN_QCA: for QCA WoW command.
+ * NL80211_CMD_BTCOEX_QCA: for QCA BTCoext NL80211 command and event.
+ *
+ * TODO : remove these special implementations.
+ */
+#define NL80211_CMD_GET_WOWLAN_QCA
+#define NL80211_CMD_BTCOEX_QCA
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_4
+/*
+ * Means the cfg80211.ko is newer version (as least newer than built-in
+ * version of kernel3.4)
+ *
+ * NL80211_CMD_START_AP: for new call-back and structures.
+ * NL80211_ATTR_RX_SIGNAL_DBM: for new API's parameter.
+ * CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL: new flag consist w/ RoC oper.
+ */
+#define NL80211_CMD_START_AP
+#define NL80211_ATTR_RX_SIGNAL_DBM
+#define CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
+/*
+ * Means the cfg80211.ko is newer version (as least newer than built-in
+ * version of kernel3.6)
+ *
+ * CFG80211_NETDEV_REPLACED_BY_WDEV: using wireless_dev pointer instead
+ *                                   of net_device.
+ * CFG80211_NO_SET_CHAN_OPERATION: no support set_channel call-back.
+ */
+#define CFG80211_NETDEV_REPLACED_BY_WDEV
+#define CFG80211_NO_SET_CHAN_OPERATION
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -242,6 +328,9 @@ struct ath6kl_fw_ie {
 /* Standard do_ioctl() ioctl interface */
 #define ATH6KL_IOCTL_STANDARD02		(SIOCDEVPRIVATE+2)
 
+/* BTC command */
+#define ATH6KL_IOCTL_STANDARD03		(SIOCDEVPRIVATE+3)
+
 /* hole, please reserved */
 #define ATH6KL_IOCTL_STANDARD12		(SIOCDEVPRIVATE+12)
 
@@ -291,11 +380,22 @@ struct ath6kl_android_wifi_priv_cmd {
 	int total_len;
 };
 
+struct btcoex_ioctl {
+	char *cmd;
+	unsigned int cmd_len;
+};
+
 enum ath6kl_recovery_mode {
 	ATH6KL_RECOVERY_MODE_NONE = 0,
 	ATH6KL_RECOVERY_MODE_WARM,
 	ATH6KL_RECOVERY_MODE_COLD,
 };
+
+#ifdef CONFIG_ATH6KL_RECOVERY_MODE_USER
+#define ATH6KL_RECOVERY_MODE_DEFAULT CONFIG_ATH6KL_RECOVERY_MODE_USER
+#else
+#define ATH6KL_RECOVERY_MODE_DEFAULT ATH6KL_RECOVERY_MODE_NONE
+#endif
 
 #define ATH6KL_FW_API2_FILE "fw-2.bin"
 
@@ -440,6 +540,7 @@ enum ath6kl_recovery_mode {
 /* HTC TX packet tagging definitions */
 #define ATH6KL_CONTROL_PKT_TAG    HTC_TX_PACKET_TAG_USER_DEFINED
 #define ATH6KL_DATA_PKT_TAG       (ATH6KL_CONTROL_PKT_TAG + 1)
+#define ATH6KL_PRI_DATA_PKT_TAG       (ATH6KL_CONTROL_PKT_TAG + 2)
 
 #define AR6003_CUST_DATA_SIZE 16
 
@@ -522,6 +623,8 @@ enum scanband_type {
 #define ATH6KL_CONF_ENABLE_TX_BURST		BIT(3)
 #define ATH6KL_CONF_SUSPEND_CUTPOWER		BIT(4)
 #define ATH6KL_CONF_ENABLE_FLOWCTRL		BIT(5)
+#define ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL	BIT(6)
+#define ATH6KL_CONF_DISABLE_RX_AGGR_DROP	BIT(7)
 
 enum wlan_low_pwr_state {
 	WLAN_POWER_STATE_ON,
@@ -851,6 +954,7 @@ enum ath6kl_hw_flags {
 	ATH6KL_HW_TGT_ALIGN_PADDING = BIT(0),
 	ATH6KL_HW_SINGLE_PIPE_SCHED = BIT(1),
 	ATH6KL_HW_FIRMWARE_EXT_SUPPORT = BIT(2),
+	ATH6KL_HW_USB_FLOWCTRL = BIT(3)
 };
 
 /*
@@ -980,6 +1084,7 @@ struct ath6kl_vif {
 	int reconnect_flag;
 	u32 last_roc_id;
 	struct ieee80211_channel *last_roc_channel;
+	unsigned int last_roc_duration;
 	u32 last_cancel_roc_id;
 	u32 send_action_id;
 	bool probe_req_report;
@@ -1030,6 +1135,8 @@ enum ath6kl_dev_state {
 	INIT_DEFER_PROGRESS,
 	DOWNLOAD_FIRMWARE_EXT,
 	MCC_ENABLED,
+	SKIP_FLOWCTRL_EVENT,
+	DISABLE_SCAN,
 };
 
 enum ath6kl_state {
@@ -1217,9 +1324,6 @@ struct ath6kl {
 	bool sche_scan;
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
-	/* ktk feature is enabled or not */
-	bool ktk_enable;
-
 	/* ktk feature is started ot not */
 	bool ktk_active;
 

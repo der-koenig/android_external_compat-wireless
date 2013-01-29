@@ -121,6 +121,98 @@ static const u8 up_to_ac[] = {
 	WMM_AC_VO,
 };
 
+static bool ath6kl_wmi_report_rx_mgmt(struct net_device *dev, int freq,
+	int sig_mbm, const u8 *buf, size_t len, gfp_t gfp)
+{
+#ifdef NL80211_ATTR_RX_SIGNAL_DBM
+#ifdef CFG80211_NETDEV_REPLACED_BY_WDEV
+	BUG_ON(!dev->ieee80211_ptr);
+
+	return cfg80211_rx_mgmt(dev->ieee80211_ptr,
+				freq,
+				sig_mbm,
+				buf,
+				len,
+				gfp);
+#else
+	return cfg80211_rx_mgmt(dev, freq, sig_mbm, buf, len, gfp);
+#endif
+#else
+	return cfg80211_rx_mgmt(dev, freq, buf, len, gfp);
+#endif
+}
+
+static void ath6kl_wmi_ready_on_channel(struct net_device *ndev,
+					u64 cookie,
+					struct ieee80211_channel *chan,
+					enum nl80211_channel_type channel_type,
+					unsigned int duration, gfp_t gfp)
+{
+#ifdef CFG80211_NETDEV_REPLACED_BY_WDEV
+	BUG_ON(!ndev->ieee80211_ptr);
+
+	cfg80211_ready_on_channel(ndev->ieee80211_ptr,
+				cookie,
+				chan,
+				channel_type,
+				duration,
+				gfp);
+#else
+	cfg80211_ready_on_channel(ndev,
+				cookie,
+				chan,
+				channel_type,
+				duration,
+				gfp);
+#endif
+}
+
+static void ath6kl_wmi_remain_on_channel_expired(struct net_device *ndev,
+					u64 cookie,
+					struct ieee80211_channel *chan,
+					enum nl80211_channel_type channel_type,
+					gfp_t gfp)
+{
+#ifdef CFG80211_NETDEV_REPLACED_BY_WDEV
+	BUG_ON(!ndev->ieee80211_ptr);
+
+	cfg80211_remain_on_channel_expired(ndev->ieee80211_ptr,
+					cookie,
+					chan,
+					channel_type,
+					gfp);
+#else
+	cfg80211_remain_on_channel_expired(ndev,
+					cookie,
+					chan,
+					channel_type,
+					gfp);
+#endif
+}
+
+static void ath6kl_wmi_mgmt_tx_status(struct net_device *ndev, u64 cookie,
+			     const u8 *buf, size_t len, bool ack, gfp_t gfp)
+
+{
+#ifdef CFG80211_NETDEV_REPLACED_BY_WDEV
+	BUG_ON(!ndev->ieee80211_ptr);
+
+	cfg80211_mgmt_tx_status(ndev->ieee80211_ptr,
+				cookie,
+				buf,
+				len,
+				ack,
+				gfp);
+#else
+	cfg80211_mgmt_tx_status(ndev,
+				cookie,
+				buf,
+				len,
+				ack,
+				gfp);
+#endif
+}
+
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id)
 {
 	if (WARN_ON(ep_id == ENDPOINT_UNUSED || ep_id >= ENDPOINT_MAX))
@@ -352,7 +444,7 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 		 */
 		if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
 			usr_pri = WMI_VOICE_USER_PRIORITY;
-			*phtc_tag = ATH6KL_CONTROL_PKT_TAG;
+			*phtc_tag = ATH6KL_PRI_DATA_PKT_TAG;
 		}
 	}
 
@@ -545,7 +637,7 @@ static int ath6kl_wmi_remain_on_chnl_event_rx(struct wmi *wmi, u8 *datap,
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"RoC : This RoC already be cancelled by user %x\n", id);
 	} else {
-		cfg80211_ready_on_channel(vif->ndev,
+		ath6kl_wmi_ready_on_channel(vif->ndev,
 				id, chan, NL80211_CHAN_NO_HT, dur, GFP_ATOMIC);
 	}
 
@@ -589,11 +681,21 @@ static int ath6kl_wmi_cancel_remain_on_chnl_event_rx(struct wmi *wmi,
 					vif->last_roc_channel->center_freq,
 					ev->status);
 
+			/* To sync user's RoC id only for long listen. */
+			if (vif->last_roc_duration ==
+				(ATH6KL_ROC_MAX_PERIOD * 1000))
+				ath6kl_wmi_ready_on_channel(vif->ndev,
+							vif->last_roc_id,
+							vif->last_roc_channel,
+							NL80211_CHAN_NO_HT,
+							vif->last_roc_duration,
+							GFP_ATOMIC);
+
 			/*
 			 * Still report RoC-End, suppose the user will handle
 			 * this case.
 			 */
-			cfg80211_remain_on_channel_expired(vif->ndev,
+			ath6kl_wmi_remain_on_channel_expired(vif->ndev,
 							vif->last_roc_id,
 							vif->last_roc_channel,
 							NL80211_CHAN_NO_HT,
@@ -635,7 +737,7 @@ static int ath6kl_wmi_cancel_remain_on_chnl_event_rx(struct wmi *wmi,
 			if (mgmt_tx_frame->vif == vif) {
 				list_del(&mgmt_tx_frame->list);
 
-				cfg80211_mgmt_tx_status(vif->ndev,
+				ath6kl_wmi_mgmt_tx_status(vif->ndev,
 					mgmt_tx_frame->mgmt_tx_frame_idx,
 					mgmt_tx_frame->mgmt_tx_frame,
 					mgmt_tx_frame->mgmt_tx_frame_len,
@@ -659,14 +761,14 @@ static int ath6kl_wmi_cancel_remain_on_chnl_event_rx(struct wmi *wmi,
 	if (test_bit(ROC_CANCEL_PEND, &vif->flags)) {
 		/* Cancel by driver and should use last_roc_id,
 		   not last_cancel_roc_id */
-		cfg80211_remain_on_channel_expired(vif->ndev, id, chan,
+		ath6kl_wmi_remain_on_channel_expired(vif->ndev, id, chan,
 						   NL80211_CHAN_NO_HT,
 						   GFP_ATOMIC);
 
 		clear_bit(ROC_CANCEL_PEND, &vif->flags);
 		wake_up(&ar->event_wq);
 	} else {
-		cfg80211_remain_on_channel_expired(vif->ndev, id, chan,
+		ath6kl_wmi_remain_on_channel_expired(vif->ndev, id, chan,
 						   NL80211_CHAN_NO_HT,
 						   GFP_ATOMIC);
 		if (test_bit(ROC_WAIT_EVENT, &vif->flags)) {
@@ -748,7 +850,7 @@ static int ath6kl_wmi_tx_status_event_rx(struct wmi *wmi, u8 *datap, int len,
 					return 0;
 
 				found = 1;
-				cfg80211_mgmt_tx_status(vif->ndev, id,
+				ath6kl_wmi_mgmt_tx_status(vif->ndev, id,
 					mgmt_tx_frame->mgmt_tx_frame,
 					mgmt_tx_frame->mgmt_tx_frame_len,
 					!!ev->ack_status, GFP_ATOMIC);
@@ -793,7 +895,12 @@ static int ath6kl_wmi_rx_probe_req_event_rx(struct wmi *wmi, u8 *datap, int len,
 		   dlen, freq, vif->probe_req_report);
 
 	if (vif->probe_req_report || vif->nw_type == AP_NETWORK)
-		cfg80211_rx_mgmt(vif->ndev, freq, ev->data, dlen, GFP_ATOMIC);
+		ath6kl_wmi_report_rx_mgmt(vif->ndev,
+					freq,
+					0,
+					ev->data,
+					dlen,
+					GFP_ATOMIC);
 
 	return 0;
 }
@@ -843,7 +950,12 @@ static int ath6kl_wmi_rx_action_event_rx(struct wmi *wmi, u8 *datap, int len,
 		return 0;
 	}
 
-	cfg80211_rx_mgmt(vif->ndev, freq, ev->data, dlen, GFP_ATOMIC);
+	ath6kl_wmi_report_rx_mgmt(vif->ndev,
+				freq,
+				0,
+				ev->data,
+				dlen,
+				GFP_ATOMIC);
 
 	return 0;
 }
@@ -899,6 +1011,7 @@ static int ath6kl_wmi_flowctrl_ind_event_rx(u8 *datap, int len,
 	struct wmi_flowctrl_ind_event *ev;
 
 	if ((!(ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL)) ||
+	    (test_bit(SKIP_FLOWCTRL_EVENT, &ar->flag)) ||
 	    (ar->vif_max == 1))
 		return 0;
 
@@ -3397,7 +3510,9 @@ int ath6kl_wmi_set_appie_cmd(struct wmi *wmi, u8 if_idx, u8 mgmt_frm_type,
 				   NO_SYNC_WMIFLAG);
 }
 
-int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi, u32 ratemode)
+int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi,
+				u8 if_idx,
+				u32 ratemode)
 {
 	struct sk_buff *skb;
 	struct  wmi_set_ratectrl_parm_cmd *cmd;
@@ -3411,8 +3526,11 @@ int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi, u32 ratemode)
 	cmd = (struct wmi_set_ratectrl_parm_cmd *) skb->data;
 	cmd->mode = ratemode ? 1 : 0;
 
-	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_RATECTRL_PARM_CMDID,
-					NO_SYNC_WMIFLAG);
+	return ath6kl_wmi_cmd_send(wmi,
+				if_idx,
+				skb,
+				WMI_SET_RATECTRL_PARM_CMDID,
+				NO_SYNC_WMIFLAG);
 }
 
 int ath6kl_wmi_disable_11b_rates_cmd(struct wmi *wmi, u8 if_idx, bool disable)

@@ -29,7 +29,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* enable mimo ps */
 	ATH6KL_MODULE_MIMO_PS_ENABLE    = BIT(2),
 
-	/* hole */
+	/* disable RX aggregation drop packets */
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP    = BIT(3),
 
 	/* enable test mode */
 	ATH6KL_MODULE_TESTMODE_ENABLE   = BIT(4),
@@ -46,8 +47,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* enable max. fw vif */
 	ATH6KL_MODULE_P2P_MAX_FW_VIF	= BIT(8),
 
-	/* enable p2p flowctrl */
-	ATH6KL_MODULE_P2P_FLOWCTRL	= BIT(9),
+	/* hole */
 
 	/* enable usb remote wakeup support */
 	ATH6KL_MODULE_ENABLE_USB_REMOTE_WKUP = BIT(10),
@@ -61,8 +61,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* Disable USB Auto-suspend */
 	ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND = BIT(13),
 
-	/* enable AP keep-alive by default */
-	ATH6KL_MODULE_ENABLE_KEEPALIVE	= BIT(14),
+	/* hole */
 
 	/* offload AP keep-alive to supplicant */
 	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15),
@@ -88,6 +87,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* enable usb auto power management feathre */
 	ATH6KL_MODULE_ENABLE_USB_AUTO_PM = BIT(22),
 
+	/* disable wmi sync mechanism */
+	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
 };
 
 enum ATH6KL_MODULE_P2P {
@@ -166,6 +167,7 @@ enum ATH6K_DEBUG_MASK {
 };
 
 extern unsigned int debug_mask;
+extern unsigned int debug_quirks;
 extern __printf(2, 3)
 int ath6kl_printk(const char *level, const char *fmt, ...);
 
