@@ -493,6 +493,10 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		up(&ar->sem);
 		return status;
 	}
+	if (ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi,
+					 vif->fw_vif_idx,
+					 RATECTRL_MODE_PERONLY))
+		ath6kl_err("set rate_ctrl failed\n");
 
 	if (sme->ie == NULL || sme->ie_len == 0)
 		ar->connect_ctrl_flags &= ~CONNECT_WPS_FLAG;

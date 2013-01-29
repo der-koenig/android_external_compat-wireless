@@ -2085,6 +2085,13 @@ struct wmi_set_ie_cmd {
 	u8 ie_info[0];
 } __packed;
 
+#define RATECTRL_MODE_DEFAULT 0
+#define RATECTRL_MODE_PERONLY 1
+
+struct wmi_set_ratectrl_parm_cmd {
+	u32 mode;
+} __packed;
+
 /* Notify the WSC registration status to the target */
 #define WSC_REG_ACTIVE     1
 #define WSC_REG_INACTIVE   0
@@ -2741,6 +2748,9 @@ int ath6kl_wmi_set_appie_cmd(struct wmi *wmi, u8 if_idx, u8 mgmt_frm_type,
 
 int ath6kl_wmi_set_ie_cmd(struct wmi *wmi, u8 if_idx, u8 ie_id, u8 ie_field,
 			  const u8 *ie_info, u8 ie_len);
+int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi,
+				 u8 if_idx, u32 ratemode);
+
 
 int ath6kl_wmi_set_acl_policy(struct wmi *wmi, u8 if_idx, bool enable_acl);
 int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,

@@ -3455,6 +3455,30 @@ int ath6kl_wmi_set_ie_cmd(struct wmi *wmi, u8 if_idx, u8 ie_id, u8 ie_field,
 				   NO_SYNC_WMIFLAG);
 }
 
+int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi,
+				u8 if_idx,
+				u32 ratemode)
+{
+	struct sk_buff *skb;
+	struct  wmi_set_ratectrl_parm_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "ath6kl_wmi_setratectrl_cmd: mode=%d\n",
+		   ratemode);
+	cmd = (struct wmi_set_ratectrl_parm_cmd *) skb->data;
+	cmd->mode = ratemode ? 1 : 0;
+
+	return ath6kl_wmi_cmd_send(wmi,
+				if_idx,
+				skb,
+				WMI_SET_RATECTRL_PARM_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+
 int ath6kl_wmi_disable_11b_rates_cmd(struct wmi *wmi, bool disable)
 {
 	struct sk_buff *skb;
