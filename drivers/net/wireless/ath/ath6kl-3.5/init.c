@@ -59,6 +59,10 @@ module_param(diag_local_test, uint, 0644);
    used to override the default MAC of MAC from softmac.bin file */
 char *ath6kl_wifi_mac;
 
+/* for android frame work, we need to add fwpath module parameter,
+   to avoid the problem that create softap mode will fail. */
+char *fwpath = "android_fw_path_compatible_str";
+
 module_param(debug_mask, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
 module_param(htc_bundle_send, uint, 0644);
@@ -72,6 +76,7 @@ module_param(ath6kl_wifi_mac, charp, 0000);
 module_param(ath6kl_scan_timeout, uint, 0644);
 module_param(ath6kl_roam_mode, uint, 0644);
 module_param(recovery_enable_mode, uint, 0644);
+module_param(fwpath, charp, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -264,7 +269,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
 		.testscript_addr		= 0x43d400,
-		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED	|
+		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED	|
 						ATH6KL_HW_USB_FLOWCTRL,
 		.fw = {
 			.dir		= AR6004_HW_2_0_FW_DIR,
@@ -290,7 +295,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0,
-		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED	|
+		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED	|
 						ATH6KL_HW_USB_FLOWCTRL,
 
 		.fw = {
@@ -325,6 +330,27 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_epping		= AR6006_HW_1_0_EPPING_FILE,
 		.fw_softmac		= AR6006_HW_1_0_SOFTMAC_FILE,
 	},
+	{
+		.id				= AR6006_HW_1_1_VERSION,
+		.name				= "ar6006 hw 1.1",
+		.dataset_patch_addr		= 0,
+		.app_load_addr			= 0x1234,
+		.board_ext_data_addr		= 0,
+		.reserved_ram_size		= 11264,
+		.board_addr			= 0x45fc00,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
+
+		.fw = {
+			.dir		= AR6006_HW_1_1_FW_DIR,
+			.fw		= AR6006_HW_1_1_FIRMWARE_FILE,
+			.api2		= ATH6KL_FW_API2_FILE,
+		},
+
+		.fw_board		= AR6006_HW_1_1_BOARD_DATA_FILE,
+		.fw_default_board	= AR6006_HW_1_1_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6006_HW_1_1_EPPING_FILE,
+		.fw_softmac		= AR6006_HW_1_1_SOFTMAC_FILE,
+	},
 };
 
 /*
@@ -355,6 +381,7 @@ static const struct ath6kl_hw hw_list[] = {
 #define CONFIG_AR600x_DEBUG_UART_TX_PIN 8
 #define CONFIG_AR6004_DEBUG_UART_TX_PIN 11
 #define CONFIG_AR6006_DEBUG_UART_TX_PIN 11
+#define CONFIG_AR6006_FPGA_DEBUG_UART_TX_PIN 24
 
 #define ATH6KL_DATA_OFFSET    64
 struct sk_buff *ath6kl_buf_alloc(int size)
@@ -484,9 +511,8 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 
 	memset(&connect, 0, sizeof(connect));
 
-	if (ar->hw.flags & ATH6KL_HW_USB_FLOWCTRL) {
+	if (ar->hw.flags & ATH6KL_HW_USB_FLOWCTRL)
 		connect.conn_flags |= HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL;
-	}
 
 	/* these fields are the same for all service endpoints */
 	connect.ep_cb.tx_comp_multi = ath6kl_tx_complete;
@@ -2234,10 +2260,15 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 	/* Configure GPIO AR600x UART */
 	if (ar->target_type == TARGET_TYPE_AR6004)
 		param = CONFIG_AR6004_DEBUG_UART_TX_PIN;
-	else if (ar->target_type == TARGET_TYPE_AR6006)
+	else if (ar->target_type == TARGET_TYPE_AR6006 &&  \
+	    ar->version.target_ver == AR6006_HW_1_0_VERSION)
 		param = CONFIG_AR6006_DEBUG_UART_TX_PIN;
+	else if (ar->target_type == TARGET_TYPE_AR6006 &&  \
+	    ar->version.target_ver == AR6006_HW_1_1_VERSION)
+		param = CONFIG_AR6006_FPGA_DEBUG_UART_TX_PIN;
 	else
 		param = CONFIG_AR600x_DEBUG_UART_TX_PIN;
+
 	status = ath6kl_bmi_write(ar,
 				  ath6kl_get_hi_item_addr(ar,
 				  HI_ITEM(hi_dbg_uart_txpin)),
@@ -2953,6 +2984,6 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_TRC,
 			"attempting to reset target on instance destroy\n");
 	ath6kl_reset_device(ar, ar->target_type, true, true);
-	
+
 	up(&ar->sem);
 }

@@ -1020,7 +1020,7 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 		flowctrl_allowed = _check_can_send(ar, fw_conn);
 		if (!flowctrl_allowed && fw_conn->previous_can_send) {
 			spin_lock_bh(&ar->htc_target->tx_lock);
-			for (eid = ENDPOINT_5; eid <= ENDPOINT_2; eid--) {
+			for (eid = ENDPOINT_5; eid >= ENDPOINT_2; eid--) {
 				endpoint = &ar->htc_target->endpoint[eid];
 				tx_queue = &endpoint->txq;
 				if (list_empty(tx_queue))
@@ -1057,13 +1057,13 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 				}
 			}
 			spin_unlock_bh(&ar->htc_target->tx_lock);
-		} else if (flowctrl_allowed) {
-			ath6kl_p2p_flowctrl_netif_transition(
-				ar, ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
 		}
 		fw_conn->previous_can_send = flowctrl_allowed;
 		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	}
+
+	ath6kl_p2p_flowctrl_netif_transition(
+				ar, ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
 		"p2p_flowctrl state_change %p re_tx %d re_tx_aging %d\n",
@@ -1315,7 +1315,7 @@ bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len)
 		(action_frame->action_subtype == WLAN_P2P_GO_NEG_CONF));
 }
 
-bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len)
+bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, const u8 *frm, size_t len)
 {
 	struct ieee80211_mgmt *action = (struct ieee80211_mgmt *)frm;
 	struct ieee80211_p2p_action_public *action_public;
@@ -1340,5 +1340,66 @@ bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len)
 		return true;
 
 	return false;
+}
+
+void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
+				u8 beacon_ie_len,
+				u8 assoc_req_len,
+				u8 assoc_resp_len,
+				u8 *assoc_info)
+{
+	u8 *pie, *peie;
+	struct ieee80211_ht_cap *ht_cap_ie = NULL;
+	bool vendor_spec_ie_intel = false;
+
+	if (vif->nw_type != INFRA_NETWORK)
+		return;
+
+	/* Now, only p2p_war_bad_intel_go need to do something here. */
+	if (!vif->ar->p2p_war_bad_intel_go)
+		return;
+
+	/* AssocResp IEs */
+	pie = assoc_info + beacon_ie_len + assoc_req_len +
+		(sizeof(u16) * 3); /* capinfo + status code + associd */
+	peie = assoc_info + beacon_ie_len + assoc_req_len + assoc_resp_len;
+
+	while (pie < peie) {
+		switch (*pie) {
+		case WLAN_EID_HT_CAPABILITY:
+			if (pie[1] >= sizeof(struct ieee80211_ht_cap))
+				ht_cap_ie =
+					(struct ieee80211_ht_cap *)(pie + 2);
+			break;
+		case WLAN_EID_VENDOR_SPECIFIC:
+			if (pie[1] > 0) {
+				if (pie[1] == 0x0b &&
+				     pie[2] == 0x00 &&
+				     pie[3] == 0x17 &&
+				     pie[4] == 0x35 &&
+				     pie[5] == 0x01)
+					vendor_spec_ie_intel = true;
+			}
+			break;
+		}
+		pie += pie[1] + 2;
+	}
+
+	/* WAR EV119712 */
+	if (ht_cap_ie &&
+	    vendor_spec_ie_intel &&
+	    (vif->ar->target_subtype & TARGET_SUBTYPE_2SS)) {
+		if (((ht_cap_ie->cap_info & IEEE80211_HT_CAP_SM_PS) ==
+		     (WLAN_HT_CAP_SM_PS_DYNAMIC <<
+					IEEE80211_HT_CAP_SM_PS_SHIFT)) &&
+		    (ht_cap_ie->mcs.rx_mask[1])) {
+			ath6kl_info("Disable 2SS rates\n");
+			ath6kl_wmi_set_fix_rates(vif->ar->wmi,
+						vif->fw_vif_idx,
+						(0x00000000000fffffULL));
+		}
+	}
+
+	return;
 }
 

@@ -47,7 +47,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.270)
+#define __BUILD_VERSION_ (3.5.0.275)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -521,6 +521,17 @@ enum ath6kl_recovery_mode {
 #define AR6006_HW_1_0_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6006/hw1.0/bdata.bin"
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
+
+/* AR6006 1.1 definitions */
+#define AR6006_HW_1_1_VERSION                 0x31c80a26
+#define AR6006_HW_1_1_FW_DIR			"ath6k/AR6006/hw1.1"
+#define AR6006_HW_1_1_FIRMWARE_2_FILE         "fw-2.bin"
+#define AR6006_HW_1_1_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6006_HW_1_1_BOARD_DATA_FILE         "ath6k/AR6006/hw1.1/bdata.bin"
+#define AR6006_HW_1_1_EPPING_FILE             "ath6k/AR6006/hw1.1/epping.bin"
+#define AR6006_HW_1_1_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6006/hw1.1/bdata.bin"
+#define AR6006_HW_1_1_SOFTMAC_FILE            "ath6k/AR6006/hw1.1/softmac.bin"
 
 #define AR6004_MAX_64K_FW_SIZE                65536
 
@@ -1321,6 +1332,9 @@ struct ath6kl {
 	/* Not to report P2P Frame to user if not in RoC period */
 	bool p2p_frame_not_report;
 
+	/* WAR EV119712 */
+	bool p2p_war_bad_intel_go;
+
 	bool sche_scan;
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
@@ -1606,7 +1620,7 @@ void ath6kl_ps_queue_age_handler(unsigned long ptr);
 void ath6kl_ps_queue_age_start(struct ath6kl_sta *conn);
 void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn);
 
-#ifdef CONFIG_ANDROID
+#ifdef CONFIG_ANDROID_8960_SDIO
 void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
 #endif

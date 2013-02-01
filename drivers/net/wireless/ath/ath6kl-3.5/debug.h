@@ -89,6 +89,9 @@ enum ATH6KL_MODULE_QUIRKS {
 
 	/* disable wmi sync mechanism */
 	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
+
+	/* workaround for EV119712 */
+	ATH6KL_MODULE_WAR_BAD_INTEL_GO = BIT(24),
 };
 
 enum ATH6KL_MODULE_P2P {

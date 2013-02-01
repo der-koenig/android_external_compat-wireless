@@ -1292,8 +1292,11 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	    (vif->nw_type == INFRA_NETWORK) &&
 	    (test_bit(CONNECTED, &vif->flags))) {
 		if (test_bit(DISCONNECT_PEND, &vif->flags)) {
-			WARN_ON(1);
-			return -EBUSY;
+			/*
+			 * Already be called by other commands
+			 * (ex, interface down), so ignore.
+			 */
+			return 0;
 		}
 		set_bit(DISCONNECT_PEND, &vif->flags);
 		wait_event_interruptible_timeout(ar->event_wq,
@@ -1302,7 +1305,7 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 						 (HZ/2));
 
 		if (signal_pending(current)) {
-			ath6kl_err("target did not respond\n");
+			ath6kl_err("wait DISCONNECT timeout!\n");
 			return -EINTR;
 		}
 	}
@@ -1462,7 +1465,7 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	int ret = 0;
 	u32 force_fg_scan = 0;
 	u8 skip_chan_num = 0;
-	bool sche_scan_trig;
+	bool sche_scan_trig, left;
 
 	if (test_bit(DISABLE_SCAN, &ar->flag)) {
 		ath6kl_err("scan is disabled temporarily\n");
@@ -1508,13 +1511,22 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		if (ath6kl_wmi_cancel_remain_on_chnl_cmd(ar->wmi,
 				vif->fw_vif_idx) != 0) {
 			ath6kl_err("RoC : cancel ROC failed\n");
+			clear_bit(ROC_CANCEL_PEND, &vif->flags);
 			up(&ar->sem);
 			return -EIO;
 		}
 
-		wait_event_interruptible_timeout(ar->event_wq,
-				!test_bit(ROC_ONGOING, &vif->flags),
-				 WMI_TIMEOUT);
+		left = wait_event_interruptible_timeout(ar->event_wq,
+					!test_bit(ROC_ONGOING, &vif->flags),
+					WMI_TIMEOUT);
+
+		if (left == 0) {
+			ath6kl_err("RoC : wait cancel RoC timeout\n");
+			clear_bit(ROC_CANCEL_PEND, &vif->flags);
+			clear_bit(ROC_ONGOING, &vif->flags);
+			up(&ar->sem);
+			return -EINTR;
+		}
 
 		if (signal_pending(current)) {
 			ath6kl_err("RoC : target did not respond\n");
@@ -4351,6 +4363,19 @@ static int _ath6kl_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
 		return -ERESTARTSYS;
 	}
 
+	if ((ar->p2p) && !ar->p2p_compat &&
+		(ar->p2p_concurrent) &&
+		(vif->fw_vif_idx == (ar->vif_max - 1)) &&
+		!test_bit(ROC_ONGOING, &vif->flags)) {
+
+		if (ath6kl_p2p_is_p2p_frame(ar, buf, len)) {
+			ath6kl_err("RoC : RoC channel closed, ignore action frame\n");
+			up(&ar->sem);
+			return -EINVAL;
+		}
+
+	}
+
 	id = vif->send_action_id++;
 	if (id == 0) {
 		/*
@@ -4831,13 +4856,13 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 
 	if (vif->arp_offload_ip_set || wow->any)
 		filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
-	
+
 	if (filter || wow->n_patterns) {
 		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "Set filter: 0x%x ", filter);
 		ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
-						  ATH6KL_WOW_MODE_ENABLE,
-						  filter,
-						  host_req_delay);
+						ATH6KL_WOW_MODE_ENABLE,
+						filter,
+						host_req_delay);
 	}
 
 	set_bit(WLAN_WOW_ENABLE, &vif->flags);
@@ -5104,6 +5129,11 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 		ar->p2p_frame_not_report = true;
 	else
 		ar->p2p_frame_not_report = false;
+
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_WAR_BAD_INTEL_GO))
+		ar->p2p_war_bad_intel_go = true;
+	else
+		ar->p2p_war_bad_intel_go = false;
 
 	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
 		" %s dedicate p2p-device,"
@@ -5581,9 +5611,13 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 
 	ath6kl_init_control_info(vif);
 
-	/* TODO: Pass interface specific pointer instead of ar */
-	if (ath6kl_init_if_data(vif))
-		goto err;
+	/* ATH6KL_MODULE_ENABLE_EPPING is enable will skip
+	 * the following procedure */
+	if (!ath6kl_mod_debug_quirks(vif->ar, ATH6KL_MODULE_ENABLE_EPPING)) {
+		/* TODO: Pass interface specific pointer instead of ar */
+		if (ath6kl_init_if_data(vif))
+			goto err;
+	}
 
 	if (register_netdevice(ndev))
 		goto err;

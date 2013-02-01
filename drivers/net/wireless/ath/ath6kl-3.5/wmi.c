@@ -942,7 +942,7 @@ static int ath6kl_wmi_rx_action_event_rx(struct wmi *wmi, u8 *datap, int len,
 
 	if (vif->ar->p2p_frame_not_report &&
 	    test_bit(SCANNING, &vif->flags) &&
-	    ath6kl_p2p_is_p2p_frame(vif->ar, ev->data, dlen)) {
+	    ath6kl_p2p_is_p2p_frame(vif->ar, (const u8 *) ev->data, dlen)) {
 		ath6kl_dbg(ATH6KL_DBG_WMI, "rx_action: not report to user!\n");
 		ath6kl_dbg_dump(ATH6KL_DBG_WMI_DUMP, __func__, "action rx ",
 				ev->data, dlen);
