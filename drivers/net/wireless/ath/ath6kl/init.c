@@ -363,6 +363,12 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 
 	memset(&connect, 0, sizeof(connect));
 
+	if (ar->hif_type == ATH6KL_HIF_TYPE_USB &&
+			(ar->version.target_ver == AR6004_HW_1_6_VERSION ||
+			ar->version.target_ver == AR6004_HW_3_0_VERSION)) {
+		connect.conn_flags |= HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL;
+	}
+
 	/* these fields are the same for all service endpoints */
 	connect.ep_cb.tx_comp_multi = ath6kl_tx_complete;
 	connect.ep_cb.rx = ath6kl_rx;
