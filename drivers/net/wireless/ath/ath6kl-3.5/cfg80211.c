@@ -1229,6 +1229,9 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 		return;
 	}
 
+	if (nw_type & INFRA_NETWORK)
+		vif->phymode = ((u16)nw_type >> 8) & 0xff;
+
 	reset_hk_prot = ath6kl_handshake_protect(vif, bssid);
 
 	if (vif->sme_state == SME_CONNECTING) {
@@ -2359,7 +2362,7 @@ static struct wireless_dev *ath6kl_cfg80211_add_iface(struct wiphy *wiphy,
 	if (dev)
 		return dev->ieee80211_ptr;
 	else
-		return NULL;
+		return ERR_PTR(-EINVAL);
 }
 
 static int ath6kl_cfg80211_del_iface(struct wiphy *wiphy,
@@ -2376,11 +2379,18 @@ static struct net_device *ath6kl_cfg80211_add_iface(struct wiphy *wiphy,
 						    u32 *flags,
 						    struct vif_params *params)
 {
-	return _ath6kl_cfg80211_add_iface(wiphy,
+	struct net_device *dev;
+
+	dev = _ath6kl_cfg80211_add_iface(wiphy,
 					name,
 					type,
 					flags,
 					params);
+
+	if (dev)
+		return dev;
+	else
+		return ERR_PTR(-EINVAL);
 }
 
 static int ath6kl_cfg80211_del_iface(struct wiphy *wiphy,
@@ -3729,6 +3739,11 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 		up(&ar->sem);
 		return 0;
 	}
+
+	/* Config keep-alive */
+	if (info->inactivity_timeout)
+		ath6kl_ap_keepalive_config_by_supp(vif,
+						info->inactivity_timeout);
 
 	/* Turn-on/off uAPS. */
 	if (ath6kl_set_uapsd(wiphy, dev, info->tail, info->tail_len)) {
@@ -5400,6 +5415,11 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
 		wiphy->flags |= WIPHY_FLAG_SUPPORTS_FW_ROAM;
 
+#ifdef NL80211_ATTR_INACTIVITY_TIMEOUT
+	if (ath6kl_mod_debug_quirks(ar,	ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP))
+		wiphy->features |= NL80211_FEATURE_INACTIVITY_TIMER;
+#endif
+
 	wiphy->wowlan.flags = WIPHY_WOWLAN_ANY |
 				WIPHY_WOWLAN_MAGIC_PKT |
 				WIPHY_WOWLAN_DISCONNECT |
@@ -5455,6 +5475,7 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 {
 	int i;
+	struct ath6kl *ar = vif->ar;
 
 	vif->aggr_cntxt = aggr_init(vif);
 	if (!vif->aggr_cntxt) {
@@ -5490,18 +5511,27 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
-	if (ath6kl_mod_debug_quirks(vif->ar,
-		ATH6KL_MODULE_KEEPALIVE_BY_SUPP)) {
-		vif->ap_keepalive_ctx =
-			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_BYSUPP);
-	} else {
-		vif->ap_keepalive_ctx =
-			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_ENABLE);
-	}
+	if (!test_bit(TESTMODE_EPPING, &ar->flag)) {
+		if (ath6kl_mod_debug_quirks(vif->ar,
+			ATH6KL_MODULE_KEEPALIVE_BY_SUPP)) {
+			vif->ap_keepalive_ctx =
+				ath6kl_ap_keepalive_init(vif,
+						AP_KA_MODE_BYSUPP);
+		} else if (ath6kl_mod_debug_quirks(vif->ar,
+			ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP)) {
+			vif->ap_keepalive_ctx =
+				ath6kl_ap_keepalive_init(vif,
+						AP_KA_MODE_CONFIG_BYSUPP);
+		} else {
+			vif->ap_keepalive_ctx =
+				ath6kl_ap_keepalive_init(vif,
+						AP_KA_MODE_ENABLE);
+		}
 
-	if (!vif->ap_keepalive_ctx) {
-		ath6kl_err("failed to initialize ap_keepalive\n");
-		return -ENOMEM;
+		if (!vif->ap_keepalive_ctx) {
+			ath6kl_err("failed to initialize ap_keepalive\n");
+			return -ENOMEM;
+		}
 	}
 
 	vif->ap_acl_ctx = ath6kl_ap_acl_init(vif);
@@ -5802,6 +5832,9 @@ int ath6kl_android_enable_wow_default(struct ath6kl *ar)
 	int mask_len;
 	int rv = 0, i;
 	struct cfg80211_wowlan wow;
+
+	if (test_bit(TESTMODE_EPPING, &ar->flag))
+		return 0;
 
 	memset(&wow, 0, sizeof(wow));
 

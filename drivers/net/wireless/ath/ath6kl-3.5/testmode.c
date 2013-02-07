@@ -55,6 +55,8 @@ static const struct nla_policy ath6kl_tm_policy[ATH6KL_TM_ATTR_MAX + 1] = {
 					    .len = ATH6KL_TM_DATA_MAX_LEN },
 };
 
+#ifdef CONFIG_NL80211_TESTMODE
+
 void ath6kl_tm_rx_report_event(struct ath6kl *ar, void *buf, size_t buf_len)
 {
 	if (down_interruptible(&ar->sem))
@@ -766,4 +768,4 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 		return -EOPNOTSUPP;
 	}
 }
-
+#endif /* CONFIG_NL80211_TESTMODE */

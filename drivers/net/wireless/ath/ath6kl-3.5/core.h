@@ -47,7 +47,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.275)
+#define __BUILD_VERSION_ (3.5.0.279)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -122,6 +122,10 @@
 
 
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_5
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_5
+#endif
+
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #endif
@@ -185,10 +189,21 @@
  * NL80211_CMD_START_AP: for new call-back and structures.
  * NL80211_ATTR_RX_SIGNAL_DBM: for new API's parameter.
  * CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL: new flag consist w/ RoC oper.
+ * NL80211_ATTR_INACTIVITY_TIMEOUT: new attribute to config AP keep-alive.
  */
 #define NL80211_CMD_START_AP
 #define NL80211_ATTR_RX_SIGNAL_DBM
 #define CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL
+#define NL80211_ATTR_INACTIVITY_TIMEOUT
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_5
+/*
+ * Means the cfg80211.ko is newer version (as least newer than built-in
+ * version of kernel3.5)
+ *
+ * NL80211_CMD_CH_SWITCH_NOTIFY: report working freq/chan-type back to user.
+ */
+#define NL80211_CMD_CH_SWITCH_NOTIFY
 #endif
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
 /*
@@ -523,7 +538,7 @@ enum ath6kl_recovery_mode {
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
 
 /* AR6006 1.1 definitions */
-#define AR6006_HW_1_1_VERSION                 0x31c80a26
+#define AR6006_HW_1_1_VERSION                 0x31c80a4a
 #define AR6006_HW_1_1_FW_DIR			"ath6k/AR6006/hw1.1"
 #define AR6006_HW_1_1_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_1_FIRMWARE_FILE           "fw.ram.bin"
@@ -836,6 +851,19 @@ struct ath6kl_ps_buf_head {
 	u32 aged;
 };
 
+enum ath6kl_phy_mode {
+	ATH6KL_PHY_MODE_11A = 0,	/* 11a Mode */
+	ATH6KL_PHY_MODE_11G = 1,		/* 11b/g Mode */
+	ATH6KL_PHY_MODE_11B = 2,		/* 11b Mode */
+	ATH6KL_PHY_MODE_11GONLY = 3,	/* 11g only Mode */
+	ATH6KL_PHY_MODE_11NA_HT20 = 4,	/* 11na HT20 Mode */
+	ATH6KL_PHY_MODE_11NG_HT20 = 5,	/* 11ng HT20 Mode */
+	ATH6KL_PHY_MODE_11NA_HT40 = 6,	/* 11na HT40 Mode */
+	ATH6KL_PHY_MODE_11NG_HT40 = 7,	/* 11ng HT40 Mode */
+	ATH6KL_PHY_MODE_UNKNOWN = 8,	/* Unknown */
+	ATH6KL_PHY_MODE_MAX = 8,
+};
+
 struct ath6kl_sta {
 	u16 sta_flags;
 	u8 mac[ETH_ALEN];
@@ -844,6 +872,7 @@ struct ath6kl_sta {
 	u8 ucipher;
 	u8 auth;
 	u8 wpa_ie[ATH6KL_MAX_IE];
+	enum ath6kl_phy_mode phymode;
 	struct ath6kl_vif *vif;
 
 	/* ath6kl_sta global lock, psq_data & psq_mgmt also use it. */
@@ -1008,7 +1037,7 @@ enum ath6kl_hif_type {
 };
 
 enum ath6kl_chan_type {
-	ATH6KL_CHAN_TYPE_NONE,		/* by target */
+	ATH6KL_CHAN_TYPE_NONE,		/* by target or 11abg */
 	ATH6KL_CHAN_TYPE_HT40PLUS,
 	ATH6KL_CHAN_TYPE_HT40MINUS,
 	ATH6KL_CHAN_TYPE_HT20,
@@ -1072,6 +1101,8 @@ struct ath6kl_vif {
 	u8 req_bssid[ETH_ALEN];
 	u16 ch_hint;
 	u16 bss_ch;
+	enum ath6kl_phy_mode phymode;	/* Working PhyMode for AP&STA modes */
+	enum ath6kl_chan_type chan_type;/* Working ChanType for AP mode */
 	struct ath6kl_wep_key wep_key_list[WMI_MAX_KEY_INDEX + 1];
 	struct ath6kl_key keys[WMI_MAX_KEY_INDEX + 1];
 	struct aggr_info *aggr_cntxt;
@@ -1099,8 +1130,8 @@ struct ath6kl_vif {
 	u32 last_cancel_roc_id;
 	u32 send_action_id;
 	bool probe_req_report;
-	u16 next_chan;
-	enum ath6kl_chan_type next_chan_type;
+	u16 next_chan;				/* Setting Channel */
+	enum ath6kl_chan_type next_chan_type;	/* Setting Channel-Type */
 	u16 assoc_bss_beacon_int;
 	u8 assoc_bss_dtim_period;
 	struct net_device_stats net_stats;
@@ -1562,10 +1593,12 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel,
 			  u16 beacon_int, enum network_type net_type,
 			  u8 beacon_ie_len, u8 assoc_req_len,
 			  u8 assoc_resp_len, u8 *assoc_info);
-void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel);
+void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel,
+				u8 *beacon, u8 beacon_len);
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
-				u8 assoc_req_len, u8 *assoc_info, u8 apsd_info);
+				u8 assoc_req_len, u8 *assoc_info,
+				u8 apsd_info, u8 phymode);
 void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 			     u8 *bssid, u8 assoc_resp_len,
 			     u8 *assoc_info, u16 prot_reason_status);

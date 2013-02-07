@@ -1179,13 +1179,19 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 							ev->u.ap_bss.bssid,
 							ev->u.ap_bss.aid);
 			ath6kl_connect_ap_mode_bss(
-				vif, le16_to_cpu(ev->u.ap_bss.ch));
+				vif,
+				le16_to_cpu(ev->u.ap_bss.ch),
+				ev->assoc_info,
+				ev->beacon_ie_len);
 
 			/* Start keep-alive if need. */
 			ath6kl_ap_keepalive_start(vif);
 
 			/* Start ACL if need. */
 			ath6kl_ap_acl_start(vif);
+
+			/* Report Channel Switch if need. */
+			ath6kl_ap_ch_switch(vif);
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_WMI, "%s: aid %u mac_addr %pM "
 				   "auth=%u keymgmt=%u cipher=%u apsd_info=%u "
@@ -1205,7 +1211,8 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				le16_to_cpu(ev->u.ap_sta.cipher),
 				ev->u.ap_sta.auth, ev->assoc_req_len,
 				ev->assoc_info + ev->beacon_ie_len,
-				ev->u.ap_sta.apsd_info);
+				ev->u.ap_sta.apsd_info,
+				ev->u.ap_sta.phymode);
 		}
 
 		ath6kl_ap_ht_update_ies(vif);

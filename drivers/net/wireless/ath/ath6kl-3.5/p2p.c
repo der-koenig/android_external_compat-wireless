@@ -890,9 +890,10 @@ void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar)
 							tmp_pkt,
 							&fw_conn->re_queue,
 							list) {
-					list_del(&packet->list);
 					if (packet == NULL)
 						continue;
+
+					list_del(&packet->list);
 
 					if (packet->endpoint >= ENDPOINT_MAX)
 						continue;

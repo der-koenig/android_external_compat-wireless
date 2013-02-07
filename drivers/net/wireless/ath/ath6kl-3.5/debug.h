@@ -92,6 +92,9 @@ enum ATH6KL_MODULE_QUIRKS {
 
 	/* workaround for EV119712 */
 	ATH6KL_MODULE_WAR_BAD_INTEL_GO = BIT(24),
+
+	/* Config AP keep-alive from supplicant */
+	ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP	= BIT(25),
 };
 
 enum ATH6KL_MODULE_P2P {

@@ -86,7 +86,8 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 
 static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 				u8 *wpaie, u8 ielen, u8 keymgmt, u8 ucipher,
-				u8 auth, u8 apsd_info, bool ht_support)
+				u8 auth, u8 apsd_info, bool ht_support,
+				u8 phymode)
 {
 	struct ath6kl_sta *sta;
 	u8 free_slot;
@@ -106,6 +107,7 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 	sta->ucipher = ucipher;
 	sta->auth = auth;
 	sta->apsd_info = apsd_info;
+	sta->phymode = phymode;
 	sta->vif = vif;
 	init_timer(&sta->psq_age_timer);
 	sta->psq_age_timer.function = ath6kl_ps_queue_age_handler;
@@ -944,7 +946,8 @@ static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 	}
 }
 
-void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
+void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel,
+				u8 *beacon, u8 beacon_len)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_req_key *ik;
@@ -956,6 +959,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "AP mode started on %u MHz\n", channel);
 
 	vif->bss_ch = channel;
+	ath6kl_ap_beacon_info(vif, beacon, beacon_len);
 
 	switch (vif->auth_mode) {
 	case NONE_AUTH:
@@ -996,7 +1000,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
-				u8 assoc_req_len, u8 *assoc_info, u8 apsd_info)
+				u8 assoc_req_len, u8 *assoc_info,
+				u8 apsd_info, u8 phymode)
 {
 	u8 *ies = NULL, *wpa_ie = NULL, *pos;
 	size_t ies_len = 0;
@@ -1058,7 +1063,7 @@ void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 	ath6kl_add_new_sta(vif, mac_addr, aid, wpa_ie,
 			   wpa_ie ? 2 + wpa_ie[1] : 0,
 			   keymgmt, ucipher, auth, apsd_info,
-			   is_ht_sta);
+			   is_ht_sta, phymode);
 
 	/* send event to application */
 	memset(&sinfo, 0, sizeof(sinfo));
@@ -1585,6 +1590,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 
 		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
 			vif->bss_ch = 0;
+			vif->phymode = ATH6KL_PHY_MODE_UNKNOWN;
+			vif->chan_type = ATH6KL_CHAN_TYPE_NONE;
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
 			netif_carrier_off(vif->ndev);
@@ -1653,6 +1660,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	netif_stop_queue(vif->ndev);
 	memset(vif->bssid, 0, sizeof(vif->bssid));
 	vif->bss_ch = 0;
+	vif->phymode = ATH6KL_PHY_MODE_UNKNOWN;
+	vif->chan_type = ATH6KL_CHAN_TYPE_NONE;
 
 	ath6kl_tx_data_cleanup_by_if(vif);
 

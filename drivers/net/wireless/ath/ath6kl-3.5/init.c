@@ -414,6 +414,8 @@ void ath6kl_init_profile_info(struct ath6kl_vif *vif)
 	memset(vif->req_bssid, 0, sizeof(vif->req_bssid));
 	memset(vif->bssid, 0, sizeof(vif->bssid));
 	vif->bss_ch = 0;
+	vif->phymode = ATH6KL_PHY_MODE_UNKNOWN;
+	vif->chan_type = ATH6KL_CHAN_TYPE_NONE;
 }
 
 
@@ -1142,12 +1144,12 @@ static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 	u32 sum = 0;
 	u32 param;
 
+	if (ar->fw_board == NULL || ar->fw_softmac == NULL)
+		return;
+
 	/* set checksum filed in the board data to zero */
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
-
-	if (ar->fw_board == NULL || ar->fw_softmac == NULL)
-		return;
 
 	/* replace the mac address with softmac */
 	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], ar->fw_softmac, ETH_ALEN);

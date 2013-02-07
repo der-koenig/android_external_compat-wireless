@@ -20,22 +20,22 @@
 /* Time defines */
 #define ATH6KL_AP_KA_INTERVAL_DEFAULT		(15 * 1000)	/* in ms. */
 #define ATH6KL_AP_KA_INTERVAL_MIN		(5 * 1000)	/* in ms. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_SCC	(4)		/* 1 min. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_MCC	(12)	/* 3 min. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE		(4)		/* 1 min. */
 #define ATH6KL_AP_KA_RECLAIM_TIME_MAX		((15 * 60) * 1000)
+
+/* Do some fine tune to overwrite the config in P2P cases. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_SCC		(4)		/* 1 min. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_MCC		(12)		/* 3 min. */
 
 /* At least WMI_TIMEOUT */
 #define ATH6KL_AP_KA_PRELOAD_LEADTIME		(2 * 1000)
-
-/* For P2P case, use the lower values for Android platform. */
-#define ATH6KL_AP_KA_INTERVAL_DEFAULT_P2P	(10 * 1000)	/* in ms. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT_P2P	(2)		/* 20 sec. */
 
 /* flags */
 #define ATH6KL_AP_KA_FLAGS_ENABLED		BIT(0)
 #define ATH6KL_AP_KA_FLAGS_BY_SUPP		BIT(1)	/* offload to user */
 #define ATH6KL_AP_KA_FLAGS_START		BIT(2)
 #define ATH6KL_AP_KA_FLAGS_PRELOAD_STAT		BIT(3)	/* for preload state */
+#define ATH6KL_AP_KA_FLAGS_CONFIG_BY_SUPP	BIT(4)
 
 /* Next action */
 #define AP_KA_ACTION_NONE			(0)
@@ -44,9 +44,17 @@
 
 /* Operation mode */
 enum ap_keepalive_mode {
+	/* Disabled and using the target's mechanism. */
 	AP_KA_MODE_DISABLE = 0,
+
+	/* Using driver's mechanism and setting from the driver or debugfs. */
 	AP_KA_MODE_ENABLE,
+
+	/* Using supplicant/hostapd's mechanism. */
 	AP_KA_MODE_BYSUPP,
+
+	/* Using driver's mechanism but config from the supplicant/hostapd. */
+	AP_KA_MODE_CONFIG_BYSUPP,
 };
 
 enum ap_keepalive_adjust {
@@ -100,6 +108,22 @@ struct ap_acl_info {
 	u8 *last_acl_config;
 };
 
+/*
+ * WLAN_EID_HT_INFORMATION & struct ieee80211_ht_info in ieee80211.h
+ * is changed to WLAN_EID_HT_OPERATION & struct ieee80211_ht_operation
+ * from kernel3.5. Using local defines instead of dirty compiler flag.
+ */
+#define WLAN_EID_HT_OPER	(61)
+
+struct ieee80211_ht_oper {
+	u8 primary_chan;
+	u8 ht_param;
+	__le16 operation_mode;
+	__le16 stbc_param;
+	u8 basic_set[16];
+} __packed;
+
+
 struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 						   enum ap_keepalive_mode mode);
 void ath6kl_ap_keepalive_deinit(struct ath6kl_vif *vif);
@@ -108,6 +132,8 @@ void ath6kl_ap_keepalive_stop(struct ath6kl_vif *vif);
 int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 			       u32 ap_ka_interval,
 			       u32 ap_ka_reclaim_cycle);
+int ath6kl_ap_keepalive_config_by_supp(struct ath6kl_vif *vif,
+			       u16 inactive_time);
 u32 ath6kl_ap_keepalive_get_inactive_time(struct ath6kl_vif *vif, u8 *mac);
 bool ath6kl_ap_keepalive_by_supp(struct ath6kl_vif *vif);
 struct ap_acl_info *ath6kl_ap_acl_init(struct ath6kl_vif *vif);
@@ -121,5 +147,7 @@ int ath6kl_ap_acl_config_mac_list(struct ath6kl_vif *vif,
 int ath6kl_ap_acl_config_mac_list_reset(struct ath6kl_vif *vif);
 int ath6kl_ap_acl_dump(struct ath6kl *ar, u8 *buf, int buf_len);
 int ath6kl_ap_ht_update_ies(struct ath6kl_vif *vif);
+void ath6kl_ap_beacon_info(struct ath6kl_vif *vif, u8 *beacon, u8 beacon_len);
+void ath6kl_ap_ch_switch(struct ath6kl_vif *vif);
 #endif
 

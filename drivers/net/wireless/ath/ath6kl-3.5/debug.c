@@ -3489,13 +3489,14 @@ static ssize_t ath6kl_ap_ps_stat_read(struct file *file,
 				conn = &vif->sta_list[j];
 
 				len += scnprintf(p + len, buf_len - len,
-					" STA - %02x:%02x:%02x:%02x:%02x:%02x aid %02d apsd %d state %02x",
+					" STA - %02x:%02x:%02x:%02x:%02x:%02x aid %02d apsd %d state %02x phy %d",
 					conn->mac[0], conn->mac[1],
 					conn->mac[2], conn->mac[3],
 					conn->mac[4], conn->mac[5],
 					conn->aid,
 					conn->apsd_info,
-					conn->sta_flags);
+					conn->sta_flags,
+					conn->phymode);
 
 				ath6kl_ps_queue_stat(&conn->psq_data,
 						&depth, &enq, &enq_err,
@@ -4025,11 +4026,13 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 
 		if (vif)
 			len += scnprintf(p + len, buf_len - len,
-					" VIF%d [%s] - %d\n",
+					" VIF%d [%s] - ch %d phy %d type %d\n",
 					i,
 					(test_bit(CONNECTED, &vif->flags) ?
 						"CONN" : "IDLE"),
-					vif->bss_ch);
+					vif->bss_ch,
+					vif->phymode,
+					vif->chan_type);
 	}
 
 	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
@@ -4530,40 +4533,40 @@ static ssize_t ath6kl_disable_runtime_flowctrl_write(struct file *file,
 	if (kstrtou32(buf, 0, &value))
 		return -EINVAL;
 
-	if (value) {
+	if (value)
 		ar->conf_flags |= ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL;
-	} else {
+	else
 		ar->conf_flags &= ~ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL;
-	}
+
 	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
-		if (ar->conf_flags & ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL) {
+		if (ar->conf_flags & ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL)
 			clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
-                } else {
-			if (test_bit(MCC_ENABLED, &ar->flag)) {
+		else {
+			if (test_bit(MCC_ENABLED, &ar->flag))
 				clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
-			} else {
+			else
 				set_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
-			}       
-		}       
-	} else {
+		}
+	} else
 		clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
-	}
 
 	return count;
 }
 
-static ssize_t ath6kl_disable_runtime_flowctrl_read(struct file *file, char __user *user_buf,
-                                      size_t count, loff_t *ppos)
+static ssize_t ath6kl_disable_runtime_flowctrl_read(struct file *file,
+					char __user *user_buf,
+					size_t count, loff_t *ppos)
 {
-        struct ath6kl *ar = file->private_data;
-        char buf[16];
-        int len;
+	struct ath6kl *ar = file->private_data;
+	char buf[16];
+	int len;
 
-        len = snprintf(buf, sizeof(buf), "%d %d\n", 
-                       (ar->conf_flags & ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL)?1:0,
-		       test_bit(SKIP_FLOWCTRL_EVENT, &ar->flag)) ;
+	len = snprintf(buf, sizeof(buf), "%d %d\n",
+			(ar->conf_flags &
+			ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL) ? 1 : 0,
+			test_bit(SKIP_FLOWCTRL_EVENT, &ar->flag));
 
-        return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 
@@ -4760,7 +4763,7 @@ int ath6kl_debug_init(struct ath6kl *ar)
 			    ar->debugfs_phy, ar, &fops_disable_scan);
 
 	debugfs_create_file("disable_runtime_flowctrl", S_IWUSR,
-			    ar->debugfs_phy, ar, &fops_disable_runtime_flowctrl);
+			ar->debugfs_phy, ar, &fops_disable_runtime_flowctrl);
 
 	return 0;
 }

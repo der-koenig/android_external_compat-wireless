@@ -216,11 +216,15 @@ struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 	ap_keepalive->vif = vif;
 	ap_keepalive->ap_ka_interval = 0;
 	ap_keepalive->ap_ka_reclaim_cycle = 0;
-	if (mode == AP_KA_MODE_ENABLE) {
+	if ((mode == AP_KA_MODE_ENABLE) ||
+	    (mode == AP_KA_MODE_CONFIG_BYSUPP)) {
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_ENABLED;
 		ap_keepalive->ap_ka_interval = ATH6KL_AP_KA_INTERVAL_DEFAULT;
-		ap_keepalive->ap_ka_reclaim_cycle =
-			ATH6KL_AP_KA_RECLAIM_CYCLE_SCC;
+		ap_keepalive->ap_ka_reclaim_cycle = ATH6KL_AP_KA_RECLAIM_CYCLE;
+
+		if (mode == AP_KA_MODE_CONFIG_BYSUPP)
+			ap_keepalive->flags |=
+					ATH6KL_AP_KA_FLAGS_CONFIG_BY_SUPP;
 	} else if (mode == AP_KA_MODE_BYSUPP)
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_BY_SUPP;
 
@@ -237,7 +241,9 @@ struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 		   vif->fw_vif_idx,
 		   ap_keepalive->ap_ka_interval,
 		   ap_keepalive->ap_ka_reclaim_cycle,
-		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) ? "ON" :
+		   (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) ?
+		    ((ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_CONFIG_BY_SUPP) ?
+			"ON-SUPP" : "ON") :
 		    ((ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_BY_SUPP) ?
 			"SUPP" : "OFF"));
 
@@ -319,10 +325,14 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 	int restart = 0;
 
 	if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_BY_SUPP) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
-			   "already offlad to supplicant/hostapd.\n");
+		ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
+			   "ap_keepalive offlad to supplicant/hostapd.\n");
 		return 0;
 	} else if (!(ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED)) {
+		return 0;
+	} else if (ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_CONFIG_BY_SUPP) {
+		ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
+		   "ap_keepalive config offlad to supplicant/hostapd.\n");
 		return 0;
 	}
 
@@ -353,7 +363,7 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 			ap_keepalive->ap_ka_interval =
 				ATH6KL_AP_KA_INTERVAL_DEFAULT;
 			ap_keepalive->ap_ka_reclaim_cycle =
-				ATH6KL_AP_KA_RECLAIM_CYCLE_SCC;
+				ATH6KL_AP_KA_RECLAIM_CYCLE;
 		}
 
 		ap_keepalive->ap_ka_remove_time =
@@ -384,6 +394,54 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 			"ON" : "OFF",
 		   restart);
 
+
+	return 0;
+}
+
+int ath6kl_ap_keepalive_config_by_supp(struct ath6kl_vif *vif,
+			       u16 inactive_time)
+{
+	struct ap_keepalive_info *ap_keepalive = vif->ap_keepalive_ctx;
+	u32 ap_ka_interval;
+	u32 timeout = inactive_time * 1000;	/* to ms. */
+
+	if (!(ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED) ||
+	    !(ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_CONFIG_BY_SUPP))
+		return 0;
+
+	if (timeout == 0) {
+		ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
+			   "ap_keepalive config wrong inactive_time!\n");
+		return 0;
+	}
+
+	/* Min. at lease 1 cycle */
+	if (timeout < (ATH6KL_AP_KA_INTERVAL_MIN * 1))
+		timeout = (ATH6KL_AP_KA_INTERVAL_MIN * 1);
+	else if (timeout > ATH6KL_AP_KA_RECLAIM_TIME_MAX)
+		timeout = ATH6KL_AP_KA_RECLAIM_TIME_MAX;
+
+	if (timeout < (ATH6KL_AP_KA_INTERVAL_DEFAULT *
+				ATH6KL_AP_KA_RECLAIM_CYCLE)) {
+		if (timeout <= ATH6KL_AP_KA_INTERVAL_DEFAULT)
+			ap_ka_interval = ATH6KL_AP_KA_INTERVAL_MIN;
+		else
+			ap_ka_interval = ATH6KL_AP_KA_INTERVAL_DEFAULT;
+	} else
+		ap_ka_interval = ATH6KL_AP_KA_INTERVAL_DEFAULT;
+
+	/* Update the config */
+	ap_keepalive->ap_ka_interval = ap_ka_interval;
+	ap_keepalive->ap_ka_reclaim_cycle = timeout / ap_ka_interval;
+	ap_keepalive->ap_ka_remove_time =
+			ap_ka_interval * ap_keepalive->ap_ka_reclaim_cycle;
+
+	ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
+		   "ap_keepalive config_by_supp (%d supp %d intvl %d cycle %d)\n",
+		   vif->fw_vif_idx,
+		   inactive_time,
+		   ap_keepalive->ap_ka_interval,
+		   ap_keepalive->ap_ka_reclaim_cycle);
 
 	return 0;
 }
@@ -777,5 +835,185 @@ int ath6kl_ap_ht_update_ies(struct ath6kl_vif *vif)
 	}
 
 	return ret;
+}
+
+static inline bool _ap_is_11b_rate(u8 rate)
+{
+	u8 rates[] = { 2, 4, 11, 22 };
+	u8 i;
+
+	for (i = 0; i < ARRAY_SIZE(rates); i++)
+		if (rate == rates[i])
+			return true;
+
+	return false;
+}
+
+void ath6kl_ap_beacon_info(struct ath6kl_vif *vif, u8 *beacon, u8 beacon_len)
+{
+	u8 *pie, *peie;
+	u8 *rates_ie = NULL;
+	u8 *ext_rates_ie = NULL;
+	struct ieee80211_ht_cap *ht_cap_ie = NULL;
+	struct ieee80211_ht_oper *ht_oper_ie = NULL;
+
+	/*
+	 * Get host interesting AP configuration by parsing the beacon content
+	 * from AP CONNECTED event.
+	 */
+	if (vif->nw_type != AP_NETWORK)
+		return;
+
+	/* bypass timestamp, beacon interval and capability fields */
+	pie = beacon + 8 + 2 + 2;
+	peie = beacon + beacon_len;
+
+	while (pie < peie) {
+		switch (*pie) {
+		case WLAN_EID_SUPP_RATES:
+			if (pie[1])
+				rates_ie = pie;
+			break;
+		case WLAN_EID_EXT_SUPP_RATES:
+			if (pie[1])
+				ext_rates_ie = pie;
+			break;
+		case WLAN_EID_HT_CAPABILITY:
+			if (pie[1] >= sizeof(struct ieee80211_ht_cap))
+				ht_cap_ie =
+				(struct ieee80211_ht_cap *)(pie + 2);
+			break;
+		case WLAN_EID_HT_OPER:
+			if (pie[1] >= sizeof(struct ieee80211_ht_oper))
+				ht_oper_ie =
+				(struct ieee80211_ht_oper *)(pie + 2);
+			break;
+		}
+		pie += pie[1] + 2;
+	}
+
+	if (ht_cap_ie && ht_oper_ie) {	/* 11N */
+		u16 cap_info = le16_to_cpu(ht_cap_ie->cap_info);
+		u8 second_chan = (ht_oper_ie->ht_param &
+					IEEE80211_HT_PARAM_CHA_SEC_OFFSET);
+		bool ext_chan = false;
+
+		vif->chan_type = ATH6KL_CHAN_TYPE_HT20;
+
+		if (second_chan &&
+		    (cap_info & IEEE80211_HT_CAP_SUP_WIDTH_20_40)) {
+			ext_chan = true;
+			if (second_chan == IEEE80211_HT_PARAM_CHA_SEC_ABOVE)
+				vif->chan_type = ATH6KL_CHAN_TYPE_HT40PLUS;
+			else
+				vif->chan_type = ATH6KL_CHAN_TYPE_HT40MINUS;
+		}
+
+		if (vif->bss_ch > 5000) {	/* 11NA */
+			if (ext_chan)
+				vif->phymode = ATH6KL_PHY_MODE_11NA_HT40;
+			else
+				vif->phymode = ATH6KL_PHY_MODE_11NA_HT20;
+		} else {			/* 11NG */
+			if (ext_chan)
+				vif->phymode = ATH6KL_PHY_MODE_11NG_HT40;
+			else
+				vif->phymode = ATH6KL_PHY_MODE_11NG_HT20;
+		}
+	} else {		/* not 11N */
+		vif->chan_type = ATH6KL_CHAN_TYPE_NONE;
+
+		if (vif->bss_ch > 5000)		/* 11A */
+			vif->phymode = ATH6KL_PHY_MODE_11A;
+		else {				/* 11B/G/GONLY */
+			u8 i, rate;
+			bool b_rates, g_rates;
+
+			b_rates = g_rates = false;
+			if (rates_ie) {
+				for (i = 0; i < rates_ie[1]; i++) {
+					rate = rates_ie[2 + i] & 0x7f;
+					if (_ap_is_11b_rate(rate))
+						b_rates = true;
+					else
+						g_rates = true;
+				}
+			}
+			if (ext_rates_ie) {
+				for (i = 0; i < ext_rates_ie[1]; i++) {
+					rate = ext_rates_ie[2 + i] & 0x7f;
+					if (_ap_is_11b_rate(rate))
+						b_rates = true;
+					else
+						g_rates = true;
+				}
+			}
+
+			if (g_rates)
+				if (b_rates)
+					vif->phymode = ATH6KL_PHY_MODE_11G;
+				else
+					vif->phymode = ATH6KL_PHY_MODE_11GONLY;
+			else
+				if (b_rates)
+					vif->phymode = ATH6KL_PHY_MODE_11B;
+				else
+					ath6kl_err("Unknown AP phymode\n");
+		}
+	}
+
+	return;
+}
+
+void ath6kl_ap_ch_switch(struct ath6kl_vif *vif)
+{
+	if (vif->nw_type != AP_NETWORK)
+		return;
+
+	/*
+	 * If target use the different channel setting as the host and use this
+	 * helper API to update the working channel information to the user.
+	 *
+	 * If target support WMI_CHANNEL_CHANGE_EVENTID (DFS?) and this helper
+	 * API may also useful.
+	 */
+
+#ifdef NL80211_CMD_CH_SWITCH_NOTIFY
+	/*
+	 * The next_chan_type is only valid when
+	 * ATH6KL_MODULE_ENABLE_P2P_CHANMODE is on.
+	 */
+	if ((vif->next_chan != vif->bss_ch) ||
+	    (vif->next_chan_type != vif->chan_type)) {
+		if (ath6kl_mod_debug_quirks(vif->ar,
+				ATH6KL_MODULE_ENABLE_P2P_CHANMODE)) {
+			enum nl80211_channel_type type = NL80211_CHAN_NO_HT;
+
+			ath6kl_info("AP Channel switch from %d/%d to %d/%d\n",
+					vif->next_chan, vif->next_chan_type,
+					vif->bss_ch, vif->chan_type);
+
+			if (vif->chan_type == ATH6KL_CHAN_TYPE_NONE)
+				type = NL80211_CHAN_NO_HT;
+			else if (vif->chan_type == ATH6KL_CHAN_TYPE_HT40PLUS)
+				type = NL80211_CHAN_HT40PLUS;
+			else if (vif->chan_type == ATH6KL_CHAN_TYPE_HT40MINUS)
+				type = NL80211_CHAN_HT40MINUS;
+			else if (vif->chan_type == ATH6KL_CHAN_TYPE_HT20)
+				type = NL80211_CHAN_HT20;
+			else
+				WARN_ON(1);
+
+			/*
+			 * TODO: Better to check channel information is valid
+			 * or not for P2P-GO mode before report to the user.
+			 */
+			cfg80211_ch_switch_notify(vif->ndev,
+						vif->bss_ch,
+						type);
+		}
+	}
+#endif
+	return;
 }
 
