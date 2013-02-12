@@ -637,6 +637,10 @@ enum wmi_cmd_id {
 	WMI_SET_RECOVERY_TEST_PARAMETER_CMDID, /*0xf094*/
 
 	WMI_ENABLE_SCHED_SCAN_CMDID,
+
+	WMI_ADD_PKT_FILTER_PATTERN_CMDID,
+
+	WMI_DEL_PKT_FILTER_PATTERN_CMDID,
 };
 
 enum wmi_mgmt_frame_type {
@@ -2136,6 +2140,28 @@ struct wmi_txe_notify_event {
 	__le32 pkts;
 } __packed;
 
+#define CPKT_MAX_FILTERS_PER_LIST	12
+#define CPKT_PATTERN_SIZE		64
+#define CPKT_MASK_SIZE			64
+
+#define CPKT_ACTION_DROP		0
+#define CPKT_ACTION_ALLOW		1
+#define CPKT_ACTION_DROP_ALOW_MASK	0x1
+#define CPKT_ACTION_HOST_AWAKE_MASK	0x2
+#define CPKT_ACTION_HOST_SUSPEND_MASK	0x4
+
+struct wmi_add_pkt_filter_pattern_cmd {
+	u8 filter_id;
+	u8 filter_act;
+	u8 filter_size;
+	u8 filter_offset;
+	u8 filter[0];
+} __packed;
+
+struct wmi_del_pkt_filter_pattern_cmd {
+	u8 filter_id;
+} __packed;
+
 /* WMI_SET_AKMP_PARAMS_CMD */
 
 struct wmi_pmkid {
@@ -2671,6 +2697,15 @@ int ath6kl_wmi_add_wow_pattern_cmd(struct wmi *wmi, u8 if_idx,
 				   const u8 *mask);
 int ath6kl_wmi_del_wow_pattern_cmd(struct wmi *wmi, u8 if_idx,
 				   u16 list_id, u16 filter_id);
+
+int ath6kl_wmi_add_pkt_filter_pattern_cmd(struct wmi *wmi, u8 if_idx,
+					  u8 filter_id, u8 filter_act,
+					  u8 filter_size,
+					  u8 filter_offset, u8 *filter,
+					  u8 *mask);
+int ath6kl_wmi_del_pkt_filter_pattern_cmd(struct wmi *wmi, u8 if_idx,
+					  u8 filter_id);
+
 int ath6kl_wmi_set_rssi_filter_cmd(struct wmi *wmi, u8 if_idx, s8 rssi);
 int ath6kl_wmi_set_roam_lrssi_cmd(struct wmi *wmi, u8 lrssi);
 int ath6kl_wmi_force_roam_cmd(struct wmi *wmi, const u8 *bssid);

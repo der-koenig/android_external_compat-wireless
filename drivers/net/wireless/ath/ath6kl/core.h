@@ -82,6 +82,9 @@
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL		50 /* in ms */
 
+/* number of sending ps-poll before switch to send null data */
+#define WLAN_CONFIG_PSPOLL_NUM		0
+
 /* includes also the null byte */
 #define ATH6KL_FIRMWARE_MAGIC               "QCA-ATH6KL"
 
@@ -641,7 +644,7 @@ struct ath6kl_vif {
 	struct wireless_dev wdev;
 	struct net_device *ndev;
 	struct ath6kl *ar;
-	/* Lock to protect vif specific net_stats and flags */
+	/* Lock to protect vif specific net_stats, scan_req and flags */
 	spinlock_t if_lock;
 	u8 fw_vif_idx;
 	unsigned long flags;
@@ -704,6 +707,24 @@ struct ath6kl_vif {
 #define ATH6KL_SCHED_SCAN_RESULT_DELAY 5000 /* ms */
 
 #define ATH6KL_PRIV_GET_WLAN_STATS	(SIOCIWFIRSTPRIV + 21)
+
+/* ATH6KL_IOCTL_EXTENDED - extended ioctl */
+#define ATH6KL_IOCTL_WEXT_PRIV26        (SIOCIWFIRSTPRIV+26)
+
+
+struct ath6kl_wifi_priv_cmd {
+	char *buf;
+	int used_len;
+	int total_len;
+};
+
+/* TBD: ioctl number is aligned to olca branch
+ * will refine one the loopback tool is ready for native ath6kl
+ */
+enum ath6kl_xioctl {
+	ATH6KL_XIOCTL_TRAFFIC_ACTIVITY_CHANGE	= 80,
+	ATH6KL_XIOCTL_PKT_FILTER_ADD_DEL	= 81,
+};
 
 /* Flag info */
 enum ath6kl_dev_state {
@@ -1072,6 +1093,9 @@ bool ath6kl_is_other_vif_cookie_busy(struct ath6kl *ar,
 bool ath6kl_is_other_vif_connected(struct ath6kl *ar,
 				   struct ath6kl_vif *cur_vif);
 
+int ath6kl_ioctl_pkt_filter_set(struct ath6kl_vif *vif,
+				char *buf,
+				int len);
 /* Fw error recovery */
 void ath6kl_init_hw_restart(struct ath6kl *ar);
 void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason);

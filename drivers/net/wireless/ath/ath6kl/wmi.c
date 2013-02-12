@@ -535,20 +535,20 @@ static int ath6kl_wmi_tx_status_event_rx(struct wmi *wmi, u8 *datap, int len,
 	id = le32_to_cpu(ev->id);
 	ath6kl_dbg(ATH6KL_DBG_WMI, "tx_status: id=%x ack_status=%u\n",
 		   id, ev->ack_status);
+
 	spin_lock_bh(&wmi->lock);
-	if (wmi->last_mgmt_tx_frame) {
-		last_mgmt_tx_frame = wmi->last_mgmt_tx_frame;
-		last_mgmt_tx_frame_len = wmi->last_mgmt_tx_frame_len;
-		wmi->last_mgmt_tx_frame = NULL;
-		wmi->last_mgmt_tx_frame_len = 0;
-		spin_unlock_bh(&wmi->lock);
+	last_mgmt_tx_frame = wmi->last_mgmt_tx_frame;
+	last_mgmt_tx_frame_len = wmi->last_mgmt_tx_frame_len;
+	wmi->last_mgmt_tx_frame = NULL;
+	wmi->last_mgmt_tx_frame_len = 0;
+	spin_unlock_bh(&wmi->lock);
+
+	if (last_mgmt_tx_frame) {
 		cfg80211_mgmt_tx_status(vif->ndev, id,
 					last_mgmt_tx_frame,
 					last_mgmt_tx_frame_len,
 					!!ev->ack_status, GFP_ATOMIC);
 		kfree(last_mgmt_tx_frame);
-	} else {
-		spin_unlock_bh(&wmi->lock);
 	}
 
 	return 0;
@@ -2940,6 +2940,75 @@ int ath6kl_wmi_del_wow_pattern_cmd(struct wmi *wmi, u8 if_idx,
 	return ret;
 }
 
+int ath6kl_wmi_add_pkt_filter_pattern_cmd(struct wmi *wmi, u8 if_idx,
+					  u8 filter_id, u8 filter_act,
+					  u8 filter_size,
+					  u8 filter_offset, u8 *filter,
+					  u8 *mask)
+{
+	struct sk_buff *skb;
+	struct wmi_add_pkt_filter_pattern_cmd *cmd;
+	u16 size;
+	u8 *filter_mask;
+	int ret;
+
+	/* not valid for both awake and suspend */
+	if (!(filter_act & CPKT_ACTION_HOST_AWAKE_MASK) &&
+	    !(filter_act & CPKT_ACTION_HOST_SUSPEND_MASK))
+		return -EINVAL;
+
+	if (filter_id >= CPKT_MAX_FILTERS_PER_LIST ||
+	     filter_size > CPKT_PATTERN_SIZE)
+		return -EINVAL;
+	/*
+	 * Allocate additional memory in the buffer to hold
+	 * filter and mask value, which is twice of filter_size.
+	 */
+	size = sizeof(*cmd) + (2 * filter_size);
+
+	skb = ath6kl_wmi_get_new_buf(size);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_add_pkt_filter_pattern_cmd *) skb->data;
+	cmd->filter_id = filter_id;
+	cmd->filter_act = filter_act;
+	cmd->filter_size = filter_size;
+	cmd->filter_offset = filter_offset;
+
+	memcpy(cmd->filter, filter, filter_size);
+
+	filter_mask = (u8 *) (cmd->filter + filter_size);
+	memcpy(filter_mask, mask, filter_size);
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb,
+				  WMI_ADD_PKT_FILTER_PATTERN_CMDID,
+				  NO_SYNC_WMIFLAG);
+
+	return ret;
+}
+
+int ath6kl_wmi_del_pkt_filter_pattern_cmd(struct wmi *wmi,
+					  u8 if_idx, u8 filter_id)
+{
+	struct sk_buff *skb;
+	struct wmi_del_pkt_filter_pattern_cmd *cmd;
+	int ret;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_del_pkt_filter_pattern_cmd *) skb->data;
+	cmd->filter_id = filter_id;
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb,
+				  WMI_DEL_PKT_FILTER_PATTERN_CMDID,
+				  NO_SYNC_WMIFLAG);
+	return ret;
+}
+
+
 static int ath6kl_wmi_cmd_send_xtnd(struct wmi *wmi, struct sk_buff *skb,
 				    enum wmix_command_id cmd_id,
 				    enum wmi_sync_flag sync_flag)
@@ -4188,5 +4257,6 @@ void ath6kl_wmi_shutdown(struct wmi *wmi)
 	kfree(wmi->last_mgmt_tx_frame);
 	wmi->last_mgmt_tx_frame = NULL;
 	spin_unlock_bh(&wmi->lock);
+
 	kfree(wmi);
 }

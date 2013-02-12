@@ -834,9 +834,15 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 {
 	struct ath6kl *ar = vif->ar;
 
-	if (vif->scan_req) {
-		cfg80211_scan_done(vif->scan_req, true);
-		vif->scan_req = NULL;
+	struct cfg80211_scan_request *scan_req;
+
+	spin_lock_bh(&vif->if_lock);
+	scan_req = vif->scan_req;
+	vif->scan_req = NULL;
+	spin_unlock_bh(&vif->if_lock);
+
+	if (scan_req) {
+		cfg80211_scan_done(scan_req, true);
 	}
 
 	if (vif->nw_type & ADHOC_NETWORK) {
@@ -1030,7 +1036,10 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	if (test_bit(CONNECTED, &vif->flags))
 		force_fg_scan = 1;
 
+	WARN_ON_ONCE(vif->scan_req);
+	spin_lock_bh(&vif->if_lock);
 	vif->scan_req = request;
+	spin_unlock_bh(&vif->if_lock);
 
 	if (test_bit(ATH6KL_FW_CAPABILITY_STA_P2PDEV_DUPLEX,
 		     ar->fw_capabilities)) {
@@ -1054,7 +1063,9 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	if (ret) {
 		ath6kl_err("failed to start scan: %d\n", ret);
+		spin_lock_bh(&vif->if_lock);
 		vif->scan_req = NULL;
+		spin_unlock_bh(&vif->if_lock);
 	}
 
 	kfree(channels);
@@ -1076,6 +1087,7 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 		spin_unlock_bh(&vif->if_lock);
 		return;
 	}
+
 	request = vif->scan_req;
 	vif->scan_req = NULL;
 	spin_unlock_bh(&vif->if_lock);

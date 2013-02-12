@@ -420,6 +420,8 @@ static int ath6kl_target_config_wlan_params(struct ath6kl *ar, int idx)
 {
 	int status = 0;
 	int ret;
+	u16 ps_fail_policy;
+	u16 pspoll_num = WLAN_CONFIG_PSPOLL_NUM;
 
 	/*
 	 * Configure the device for rx dot11 header rules. "0,0" are the
@@ -433,11 +435,15 @@ static int ath6kl_target_config_wlan_params(struct ath6kl *ar, int idx)
 	}
 
 	if (ar->conf_flags & ATH6KL_CONF_IGNORE_PS_FAIL_EVT_IN_SCAN)
-		if ((ath6kl_wmi_pmparams_cmd(ar->wmi, idx, 0, 1, 0, 0, 1,
-		     IGNORE_POWER_SAVE_FAIL_EVENT_DURING_SCAN)) != 0) {
-			ath6kl_err("unable to set power save fail event policy\n");
-			status = -EIO;
-		}
+		ps_fail_policy = IGNORE_POWER_SAVE_FAIL_EVENT_DURING_SCAN;
+	else
+		ps_fail_policy = SEND_POWER_SAVE_FAIL_EVENT_ALWAYS;
+
+	if ((ath6kl_wmi_pmparams_cmd(ar->wmi, idx, 0, pspoll_num, 0, 0, 1,
+				     ps_fail_policy)) != 0) {
+		ath6kl_err("unable to set power save parameter\n");
+		status = -EIO;
+	}
 
 	if (!(ar->conf_flags & ATH6KL_CONF_IGNORE_ERP_BARKER))
 		if ((ath6kl_wmi_set_lpreamble_cmd(ar->wmi, idx, 0,
@@ -2029,6 +2035,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 {
 	static u8 bcast_mac[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	bool discon_issued;
+	struct cfg80211_scan_request *scan_req;
 
 	netif_stop_queue(vif->ndev);
 
@@ -2047,10 +2054,13 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 						0, NULL, 0);
 	}
 
-	if (vif->scan_req) {
-		cfg80211_scan_done(vif->scan_req, true);
-		vif->scan_req = NULL;
-	}
+	spin_lock_bh(&vif->if_lock);
+	scan_req = vif->scan_req;
+	vif->scan_req = NULL;
+	spin_unlock_bh(&vif->if_lock);
+
+	if (scan_req)
+		cfg80211_scan_done(scan_req, true);
 
 	/* need to clean up enhanced bmiss detection fw state */
 	ath6kl_cfg80211_sta_bmiss_enhance(vif, false);

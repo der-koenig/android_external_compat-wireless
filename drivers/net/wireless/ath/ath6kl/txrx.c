@@ -1275,8 +1275,12 @@ static bool aggr_process_recv_frm(struct aggr_info_conn *agg_conn, u8 tid,
 
 	aggr_deque_frms(agg_conn, tid, 0, 1);
 
-	if (agg_conn->timer_scheduled)
+	if (agg_conn->timer_scheduled) {
+		spin_lock_bh(&rxtid->lock);
+		rxtid->progress = true;
+		spin_unlock_bh(&rxtid->lock);
 		return is_queued;
+	}
 
 	for (idx = 0 ; idx < rxtid->hold_q_sz; idx++) {
 		spin_lock_bh(&rxtid->lock);

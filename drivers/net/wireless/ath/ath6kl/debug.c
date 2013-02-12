@@ -454,6 +454,9 @@ static ssize_t ath6kl_fwlog_mask_write(struct file *file,
 	struct ath6kl *ar = file->private_data;
 	int ret;
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	ret = kstrtou32_from_user(user_buf, count, 0, &ar->debug.fwlog_mask);
 	if (ret)
 		return ret;
@@ -486,6 +489,9 @@ static ssize_t read_file_tgt_stats(struct file *file, char __user *user_buf,
 	int i;
 	long left;
 	ssize_t ret_cnt;
+
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
 
 	vif = ath6kl_vif_first(ar);
 	if (!vif)
@@ -965,6 +971,9 @@ static ssize_t ath6kl_lrssi_roam_write(struct file *file,
 	char buf[32];
 	ssize_t len;
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
@@ -1109,6 +1118,9 @@ static ssize_t ath6kl_roam_table_read(struct file *file, char __user *user_buf,
 	unsigned int len, buf_len;
 	ssize_t ret_cnt;
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	if (down_interruptible(&ar->sem))
 		return -EBUSY;
 
@@ -1180,6 +1192,9 @@ static ssize_t ath6kl_force_roam_write(struct file *file,
 	int i;
 	int addr[ETH_ALEN];
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
@@ -1215,6 +1230,9 @@ static ssize_t ath6kl_roam_mode_write(struct file *file,
 	char buf[20];
 	size_t len;
 	enum wmi_roam_mode mode;
+
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
@@ -1271,6 +1289,9 @@ static ssize_t ath6kl_keepalive_write(struct file *file,
 	int ret;
 	u8 val;
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	ret = kstrtou8_from_user(user_buf, count, 0, &val);
 	if (ret)
 		return ret;
@@ -1316,6 +1337,9 @@ static ssize_t ath6kl_disconnect_timeout_write(struct file *file,
 	int ret;
 	u8 val;
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	ret = kstrtou8_from_user(user_buf, count, 0, &val);
 	if (ret)
 		return ret;
@@ -1348,6 +1372,9 @@ static ssize_t ath6kl_create_qos_write(struct file *file,
 	struct wmi_create_pstream_cmd pstream;
 	u32 val32;
 	u16 val16;
+
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
 
 	vif = ath6kl_vif_first(ar);
 	if (!vif)
@@ -1527,6 +1554,9 @@ static ssize_t ath6kl_delete_qos_write(struct file *file,
 	u8 traffic_class;
 	u8 tsid;
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	vif = ath6kl_vif_first(ar);
 	if (!vif)
 		return -EIO;
@@ -1572,6 +1602,9 @@ static ssize_t ath6kl_bgscan_int_write(struct file *file,
 	char buf[32];
 	ssize_t len;
 
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
+
 	vif = ath6kl_vif_first(ar);
 	if (!vif)
 		return -EIO;
@@ -1611,6 +1644,9 @@ static ssize_t ath6kl_listen_int_write(struct file *file,
 	u16 listen_interval;
 	char buf[32];
 	ssize_t len;
+
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
 
 	vif = ath6kl_vif_first(ar);
 	if (!vif)
@@ -1670,6 +1706,9 @@ static ssize_t ath6kl_power_params_write(struct file *file,
 	char *sptr, *token;
 	u16 idle_period, ps_poll_num, dtim,
 		tx_wakeup, num_tx;
+
+	if (WARN_ON(!test_bit(WMI_READY, &ar->flag)))
+		return -EIO;
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))

@@ -1249,10 +1249,12 @@ static int ath6kl_open(struct net_device *dev)
 static int ath6kl_close(struct net_device *dev)
 {
 	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct ath6kl *ar = vif->ar;
 
 	netif_stop_queue(dev);
 
-	ath6kl_cfg80211_stop(vif);
+	if (test_bit(WMI_READY, &ar->flag))
+		ath6kl_cfg80211_stop(vif);
 
 	clear_bit(WLAN_ENABLED, &vif->flags);
 
@@ -1534,22 +1536,179 @@ exit:
 	return 0;
 }
 
+static int _from_hex(char c)
+{
+	int ret = 0;
+
+	if ((c >= '0') && (c <= '9'))
+		ret = (c - '0');
+	else if ((c >= 'a') && (c <= 'f'))
+		ret = (c - 'a' + 0x0a);
+	else if ((c >= 'A') && (c <= 'F'))
+		ret = (c - 'A' + 0x0A);
+
+	return ret;
+}
+
+static void hexstr_bytearray(char *hexStr, u8 *byteArray, u8 numBytes)
+{
+	u8 i;
+
+	for (i = 0; i < numBytes; i++)
+		byteArray[i] = 16 * _from_hex(hexStr[2 * i + 0]) +
+			       _from_hex(hexStr[2 * i + 1]);
+}
+
+int ath6kl_ioctl_pkt_filter_set(struct ath6kl_vif *vif,
+				char *buf,
+				int len)
+{
+	struct ath6kl *ar = vif->ar;
+	char *sptr, *token;
+	char filter[CPKT_PATTERN_SIZE], mask[CPKT_MASK_SIZE];
+	int ret;
+	u8 op, id, act, size, offset;
+
+	if (len <= 0)
+		return -EFAULT;
+
+	sptr = buf;
+
+	token = strsep(&sptr, " ");
+	if (!token || kstrtou8(token, 0, &op))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token || kstrtou8(token, 0, &id))
+		return -EINVAL;
+
+	if (!op) {
+		/* del case */
+		ret = ath6kl_wmi_del_pkt_filter_pattern_cmd(ar->wmi,
+						vif->fw_vif_idx, id);
+		return ret;
+	}
+
+	/* add case */
+	token = strsep(&sptr, " ");
+	if (!token || kstrtou8(token, 0, &act))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token || kstrtou8(token, 0, &size))
+		return -EINVAL;
+	if (size > CPKT_PATTERN_SIZE)
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token || kstrtou8(token, 0, &offset))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token ||
+	    strnlen(token, CPKT_PATTERN_SIZE << 1) >> 1 != size)
+		return -EINVAL;
+	hexstr_bytearray(token, filter, size);
+
+	token = strsep(&sptr, " ");
+	if (!token ||
+	    strnlen(token, CPKT_MASK_SIZE << 1) >> 1 != size)
+		return -EINVAL;
+	hexstr_bytearray(token, mask, size);
+
+	ret = ath6kl_wmi_add_pkt_filter_pattern_cmd(ar->wmi,
+						    vif->fw_vif_idx, id,
+						    act, size, offset,
+						    filter, mask);
+
+	return ret;
+}
+
+static int ath6kl_ioctl_wext_priv(struct net_device *dev,
+				  struct ifreq *rq, int cmd)
+{
+	struct ath6kl_wifi_priv_cmd hr_cmd;
+	struct ath6kl_vif *vif = netdev_priv(dev);
+	void *data = (void *)(rq->ifr_data);
+	char *user_cmd = NULL;
+	int ret = 0, offset = 0, priv_cmd = 0;
+
+	if (copy_from_user(&hr_cmd,
+			   data,
+			   sizeof(struct ath6kl_wifi_priv_cmd)))
+		return -EIO;
+
+	if (hr_cmd.buf == NULL || hr_cmd.used_len <= 0)
+		return -EINVAL;
+
+	user_cmd = kzalloc(hr_cmd.used_len + 1, GFP_KERNEL);
+	if (!user_cmd)
+		return -ENOMEM;
+
+	if (copy_from_user(user_cmd,
+			   hr_cmd.buf,
+			   hr_cmd.used_len)) {
+		kfree(user_cmd);
+		return -EIO;
+	}
+	user_cmd[hr_cmd.used_len] = '\0';
+
+	if (0 == strncasecmp(user_cmd, "ATH6KL PKT_FILTER ", 18)) {
+		priv_cmd = ATH6KL_XIOCTL_PKT_FILTER_ADD_DEL;
+		offset = 18;
+	}
+
+	switch (priv_cmd) {
+	case ATH6KL_XIOCTL_PKT_FILTER_ADD_DEL:
+		ret = ath6kl_ioctl_pkt_filter_set(vif, user_cmd + offset,
+						  hr_cmd.used_len - offset);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+
+	}
+
+	kfree(user_cmd);
+
+	return ret;
+}
+
 static int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 {
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	struct ath6kl *ar = vif->ar;
+	int ret = 0;
 
-	if (!ar || !vif)
+	if (!ar || !vif) {
+		ret = -EIO;
 		goto exit;
+	}
 
 	if (!test_bit(WMI_READY, &vif->ar->flag) ||
-	    !test_bit(WLAN_ENABLED, &vif->flags))
+	    !test_bit(WLAN_ENABLED, &vif->flags)) {
+		ret = -EIO;
 		goto exit;
+	}
 
-	if (cmd == ATH6KL_PRIV_GET_WLAN_STATS)
-		ath6kl_update_stats(ar, vif, rq->ifr_data);
+	switch (cmd) {
+	case ATH6KL_PRIV_GET_WLAN_STATS:
+		ret = ath6kl_update_stats(ar, vif, rq->ifr_data);
+		break;
+	case ATH6KL_IOCTL_WEXT_PRIV26:
+		ret = ath6kl_ioctl_wext_priv(dev, rq, cmd);
+		break;
+	default:
+		break;
+	}
 exit:
-	return 0;
+	if (ret)
+		ath6kl_err("io status:%d cmd:%d\n",
+			   ret, cmd);
+	else
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "io status:%d cmd:%d\n",
+			   ret, cmd);
+	return ret;
 }
 #endif
 

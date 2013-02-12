@@ -182,20 +182,23 @@ void __exit ath6kl_sdio_exit_platform(void)
 
 int ath6kl_wait_for_init_comp(void)
 {
-	int left;
+	int left, ret = 0;
 
 	if (atomic_read(&init_done) == 1)
-		return 0;
+		return ret;
 
 	left = wait_event_interruptible_timeout(init_wq,
 						atomic_read(&init_done) == 1,
 						ATH6KL_INIT_TIMEOUT);
-	if (left == 0)
+	if (left == 0) {
 		printk(KERN_ERR "timeout while waiting for init operation\n");
-	else if (left < 0)
+		ret = -ETIMEDOUT;
+	} else if (left < 0) {
 		printk(KERN_ERR "wait for init operation failed: %d\n", left);
+		ret = left;
+	}
 
-	return 0;
+	return ret;
 }
 void ath6kl_notify_init_done(void)
 {
