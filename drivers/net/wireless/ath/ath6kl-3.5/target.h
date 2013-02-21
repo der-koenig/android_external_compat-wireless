@@ -126,6 +126,10 @@
 #define GPIO_BASE_ADDRESS		0x00014000
 #define MBOX_BASE_ADDRESS		0x00018000
 #define ANALOG_INTF_BASE_ADDRESS	0x0001c000
+#define WLAN_BOOTSTRAP_ADDRESS          0x00014140
+
+#define BOOTSTRAP_IS_HSIC(v)            ((v) & (1 << 10))
+#define BOOTSTRAP_IS_USB(v)             ((v) & (1 << 11))
 
 /* real name of the register is unknown */
 #define ATH6KL_ANALOG_PLL_REGISTER	(ANALOG_INTF_BASE_ADDRESS + 0x284)

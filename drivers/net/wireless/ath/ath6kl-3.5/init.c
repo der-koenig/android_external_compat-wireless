@@ -2614,6 +2614,26 @@ static u32 ath6kl_init_get_subtype(struct ath6kl *ar)
 	return subtype;
 }
 
+int ath6kl_get_bootstrap_mode(struct ath6kl *ar)
+{
+	u32 address = WLAN_BOOTSTRAP_ADDRESS;
+	u32 bootstrap;
+
+	/* Currently, we only check for AR6004 */
+	if (ar->target_type != TARGET_TYPE_AR6004) {
+		ar->bootstrap_mode = 0;
+		return 0;
+	}
+
+	if (ath6kl_diag_read32(ar, address, &bootstrap))
+		return -EIO;
+
+	ath6kl_info("target bootstrap: 0x%08x\n", bootstrap);
+	ar->bootstrap_mode = bootstrap;
+
+	return 0;
+}
+
 int ath6kl_core_init(struct ath6kl *ar)
 {
 	struct ath6kl_bmi_target_info targ_info;
@@ -2649,6 +2669,11 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ath6kl_err("Firmware already uploaded, reset target\n");
 		ath6kl_reset_device(ar, ar->target_type, true, true);
 		ret =  -EAGAIN;
+		goto err_power_off;
+	}
+
+	if (ath6kl_get_bootstrap_mode(ar) != 0) {
+		ath6kl_err("can't get bootstrap mode\n");
 		goto err_power_off;
 	}
 
@@ -2823,7 +2848,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 		wifi_diag_init();
 #endif
 
-#ifdef CONFIG_ANDROID
+#if  defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 	ret = ath6kl_android_enable_wow_default(ar);
 	if (ret != 0)
 		goto err_rxbuf_cleanup;

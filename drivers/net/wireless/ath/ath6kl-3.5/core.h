@@ -47,7 +47,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.279)
+#define __BUILD_VERSION_ (3.5.0.282)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -538,7 +538,7 @@ enum ath6kl_recovery_mode {
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
 
 /* AR6006 1.1 definitions */
-#define AR6006_HW_1_1_VERSION                 0x31c80a4a
+#define AR6006_HW_1_1_VERSION                 0x31c80a54
 #define AR6006_HW_1_1_FW_DIR			"ath6k/AR6006/hw1.1"
 #define AR6006_HW_1_1_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_1_FIRMWARE_FILE           "fw.ram.bin"
@@ -1187,6 +1187,7 @@ enum ath6kl_state {
 	ATH6KL_STATE_DEEPSLEEP,
 	ATH6KL_STATE_CUTPOWER,
 	ATH6KL_STATE_WOW,
+	ATH6KL_STATE_PRE_SUSPEND,
 };
 
 #define ATH6KL_VAPMODE_MASK	(0xf)	/* each VAP use 4 bits */
@@ -1205,6 +1206,17 @@ enum ath6kl_vap_mode {
 
 	ATH6KL_VAPMODE_LAST = 0xf,
 };
+
+#ifdef USB_AUTO_SUSPEND
+
+struct usb_pm_skb_queue_t {
+	struct list_head list;
+	struct sk_buff *skb;
+	int pipeID;
+	struct ath6kl *ar;
+};
+
+#endif
 
 struct ath6kl {
 	struct device *dev;
@@ -1475,6 +1487,14 @@ struct ath6kl {
 	void (*fw_crash_notify)(struct ath6kl *ar);
 
 	u32 roam_mode;
+	u32 bootstrap_mode;
+#ifdef USB_AUTO_SUSPEND
+	struct usb_pm_skb_queue_t usb_pm_skb_queue;
+	spinlock_t   usb_pm_lock;
+	struct work_struct auto_pm_wakeup_resume_wk;
+	int auto_pm_cnt;
+
+#endif
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1662,9 +1682,13 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar);
 void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
 
-#ifdef CONFIG_ANDROID
+#if   defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 int ath6kl_android_enable_wow_default(struct ath6kl *ar);
 bool ath6kl_android_need_wow_suspend(struct ath6kl *ar);
+#endif
+
+#ifdef ATH6KL_SUPPORT_WLAN_HB
+int ath6kl_enable_wow_hb(struct ath6kl *ar);
 #endif
 
 int ath6kl_fw_watchdog_enable(struct ath6kl *ar);

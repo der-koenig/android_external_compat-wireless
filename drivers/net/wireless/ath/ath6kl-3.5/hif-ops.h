@@ -220,6 +220,13 @@ static inline u16 ath6kl_hif_pipe_set_max_sche(struct ath6kl *ar,
 	return ar->hif_ops->pipe_set_max_sche(ar, max_sche_tx, max_sche_rx);
 }
 
+static inline int ath6kl_hif_diag_warm_reset(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif diag warm reset\n");
+
+	return ar->hif_ops->diag_warm_reset(ar);
+}
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static inline void ath6kl_hif_early_suspend(struct ath6kl *ar)
 {
@@ -241,5 +248,28 @@ static inline int ath6kl_hif_bus_config(struct ath6kl *ar)
 
 	return ar->hif_ops->bus_config(ar);
 }
+
+#ifdef USB_AUTO_SUSPEND
+static inline void ath6kl_hif_auto_pm_disable(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_disable\n");
+
+	ar->hif_ops->auto_pm_disable(ar);
+}
+
+static inline void ath6kl_hif_auto_pm_enable(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_enable\n");
+
+	ar->hif_ops->auto_pm_enable(ar);
+}
+
+static inline int ath6kl_hif_auto_pm_get_usage_cnt(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif auto_pm_get_usage_cnt\n");
+
+	return ar->hif_ops->auto_pm_get_usage_cnt(ar);
+}
+#endif
 
 #endif

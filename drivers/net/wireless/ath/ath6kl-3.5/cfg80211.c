@@ -460,10 +460,24 @@ static bool ath6kl_cfg80211_ready(struct ath6kl_vif *vif)
 	if (!__ath6kl_cfg80211_ready(vif->ar))
 		return false;
 
+#if defined(USB_AUTO_SUSPEND)
+	if ((vif->ar->state == ATH6KL_STATE_WOW) ||
+		(vif->ar->state == ATH6KL_STATE_DEEPSLEEP) ||
+		(vif->ar->state == ATH6KL_STATE_PRE_SUSPEND)) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		"ignore wlan disabled in AUTO suspend mode!\n");
+	} else {
+		if (!test_bit(WLAN_ENABLED, &vif->flags)) {
+			ath6kl_err("wlan disabled\n");
+			return false;
+		}
+	}
+#else
 	if (!test_bit(WLAN_ENABLED, &vif->flags)) {
 		ath6kl_err("wlan disabled\n");
 		return false;
 	}
+#endif
 
 	return true;
 }
@@ -1331,6 +1345,21 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 		cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
+#if defined(USB_AUTO_SUSPEND)
+		/*
+		In Disconnected state, the driver will enter deep sleep,
+		such that the scan response will be lost, thus here
+		prevent driver goes into deep sleep mode
+		*/
+
+		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+			"%s: warnning pm_usage_cnt =0\n", __func__);
+		} else {
+			ath6kl_hif_auto_pm_enable(ar);
+		}
+
+#endif
 	}
 
 	if (vif->nw_type & ADHOC_NETWORK) {
@@ -1431,6 +1460,21 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 		cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
+#if defined(USB_AUTO_SUSPEND)
+		/*
+		In Disconnected state, the driver will enter deep sleep,
+		such that the scan response will be lost, thus here
+		prevent driver goes into deep sleep mode
+		*/
+
+		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+			"%s: warnning pm_usage_cnt =0\n", __func__);
+		} else {
+			ath6kl_hif_auto_pm_enable(ar);
+		}
+
+#endif
 	}
 }
 
@@ -1715,6 +1759,10 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	up(&ar->sem);
 
+#ifdef USB_AUTO_SUSPEND
+	ath6kl_hif_auto_pm_disable(ar);
+#endif
+
 	return ret;
 }
 
@@ -1744,6 +1792,21 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: status%s\n", __func__,
 		   aborted ? " aborted" : "");
+#if defined(USB_AUTO_SUSPEND)
+	/*
+	In Disconnected state, the driver will enter deep sleep,
+	such that the scan response will be lost, thus here
+	prevent driver goes into deep sleep mode
+	*/
+
+	if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		"%s: warnning pm_usage_cnt =0\n", __func__);
+	} else {
+		ath6kl_hif_auto_pm_enable(ar);
+	}
+
+#endif
 
 	if (!vif->scan_req)
 		return;
@@ -2934,7 +2997,9 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		}
 	}
 #endif
-#ifndef CONFIG_ANDROID
+
+#if (!defined(CONFIG_ANDROID) && !defined(USB_AUTO_SUSPEND))
+
 	/* Clear existing WOW patterns */
 	for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
 		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
@@ -3203,9 +3268,15 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 		/* Flush all non control pkts in TX path */
 		ath6kl_tx_data_cleanup(ar);
 
+#ifdef USB_AUTO_SUSPEND
+		ar->state = ATH6KL_STATE_PRE_SUSPEND;
+#endif
 		ret = ath6kl_wow_suspend(ar, wow);
 		if (ret) {
 			ath6kl_err("wow suspend failed: %d\n", ret);
+#ifdef USB_AUTO_SUSPEND
+			ar->state = ATH6KL_STATE_WOW;
+#endif
 			return ret;
 		}
 		spin_lock_bh(&ar->state_lock);
@@ -3219,6 +3290,9 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 
 		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "deep sleep suspend\n");
 
+#ifdef USB_AUTO_SUSPEND
+		ar->state = ATH6KL_STATE_PRE_SUSPEND;
+#endif
 		ret = ath6kl_cfg80211_deepsleep_suspend(ar);
 		if (ret) {
 			ath6kl_err("deepsleep suspend failed: %d\n", ret);
@@ -3281,6 +3355,10 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 #endif
 
 
+#ifdef USB_AUTO_SUSPEND
+		schedule_work(&ar->auto_pm_wakeup_resume_wk);
+#endif
+
 		spin_lock_bh(&ar->state_lock);
 		ar->state = ATH6KL_STATE_ON;
 		spin_unlock_bh(&ar->state_lock);
@@ -3310,6 +3388,10 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 
 	case ATH6KL_STATE_DEEPSLEEP:
 		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "deep sleep resume\n");
+
+#ifdef USB_AUTO_SUSPEND
+		schedule_work(&ar->auto_pm_wakeup_resume_wk);
+#endif
 
 		spin_lock_bh(&ar->state_lock);
 		ar->state = ATH6KL_STATE_ON;
@@ -4753,7 +4835,7 @@ static int ath6kl_sched_scan_deinit(struct ath6kl_vif *vif)
 	return 0;
 }
 
-#ifdef CONFIG_ANDROID
+#if defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 {
 	struct ath6kl_vif *vif;
@@ -5825,7 +5907,7 @@ void ath6kl_shprotect_timer_handler(unsigned long ptr)
 }
 
 
-#ifdef CONFIG_ANDROID
+#if defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 int ath6kl_android_enable_wow_default(struct ath6kl *ar)
 {
 	unsigned char mask = 0x3F;
@@ -5918,5 +6000,41 @@ bool ath6kl_android_need_wow_suspend(struct ath6kl *ar)
 	}
 
 	return isConnected;
+}
+#endif
+
+#ifdef ATH6KL_SUPPORT_WLAN_HB
+int ath6kl_enable_wow_hb(struct ath6kl *ar)
+{
+	u32 filter = 0;
+	int i, ret;
+	struct ath6kl_vif *vif;
+
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return -EIO;
+
+	if (!ath6kl_cfg80211_ready(vif))
+		return -EIO;
+
+	/* Clear existing WOW patterns */
+	for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
+		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
+				WOW_LIST_ID, i);
+
+	filter |= WOW_FILTER_OPTION_MAGIC_PACKET | WOW_FILTER_OPTION_NWK_DISASSOC;
+
+	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
+	if (vif->auth_mode == WPA2_AUTH_CCKM || vif->auth_mode == WPA2_PSK_AUTH
+		|| vif->auth_mode == WPA_AUTH_CCKM || vif->auth_mode == WPA_PSK_AUTH) {
+		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
+	}
+
+	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
+					ATH6KL_WOW_MODE_ENABLE,
+					filter,
+					WOW_HOST_REQ_DELAY);
+
+	return ret;
 }
 #endif

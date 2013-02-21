@@ -88,10 +88,10 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar);
 void ath6kl_cfg80211_stop(struct ath6kl_vif *vif);
 void ath6kl_cfg80211_stop_all(struct ath6kl *ar);
 
-#ifdef CONFIG_ANDROID
+#if defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
 int ath6kl_clear_wow_mode(struct wiphy *wiphy);
-#endif /* CONFIG_ANDROID */
+#endif /* defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND) */
 
 bool ath6kl_sched_scan_trigger(struct ath6kl_vif *vif);
 
@@ -106,4 +106,7 @@ void ath6kl_switch_parameter_based_on_connection(
 			struct ath6kl_vif *vif,
 			bool call_on_disconnect);
 
+#if defined(USB_AUTO_SUSPEND)
+void ath6kl_auto_pm_wakeup_resume(struct work_struct *);
+#endif
 #endif /* ATH6KL_CFG80211_H */

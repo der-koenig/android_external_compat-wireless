@@ -660,6 +660,20 @@ void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie)
 	return;
 }
 
+int ath6kl_diag_warm_reset(struct ath6kl *ar)
+{
+	int ret;
+
+	ret = ath6kl_hif_diag_warm_reset(ar);
+
+	if (ret) {
+		ath6kl_err("failed to issue warm reset command\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 /*
  * Read from the hardware through its diagnostic window. No cooperation
  * from the firmware is required for this.
@@ -843,7 +857,13 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 		break;
 	}
 
-	status = ath6kl_diag_write32(ar, address, data);
+	/* If the bootstrap mode is HSIC, do warm reset */
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+		status = ath6kl_diag_warm_reset(ar);
+		ath6kl_info("%s: warm reset\n", __func__);
+	} else {
+		status = ath6kl_diag_write32(ar, address, data);
+	}
 
 	if (status)
 		ath6kl_err("failed to reset target\n");

@@ -4577,6 +4577,91 @@ static const struct file_operations fops_disable_runtime_flowctrl = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
+#ifdef USB_AUTO_SUSPEND
+
+int debugfs_get_pm_state(struct ath6kl *usbpm_ar)
+{
+	return usbpm_ar->state;
+}
+
+static ssize_t ath6kl_usb_autopm_usagecnt_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	int ret;
+	int value;
+	struct ath6kl *ar = file->private_data;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &value);
+
+	if (ret)
+		return ret;
+
+	if (value == 0) {
+		ath6kl_hif_auto_pm_enable(ar);
+		ath6kl_dbg(ATH6KL_DBG_ANY, ("auto pm -1\n"));
+	} else if (value == 1) {
+		ath6kl_hif_auto_pm_disable(ar);
+		ath6kl_dbg(ATH6KL_DBG_ANY, ("auto pm +1\n"));
+	}
+
+	return count;
+
+}
+static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	char buf[32];
+	int len;
+	int usb_auto_usagecnt;
+	struct ath6kl *ar = file->private_data;
+
+	usb_auto_usagecnt = ath6kl_hif_auto_pm_get_usage_cnt(ar);
+
+	len = snprintf(buf, sizeof(buf),
+		"usbautopm: 0x%x\n", usb_auto_usagecnt);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+
+static const struct file_operations fops_usb_autopm_usagecnt = {
+	.read = ath6kl_usb_autopm_usagecnt_read,
+	.write = ath6kl_usb_autopm_usagecnt_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+
+
+
+static ssize_t ath6kl_usb_pm_state_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	char buf[32];
+	int len;
+	int usb_pm_state;
+	struct ath6kl *ar = file->private_data;
+
+	usb_pm_state = debugfs_get_pm_state(ar);
+
+	len = snprintf(buf, sizeof(buf), "pm_state: 0x%x\n", usb_pm_state);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+
+static const struct file_operations fops_usb_pm_state = {
+	.read = ath6kl_usb_pm_state_read,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+#endif /* USB_AUTO_SUSPEND */
 
 int ath6kl_debug_init(struct ath6kl *ar)
 {
@@ -4764,7 +4849,13 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("disable_runtime_flowctrl", S_IWUSR,
 			ar->debugfs_phy, ar, &fops_disable_runtime_flowctrl);
+#ifdef USB_AUTO_SUSPEND
+	debugfs_create_file("usb_autopm_usagecnt", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_usb_autopm_usagecnt);
 
+	debugfs_create_file("usb_pm_state", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_usb_pm_state);
+#endif
 	return 0;
 }
 
