@@ -1770,7 +1770,7 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid_mux, u16 seq_no,
 
 	if (vif->nw_type == AP_NETWORK) {
 		aid = ath6kl_get_aid(tid_mux);
-		sta = ath6kl_find_sta_by_aid(vif->ar, aid);
+		sta = ath6kl_find_sta_by_aid(vif, aid);
 		if (sta)
 			aggr_conn = sta->aggr_conn;
 	} else
@@ -1866,7 +1866,7 @@ void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid_mux)
 
 	if (vif->nw_type == AP_NETWORK) {
 		aid = ath6kl_get_aid(tid_mux);
-		sta = ath6kl_find_sta_by_aid(vif->ar, aid);
+		sta = ath6kl_find_sta_by_aid(vif, aid);
 		if (sta)
 			aggr_conn = sta->aggr_conn;
 	} else

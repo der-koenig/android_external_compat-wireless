@@ -57,7 +57,8 @@ struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
 
 	for (i = 0; i < max_conn; i++) {
 		if (memcmp(node_addr, ar->sta_list[i].mac, ETH_ALEN) == 0) {
-			conn = &ar->sta_list[i];
+			if (ar->sta_list[i].vif == vif)
+				conn = &ar->sta_list[i];
 			break;
 		}
 	}
@@ -65,14 +66,16 @@ struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
 	return conn;
 }
 
-struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl *ar, u8 aid)
+struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 {
+	struct ath6kl *ar = vif->ar;
 	struct ath6kl_sta *conn = NULL;
 	u8 ctr;
 
 	for (ctr = 0; ctr < AP_MAX_NUM_STA; ctr++) {
 		if (ar->sta_list[ctr].aid == aid) {
-			conn = &ar->sta_list[ctr];
+			if (ar->sta_list[ctr].vif == vif)
+				conn = &ar->sta_list[ctr];
 			break;
 		}
 	}
@@ -98,17 +101,21 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u16 aid,
 	sta->ucipher = ucipher;
 	sta->auth = auth;
 	sta->apsd_info = apsd_info;
+	sta->vif = vif;
 
 	ar->sta_list_index = ar->sta_list_index | (1 << free_slot);
 	ar->ap_stats.sta[free_slot].aid = cpu_to_le32(aid);
 	aggr_conn_init(vif, vif->aggr_cntxt, sta->aggr_conn);
 }
 
-static void ath6kl_sta_cleanup(struct ath6kl *ar, u8 i)
+static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 {
+	struct ath6kl *ar = vif->ar;
 	struct ath6kl_sta *sta = &ar->sta_list[i];
 	struct ath6kl_mgmt_buff *entry, *tmp;
 
+	if (sta->vif != vif)
+		return;
 	/* empty the queued pkts in the PS queue if any */
 	spin_lock_bh(&sta->psq_lock);
 	skb_queue_purge(&sta->psq);
@@ -130,13 +137,15 @@ static void ath6kl_sta_cleanup(struct ath6kl *ar, u8 i)
 	memset(sta->wpa_ie, 0, ATH6KL_MAX_IE);
 	sta->aid = 0;
 	sta->sta_flags = 0;
+	sta->vif = NULL;
 
 	ar->sta_list_index = ar->sta_list_index & ~(1 << i);
 	aggr_reset_state(sta->aggr_conn);
 }
 
-static u8 ath6kl_remove_sta(struct ath6kl *ar, u8 *mac, u16 reason)
+static u8 ath6kl_remove_sta(struct ath6kl_vif *vif, u8 *mac, u16 reason)
 {
+	struct ath6kl *ar = vif->ar;
 	u8 i, removed = 0;
 
 	if (is_zero_ether_addr(mac))
@@ -147,7 +156,7 @@ static u8 ath6kl_remove_sta(struct ath6kl *ar, u8 *mac, u16 reason)
 
 		for (i = 0; i < AP_MAX_NUM_STA; i++) {
 			if (!is_zero_ether_addr(ar->sta_list[i].mac)) {
-				ath6kl_sta_cleanup(ar, i);
+				ath6kl_sta_cleanup(vif, i);
 				removed = 1;
 			}
 		}
@@ -157,7 +166,7 @@ static u8 ath6kl_remove_sta(struct ath6kl *ar, u8 *mac, u16 reason)
 				ath6kl_dbg(ATH6KL_DBG_TRC,
 					   "deleting station %pM aid=%d reason=%d\n",
 					   mac, ar->sta_list[i].aid, reason);
-				ath6kl_sta_cleanup(ar, i);
+				ath6kl_sta_cleanup(vif, i);
 				removed = 1;
 				break;
 			}
@@ -734,7 +743,6 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 void ath6kl_tkip_micerr_event(struct ath6kl_vif *vif, u8 keyid, bool ismcast)
 {
 	struct ath6kl_sta *sta;
-	struct ath6kl *ar = vif->ar;
 	u8 tsc[6];
 
 	/*
@@ -742,7 +750,7 @@ void ath6kl_tkip_micerr_event(struct ath6kl_vif *vif, u8 keyid, bool ismcast)
 	 * MIC error. Use this aid to get MAC & send it to hostapd.
 	 */
 	if (vif->nw_type == AP_NETWORK) {
-		sta = ath6kl_find_sta_by_aid(ar, (keyid >> 2));
+		sta = ath6kl_find_sta_by_aid(vif, (keyid >> 2));
 		if (!sta)
 			return;
 
@@ -928,7 +936,7 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_mgmt_buff *mgmt_buf;
 
-	conn = ath6kl_find_sta_by_aid(ar, aid);
+	conn = ath6kl_find_sta_by_aid(vif, aid);
 
 	if (!conn)
 		return;
@@ -1033,7 +1041,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			ar->want_ch_switch |= 1 << vif->fw_vif_idx;
 			vif->ap_hold_conn = 1;
 		}
-		if (!ath6kl_remove_sta(ar, bssid, prot_reason_status))
+		if (!ath6kl_remove_sta(vif, bssid, prot_reason_status))
 			return;
 
 		/* if no more associated STAs, empty the mcast PS q */
