@@ -1409,7 +1409,9 @@ static int __init ath6kl_sdio_init(void)
 {
 	int ret;
 
-	ath6kl_sdio_init_platform();
+	ret = ath6kl_sdio_init_platform();
+	if (ret)
+		return ret;
 
 	init_waitqueue_head(&init_wq);
 
@@ -1420,6 +1422,10 @@ static int __init ath6kl_sdio_init(void)
 	}
 
 	ret = ath6kl_wait_for_init_comp();
+	if (ret) {
+		sdio_unregister_driver(&ath6kl_sdio_driver);
+		ath6kl_sdio_exit_platform();
+	}
 
 	return ret;
 }

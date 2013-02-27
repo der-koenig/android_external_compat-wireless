@@ -1074,7 +1074,7 @@ int ath6kl_init_hw_start(struct ath6kl *ar);
 int ath6kl_init_hw_stop(struct ath6kl *ar);
 void ath6kl_check_wow_status(struct ath6kl *ar, struct sk_buff *skb,
 			     bool is_event_pkt);
-void ath6kl_sdio_init_platform(void);
+int ath6kl_sdio_init_platform(void);
 void ath6kl_sdio_exit_platform(void);
 void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit);
 
