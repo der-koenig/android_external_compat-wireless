@@ -14,21 +14,9 @@ Date:   Thu Apr 7 07:32:18 2011 +0000
     Signed-off-by: Michał Mirosław <mirq-linux@rere.qmqm.pl>
     Signed-off-by: David S. Miller <davem@davemloft.net>
 
---- a/drivers/net/wireless/ath/ath6kl/init.c
-+++ b/drivers/net/wireless/ath/ath6kl/init.c
-@@ -1796,7 +1796,9 @@ int ath6kl_core_init(struct ath6kl *ar)
-
-	set_bit(FIRST_BOOT, &ar->flag);
-
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
-	ndev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
-+#endif
-
-	ret = ath6kl_init_hw_start(ar);
-	if (ret) {
 --- a/drivers/net/wireless/ath/ath6kl/main.c
 +++ b/drivers/net/wireless/ath/ath6kl/main.c
-@@ -1020,6 +1020,7 @@ static struct net_device_stats *ath6kl_get_stats(struct net_device *dev)
+@@ -1270,6 +1270,7 @@ static struct net_device_stats *ath6kl_get_stats(struct net_device *dev)
 	return &vif->net_stats;
  }
 
@@ -36,7 +24,7 @@ Date:   Thu Apr 7 07:32:18 2011 +0000
  static int ath6kl_set_features(struct net_device *dev, u32 features)
  {
 	struct ath6kl_vif *vif = netdev_priv(dev);
-@@ -1051,6 +1052,7 @@ static int ath6kl_set_features(struct net_device *dev, u32 features)
+@@ -1301,6 +1302,7 @@ static int ath6kl_set_features(struct net_device *dev, u32 features)
 
 	return err;
  }
@@ -44,7 +32,7 @@ Date:   Thu Apr 7 07:32:18 2011 +0000
 
  static void ath6kl_set_multicast_list(struct net_device *ndev)
  {
-@@ -1166,7 +1168,9 @@ static struct net_device_ops ath6kl_netdev_ops = {
+@@ -1713,7 +1715,9 @@ static struct net_device_ops ath6kl_netdev_ops = {
 	.ndo_stop               = ath6kl_close,
 	.ndo_start_xmit         = ath6kl_data_tx,
 	.ndo_get_stats          = ath6kl_get_stats,
@@ -52,7 +40,18 @@ Date:   Thu Apr 7 07:32:18 2011 +0000
 	.ndo_set_features       = ath6kl_set_features,
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 	.ndo_set_rx_mode	= ath6kl_set_multicast_list,
- };
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+	.ndo_do_ioctl           = ath6kl_ioctl,
+@@ -1731,7 +1735,9 @@ void init_netdev(struct net_device *dev)
+				sizeof(struct wmi_data_hdr) + HTC_HDR_LENGTH
+				+ WMI_MAX_TX_META_SZ + ATH6KL_HTC_ALIGN_BYTES;
+
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+	dev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
++#endif
+
+	return;
+ }
 
 --- a/drivers/net/ethernet/atheros/atl1c/atl1c_ethtool.c
 +++ b/drivers/net/ethernet/atheros/atl1c/atl1c_ethtool.c
