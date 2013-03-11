@@ -3362,6 +3362,22 @@ static int ath6kl_wmi_dtimexpiry_event_rx(struct wmi *wmi, u8 *datap, int len,
 	return 0;
 }
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+int ath6kl_wmi_flush_buffered_data_event_rx(struct wmi *wmi, u8 *datap, int len,
+					  struct ath6kl_vif *vif)
+{
+     struct wmi_flush_buffered_data_event *ev;
+     if (len < sizeof(struct wmi_flush_buffered_data_event))
+		return -EINVAL;
+
+	ev = (struct wmi_flush_buffered_data_event *)datap;
+        printk("incoming seq = %d\n", ev->seq_no);
+        aggr_deque_bam2bam(vif,le16_to_cpu(ev->seq_no), ev->tid, ev->aid);
+
+	return 0;
+}
+#endif
+
 int ath6kl_wmi_set_pvb_cmd(struct wmi *wmi, u8 if_idx, u16 aid,
 			   bool flag)
 {
@@ -3910,6 +3926,12 @@ static int ath6kl_wmi_proc_events_vif(struct wmi *wmi, u16 if_idx, u16 cmd_id,
 	case WMI_WLAN_INFO_LTE_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_WLAN_INFO_LTE_EVENTID\n");
 		return ath6kl_wmi_test_rx(wmi, datap, len, WMI_WLAN_INFO_LTE_EVENTID);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+       case WMI_FLUSH_BUFFERED_DATA_EVENTID:
+               ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_FLUSH_BUFFERED_DATA_EVENTID\n");
+               return ath6kl_wmi_flush_buffered_data_event_rx(wmi, datap, len, vif);
+#endif
+
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", cmd_id);
 		return -EINVAL;

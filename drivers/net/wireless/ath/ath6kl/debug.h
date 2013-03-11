@@ -45,6 +45,10 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_USB		= BIT(21),
 	ATH6KL_DBG_USB_BULK	= BIT(22),
 	ATH6KL_DBG_PLAT		= BIT(23),
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ATH6KL_DBG_BAM2BAM	= BIT(24),
+	ATH6KL_DBG_OOO		= BIT(25),
+#endif
 	ATH6KL_DBG_ANY	        = 0xffffffff  /* enable all logs */
 };
 

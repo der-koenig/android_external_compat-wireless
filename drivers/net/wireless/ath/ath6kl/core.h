@@ -25,6 +25,11 @@
 #include <linux/circ_buf.h>
 #include <net/cfg80211.h>
 #include <linux/wireless.h>
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#include <linux/msm_ipa.h>	/* IPA driver */
+#include <mach/ipa.h>		/* IPA driver */
+#include <mach/usb_bam.h>	/* BAM driver */
+#endif
 #include "htc.h"
 #include "wmi.h"
 #include "bmi.h"
@@ -294,7 +299,11 @@ struct ath6kl_traffic_activity_change {
 
 #define AGGR_NUM_OF_FREE_NETBUFS    16
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#define AGGR_RX_TIMEOUT     200	/* in ms */
+#else
 #define AGGR_RX_TIMEOUT     100	/* in ms */
+#endif
 
 #define WMI_TIMEOUT (2 * HZ)
 
@@ -873,6 +882,85 @@ struct ath6kl {
 
 };
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+/*! Fixed header configuration required in IPA end-point
+	for RX/TX ( HTC (6) + WMI(6) + 802.3 (22) )
+
+Rx-Pipe (From HSIC/HSUSB to IPA)
+--------------------------------
+HTC - 6 bytes (Byte1: MSB, Byte6 : LSB)
+ Byte1-6: Reserved for WLAN
+
+WMI - 6 bytes (Byte1: MSB, Byte6 : LSB)
+ Byte1,2,3,4 : Reserved for WLAN
+ Byte5:
+	D0 : Exception bit (0-LTE, 1-Data to Host)
+	D1 : WLAN or WAN [0-WLAN(Rx2), 1-WAN(Rx3)]
+	[IPA to check and apply Source NAT or Destination NAT]
+ D2 : Intra BSS
+ D3 : FCS
+ D4-D7 : Reserved for future requirement
+ Byte-6 : Reserved for WLAN
+
+802.3 Header - 14 bytes
+ Source MAC address 	: 6 bytes
+ Destination MAC address: 6 bytes
+ Type/Length 			: 2 bytes
+
+LLC SNAP - 8 bytes
+
+Tx-Pipe (From IPA to HSIC/HSUSB
+-------------------------------
+HTC - 6 Bytes (Byte1: MSB, Byte6 : LSB)
+ Byte1,2: Reserved for WLAN
+ Byte3,4 : Length (To be filled by IPA. Length is calculated from the next byte)
+ Byte5,6 : Reserved
+WMI - 6 bytes (Byte1: MSB, Byte6 : LSB)
+ Byte1,2,3,4 : Reserved for WLAN
+ Byte5 : D0,D1 (Device ID, To be filled by IPA)
+ 00 -"wlan0"
+ 01 -"wlan1"
+ 02 -"wlan2" (for future use)
+ 03 to 07-Reserved
+ Byte6 :
+	D0 : Data from (1-Host, 0-IPA) [Filled by WLAN configuration module]
+	D1 : Endianess (1-Little, 0-Big) [Filled by WLAN configuration module]
+ D2-D7 : Reserved for future requirement
+
+802.3 Header - 14 bytes
+ Source MAC Address	 : 6 bytes (To be filled by IPA)
+ Destination MAC Address : 6 bytes (To be filled by IPA)
+ Type/Length 		 : 2 bytes [Set to zero, WLAN FW will not use this]
+LLC SNAP - 8 bytes [Filled by WLAN configuration module]
+
+*/
+
+#define ATH6KL_IPA_WLAN_MAC_ADDR_SIZE 		6
+#define ATH6KL_IPA_WLAN_HDR_LENGTH 		34
+#define ATH6KL_IPA_WLAN_MAX_TX_PIPE	 	4
+#define ATH6KL_IPA_WLAN_MAX_RX_PIPE	 	1
+#define ATH6KL_IPA_WLAN_META_DATA_LEN		30
+#define ATH6KL_IPA_WLAN_HDR_PARTIAL		1
+#define ATH6KL_IPA_HDR_PER_CLIENT		1
+#define ATH6KL_IPA_WLAN_IPA_HDR_COMPLETE	0
+
+/* SYSBAM PIPE defines */
+#define MAX_SYSBAM_PIPE	1
+
+enum ath6kl_ipa_api_result {
+	ATH6KL_IPA_SUCCESS = 0,
+	ATH6KL_IPA_FAILURE = -1,
+};
+
+enum ath6kl_bam_tx_evt_type {
+	AMPDU_FLUSH = 0,
+	BAM_WMM_AC_BK,
+	BAM_WMM_AC_BE,
+	BAM_WMM_AC_VI,
+	BAM_WMM_AC_VO
+};
+#endif
+
 static inline struct ath6kl *ath6kl_priv(struct net_device *dev)
 {
 	return ((struct ath6kl_vif *) netdev_priv(dev))->ar;
@@ -984,5 +1072,20 @@ void ath6kl_core_cleanup(struct ath6kl *ar);
 void ath6kl_core_destroy(struct ath6kl *ar);
 void ath6kl_ap_restart_timer(unsigned long ptr);
 int _string_to_mac(char *string, int len, u8 *macaddr);
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+/* IPA configuration related APIs */
+int ath6kl_ipa_add_flt_rule(enum ipa_client_type client);
+int ath6kl_ipa_add_header_info(char* hdr_name);
+int ath6kl_ipa_get_header_info(char* hdr_name, uint32_t* hdl);
+int ath6kl_ipa_register_interface(const char *name, char* hdr_name);
+int ath6kl_ipacm_get_ep_config_info(u32 ipa_client, struct ipa_ep_cfg *ep_cfg);
+
+/* IPA SYSBAM configuration related APIs */
+void ath6kl_disconnect_sysbam_pipes(void);
+int ath6kl_usb_create_sysbam_pipes(void);
+
+void aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid, u8 aid);
+#endif
 
 #endif /* CORE_H */

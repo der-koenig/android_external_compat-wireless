@@ -3776,6 +3776,12 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	if (register_netdevice(ndev))
 		goto err;
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM, "%s: Wlan network Interface is up for : %s", __func__, ndev->name);
+	/* Add partial header with IPA for this interface */
+	ath6kl_ipa_add_header_info(ndev->name);
+#endif
+
 	ar->avail_idx_map &= ~BIT(fw_vif_idx);
 	vif->sme_state = SME_DISCONNECTED;
 	set_bit(WLAN_ENABLED, &vif->flags);

@@ -332,6 +332,9 @@ struct host_interest {
 #define HI_OPTION_FW_SUBMODE_BITS      0x2
 #define HI_OPTION_FW_SUBMODE_SHIFT     0x14
 
+/* hi_option_flag2 options */
+#define AMSDU_SLICING_OFFLOAD_TO_FW    0x1
+
 /* hi_option_flag2 bit fields */
 #define HI_OPTION_AP_CLIENT_CNT		0x3c00 /* max number of clients supportedAP mode */
 

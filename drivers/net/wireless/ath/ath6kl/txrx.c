@@ -32,6 +32,583 @@
 #define ATH6KL_TID_MASK 0xf
 #define ATH6KL_AID_SHIFT 4
 
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+
+/* Strurue decl for SYSBAM pipes */
+static struct usb_sysbam_pipe {
+	u32 clnt_hdl;
+	struct ipa_sys_connect_params ipa_params;
+} sysbam_pipe[MAX_SYSBAM_PIPE];
+
+/* SYS BAM Pipe, no connection index for this, this pipe is created between the
+	wlan driver and ipa driver for sending the AMPDU re-ordered packets to IPA driver.
+*/
+static struct sysbam_inf {
+	u8	idx; /* not used in sysbam pipe */
+	enum 	ipa_client_type client;
+}sysbam_info[MAX_SYSBAM_PIPE] = {
+	{0, IPA_CLIENT_A5_WLAN_AMPDU_PROD}
+};
+
+/* Add the filter rule, after creating the BAM pipe, it is called by the
+	bamcm file , whilte creating the bam pipe*/
+int ath6kl_ipa_add_flt_rule(enum ipa_client_type client)
+{
+	struct ipa_ioc_get_rt_tbl rt_lookup;
+	struct ipa_ioc_add_flt_rule *flt;
+	int ret = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+		"IPA-CM: Creating filter rule for client %d\n",client);
+
+	flt = (struct ipa_ioc_add_flt_rule *) (kmalloc(((sizeof(struct ipa_ioc_add_flt_rule)) +
+						(sizeof(struct ipa_flt_rule_add))), GFP_KERNEL));
+	if (flt == NULL)
+	{
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"IPA-CM: Creating filter rule for client %d\n",client);
+		return ATH6KL_IPA_FAILURE;
+	}
+
+	flt->commit = 1;
+	flt->ip = IPA_IP_v4;
+	flt->ep = client;
+	flt->global = 0;
+	flt->num_rules = 1;
+
+	if (client == IPA_CLIENT_HSIC1_PROD) /* Rx Pipe */
+	{
+		flt->rules[0].rule.action = IPA_PASS_TO_EXCEPTION;
+		flt->rules[0].at_rear = 0;
+
+		memset(&rt_lookup,0,sizeof(rt_lookup));
+		rt_lookup.ip = IPA_IP_v4;
+		strcpy(rt_lookup.name, IPA_DFLT_RT_TBL_NAME);
+
+		ret = ipa_get_rt_tbl(&rt_lookup);
+
+		if (!ret) {
+			flt->rules[0].rule.rt_tbl_hdl = rt_lookup.hdl;
+		} else {
+			ath6kl_err("IPA-CM: get routing table failed %d \n", __LINE__);
+			kfree(flt);
+			return ATH6KL_IPA_FAILURE;
+		}
+
+		memset(&(flt->rules[0].rule.attrib) ,0, sizeof(struct ipa_rule_attrib));
+		/* 12th Byte, d0 bit is set for exception */
+		flt->rules[0].rule.attrib.meta_data = 0x01000000;
+		flt->rules[0].rule.attrib.meta_data_mask = 0x01000000;
+		flt->rules[0].rule.attrib.attrib_mask = IPA_FLT_META_DATA;
+	}
+	else
+	{
+		/* Filter rule to be set for Tx pipe, based on the discussion with QI */
+	}
+
+	ipa_add_flt_rule(flt);
+	ipa_commit_flt(IPA_IP_v4);
+
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+		"IPA-CM: Filter status for client %d is %d\n", client, flt->rules[0].status);
+	kfree(flt);
+	return ATH6KL_IPA_SUCCESS;
+}
+EXPORT_SYMBOL(ath6kl_ipa_add_flt_rule);
+
+/* @brief
+ * add the specified headers to SW and optionally commit them to IPA HW
+ * @return
+ * @return
+ * ATH6KL_IPA_SUCCESS on success,
+ * ATH6KL_IPA_FAILURE on failure
+*/
+int ath6kl_ipa_add_header_info(char* hdr_name)
+{
+	struct ipa_ioc_add_hdr *ipahdr;
+	uint8_t hdr[ATH6KL_IPA_WLAN_HDR_LENGTH + 1]={
+		/* HTC Header - 6 bytes */
+		0x00, 0x00,  /* Reserved */
+		0x00, 0x00, /* length to be filled by IPA, after adding 32 with IP Payload
+						length 32 will be programmed while intializing the header */
+		0x00, 0x00,  /* Reserved */
+		/* WMI header - 6 bytes*/
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+		/* 802.3 header - 14 bytes*/
+		0x00,0x03,0x7f,0x44,0x33,0x89, /* Des. MAC to be filled by IPA */
+		0x00,0x03,0x7f,0x17,0x12,0x69, /* Src. MAC to be filled by IPA */
+		0x00,0x00, /* length can be zero */
+
+		/* LLC SNAP header - 8 bytes */
+		0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00,
+		0x08, 0x00  /* type value(2 bytes) to be filled by IPA, by reading from ethernet header */
+		/* 0x0800 - IPV4, 0x86dd - IPV6 */
+	};
+	int i;
+
+	if(hdr_name == NULL)
+	{
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"IPA-CM: Interface name is null and not defined\n");
+		return ATH6KL_IPA_FAILURE;
+	}
+	/* dynamically allocate the memory to add the headers, and free it after adding in IPA */
+	ipahdr = (struct ipa_ioc_add_hdr *) (kmalloc(((sizeof(struct ipa_ioc_add_hdr)) +
+						(sizeof(struct ipa_hdr_add)*ATH6KL_IPA_HDR_PER_CLIENT)), GFP_KERNEL));
+	if (ipahdr == NULL)
+	{
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"IPA-CM: Failed while creating headers for interface %s\n",hdr_name);
+		return ATH6KL_IPA_FAILURE;
+	}
+	memset(ipahdr,0,((sizeof(struct ipa_ioc_add_hdr))+(sizeof(struct ipa_hdr_add)*ATH6KL_IPA_HDR_PER_CLIENT)));
+	ipahdr->commit = 0;
+	ipahdr->num_hdrs = ATH6KL_IPA_HDR_PER_CLIENT;
+
+	/* Fill the header info for each TOS */
+	for (i=0; i<ipahdr->num_hdrs; i++)
+	{
+		strcpy(ipahdr->hdr[i].name,hdr_name);
+		// Actual headers to be inserted
+		memcpy(ipahdr->hdr[i].hdr, hdr, ATH6KL_IPA_WLAN_HDR_LENGTH);
+		ipahdr->hdr[i].hdr_len		= ATH6KL_IPA_WLAN_HDR_LENGTH;
+		ipahdr->hdr[i].is_partial	= ATH6KL_IPA_WLAN_HDR_PARTIAL;
+		ipahdr->hdr[i].hdr_hdl 		= 0;   /* output param, no need to fill */
+	}
+	// Call the ipa api to configure ep
+	if(ATH6KL_IPA_SUCCESS != ipa_add_hdr(ipahdr))
+	{
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"IPA-CM: Failed while adding headers(using: ipa_add_hdr)for interface %s\n",hdr_name);
+		return ATH6KL_IPA_FAILURE;
+	}
+
+	return ATH6KL_IPA_SUCCESS;
+}
+EXPORT_SYMBOL(ath6kl_ipa_add_header_info);
+
+/* @brief
+ * lookup the specified header resource and return handle if it exists,
+ * if lookup succeeds the header entry ref cnt is increased
+ * @param hdr_name - [in] header name to which handle is quired by client with IPA
+ * @param hdl -	[out] header handle returned by IPA
+ * @return
+ * ATH6KL_IPA_SUCCESS on success,
+ * ATH6KL_IPA_FAILURE on failure
+*/
+int ath6kl_ipa_get_header_info(char* hdr_name, uint32_t* hdl)
+{
+	struct ipa_ioc_get_hdr hdrlookup;
+	memset(&hdrlookup,0,sizeof(hdrlookup));
+
+	if(hdr_name)
+		if(hdr_name) strcpy(hdrlookup.name,hdr_name);
+	// Call the ipa api to configure ep
+	if(ATH6KL_IPA_SUCCESS != ipa_get_hdr(&hdrlookup))
+		return ATH6KL_IPA_FAILURE;
+
+	*hdl = hdrlookup.hdl;
+
+	return ATH6KL_IPA_SUCCESS;
+}
+
+/* @brief
+ * Register an interface and its tx and rx properties, this allows configuration
+ * of rules from user-space
+ * @param name - [in] interface name
+ * @param hdr_name - [in] header name to be inserted for tx propeties
+ * @return
+ * ATH6KL_IPA_SUCCESS on success,
+ * ATH6KL_IPA_FAILURE on failure
+*/
+struct ipa_ioc_tx_intf_prop artxprop[8];
+struct ipa_ioc_rx_intf_prop rxprop;
+
+int ath6kl_ipa_register_interface(const char *name, char* hdr_name)
+{
+	struct ipa_tx_intf txintf;
+	struct ipa_rx_intf rxintf;
+
+	memset(&txintf,0,sizeof(txintf));
+	memset(&rxintf,0,sizeof(rxintf));
+	memset(&artxprop,0,sizeof(artxprop));
+	memset(&rxprop,0,sizeof(rxprop));
+	/*
+	TOS value: 1, 2 - > Maps to BK pipe [HSIC2_CONS]
+	TOS value: 0, 3 - > Maps to BE pipe [HSIC1_CONS]
+	TOS value: 4, 5 - > Maps to VI pipe [HSIC3_CONS]
+	TOS Value: 6, 7 - > Maps to VO pipe [HSIC4_CONS]
+	*/
+
+	// tx properties
+	// for BK
+	artxprop[0].ip = IPA_IP_v4;
+	memset(&artxprop[0].attrib,0,sizeof(artxprop[0].attrib));
+	artxprop[0].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[0].attrib.u.v4.tos = 1;
+	artxprop[0].dst_pipe = IPA_CLIENT_HSIC2_CONS;
+	if(hdr_name) strcpy(artxprop[0].hdr_name,hdr_name);
+	artxprop[1].ip = IPA_IP_v4;
+	memset(&artxprop[1].attrib,0,sizeof(artxprop[1].attrib));
+	artxprop[1].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[1].attrib.u.v4.tos = 2;
+	artxprop[1].dst_pipe = IPA_CLIENT_HSIC2_CONS;
+	if(hdr_name) strcpy(artxprop[1].hdr_name,hdr_name);
+
+	// for BE
+	artxprop[2].ip = IPA_IP_v4;
+	memset(&artxprop[2].attrib,0,sizeof(artxprop[2].attrib));
+	artxprop[2].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[2].attrib.u.v4.tos = 0;
+	artxprop[2].dst_pipe = IPA_CLIENT_HSIC1_CONS;
+	if(hdr_name) strcpy(artxprop[2].hdr_name,hdr_name);
+	artxprop[3].ip = IPA_IP_v4;
+	memset(&artxprop[3].attrib,0,sizeof(artxprop[3].attrib));
+	artxprop[3].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[3].attrib.u.v4.tos = 3;
+	artxprop[3].dst_pipe = IPA_CLIENT_HSIC1_CONS;
+	if(hdr_name) strcpy(artxprop[3].hdr_name,hdr_name);
+
+	// for VO
+	artxprop[4].ip = IPA_IP_v4;
+	memset(&artxprop[4].attrib,0,sizeof(artxprop[4].attrib));
+	artxprop[4].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[4].attrib.u.v4.tos = 4;
+	artxprop[4].dst_pipe = IPA_CLIENT_HSIC3_CONS;
+	if(hdr_name) strcpy(artxprop[4].hdr_name,hdr_name);
+	artxprop[5].ip = IPA_IP_v4;
+	memset(&artxprop[5].attrib,0,sizeof(artxprop[5].attrib));
+	artxprop[5].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[5].attrib.u.v4.tos = 5;
+	artxprop[5].dst_pipe = IPA_CLIENT_HSIC3_CONS;
+	if(hdr_name) strcpy(artxprop[5].hdr_name,hdr_name);
+
+	// for VI
+	artxprop[6].ip = IPA_IP_v4;
+	memset(&artxprop[6].attrib,0,sizeof(artxprop[6].attrib));
+	artxprop[6].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[6].attrib.u.v4.tos = 6;
+	artxprop[6].dst_pipe = IPA_CLIENT_HSIC4_CONS;
+	if(hdr_name) strcpy(artxprop[6].hdr_name,hdr_name);
+	artxprop[7].ip = IPA_IP_v4;
+	memset(&artxprop[7].attrib,0,sizeof(artxprop[7].attrib));
+	artxprop[7].attrib.attrib_mask = IPA_FLT_TOS;
+	artxprop[7].attrib.u.v4.tos = 7;
+	artxprop[7].dst_pipe = IPA_CLIENT_HSIC4_CONS;
+	if(hdr_name) strcpy(artxprop[7].hdr_name,hdr_name);
+
+	// rx properties
+	rxprop.ip = IPA_IP_v4;
+	memset(&rxprop.attrib,0,sizeof(rxprop.attrib));
+	// meta data based filtering for rx
+	rxprop.attrib.attrib_mask = IPA_FLT_META_DATA;
+
+	/* 11th Byte, d0 bit is set for exception */
+	rxprop.attrib.meta_data = 0x00000001;
+	rxprop.attrib.meta_data_mask = 0x00000001;
+	rxprop.src_pipe = IPA_CLIENT_HSIC1_PROD;
+
+	// set the properties
+	txintf.num_props = ATH6KL_IPA_WLAN_MAX_TX_PIPE * 2; /* each tos value has 1 */
+	txintf.prop = artxprop;
+	rxintf.num_props = ATH6KL_IPA_WLAN_MAX_RX_PIPE;
+	rxintf.prop = &rxprop;
+
+#if 0
+	// Call the ipa api to register interface
+	if(ATH6KL_IPA_SUCCESS != ipa_register_intf(name,&txintf,&rxintf))
+		return ATH6KL_IPA_FAILURE;
+#endif
+
+	return ATH6KL_IPA_SUCCESS;
+}
+EXPORT_SYMBOL(ath6kl_ipa_register_interface);
+
+/* @brief
+ * a one shot API to configure the IPA end-point fully
+ * @param ipa_client - [in] opaque client type assigned by IPA to client
+ * @param ep_cfg - [out] ep config details filled by ipa wlan config info
+ * @return
+ * ATH6KL_IPA_SUCCESS on success,
+ * ATH6KL_IPA_FAILURE on failure
+*/
+int ath6kl_ipacm_get_ep_config_info(u32 ipa_client, struct ipa_ep_cfg *ep_cfg)
+{
+	struct ipa_ioc_get_rt_tbl lookup;
+	int ret = 0;
+
+	if(!ep_cfg) {
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"IPA-CM: ep_cfg : Null Value %s, %d\n", __func__, __LINE__);
+		return ATH6KL_IPA_FAILURE;
+	}
+	memset(&lookup,0,sizeof(lookup));
+
+	// Fill the details for configuration of IPA end-point
+
+	if (ipa_client == IPA_CLIENT_A5_WLAN_AMPDU_PROD)
+	{
+		// Sys bam pipe : No need to add 34 bytes header, since it is .3 packet
+		ep_cfg->hdr.hdr_len = 0;
+		/* Rx pipe */
+		// NAT configuration in IPA end-point
+		ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_SRC_NAT;
+
+	/*!< 0: Metadata_Ofst value is invalid, i.e., no metadata within header
+	 1: Metadata_Ofst value is valid, i.e., metadata
+	 within header is in offset Metadata_Ofst
+	 Valid for Input Pipes only (IPA Consumer)
+	 (for output pipes, metadata already set within
+	 the header) */
+		ep_cfg->hdr.hdr_ofst_metadata_valid = 0;
+
+	/*!< Offset within header in which metadata resides
+	 Size of metadata - 4bytes
+	 Example - Stream ID/SSID/mux ID
+	 Valid for Input Pipes only (IPA Consumer)
+	 (for output pipes, metadata already set within the
+	 header) */
+		/* 11th Byte, d0 bit is set for exception */
+		ep_cfg->hdr.hdr_ofst_metadata = 0;
+
+		ep_cfg->hdr.hdr_additional_const_len = 0;
+		ep_cfg->hdr.hdr_ofst_pkt_size_valid = 0;
+		ep_cfg->hdr.hdr_ofst_pkt_size = 0;
+
+	}
+	else
+	if (ipa_client == IPA_CLIENT_HSIC1_PROD)
+	{
+		// Header configuration in IPA end-point ( HTC (6) + WMI(6) + 802.3 (22) )
+		ep_cfg->hdr.hdr_len = ATH6KL_IPA_WLAN_HDR_LENGTH; /* add/remove header len */
+		/* Rx pipe */
+		// NAT configuration in IPA end-point
+		ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_SRC_NAT;
+
+	/*!< 0: Metadata_Ofst value is invalid, i.e., no metadata within header
+	 1: Metadata_Ofst value is valid, i.e., metadata
+	 within header is in offset Metadata_Ofst
+	 Valid for Input Pipes only (IPA Consumer)
+	 (for output pipes, metadata already set within
+	 the header) */
+		ep_cfg->hdr.hdr_ofst_metadata_valid = 1;
+
+	/*!< Offset within header in which metadata resides
+	 Size of metadata - 4bytes
+	 Example - Stream ID/SSID/mux ID
+	 Valid for Input Pipes only (IPA Consumer)
+	 (for output pipes, metadata already set within the
+	 header) */
+		/* 11th Byte, d0 bit is set for exception */
+		ep_cfg->hdr.hdr_ofst_metadata = 11;
+
+		ep_cfg->hdr.hdr_additional_const_len = 0;
+		ep_cfg->hdr.hdr_ofst_pkt_size_valid = 0;
+		ep_cfg->hdr.hdr_ofst_pkt_size = 0;
+	}
+	else
+	{
+		// Header configuration in IPA end-point ( HTC (6) + WMI(6) + 802.3 (22) )
+		ep_cfg->hdr.hdr_len = ATH6KL_IPA_WLAN_HDR_LENGTH; /* add/remove header len */
+
+		/* Tx pipe */
+		ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_DST_NAT;
+		// This is not valid for Tx Pipe
+		ep_cfg->hdr.hdr_ofst_metadata_valid = 0;
+
+		ep_cfg->hdr.hdr_ofst_metadata = 0;
+	/*!< Defines the constant length that should be added
+	 to the payload length in order for IPA to update
+	 correctly the length field within the header
+	 (valid only in case Hdr_Ofst_Pkt_Size_Valid=1)
+	 Valid for Output Pipes (IPA Producer) */
+		ep_cfg->hdr.hdr_additional_const_len = 28;
+
+		ep_cfg->hdr.hdr_ofst_pkt_size_valid = 1;
+
+	/*!< Offset within header in which packet size
+	 reside. Upon Header Insertion, IPA will update this
+	 field within the header with the packet length .
+	 Assumption is that header length field size is
+	 constant and is 2Bytes
+	 Valid for Output Pipes (IPA Producer) */
+		ep_cfg->hdr.hdr_ofst_pkt_size = 2;
+	}
+
+	ep_cfg->hdr.hdr_a5_mux = 0;
+
+	// Mode setting type in IPA end-point
+	ep_cfg->mode.mode = IPA_BASIC;
+
+	ep_cfg->mode.dst = ipa_client;
+
+	// Aggregation configuration in IPA end-point
+	ep_cfg->aggr.aggr_en = IPA_BYPASS_AGGR;
+	ep_cfg->aggr.aggr = IPA_MBIM_16;
+	ep_cfg->aggr.aggr_byte_limit = 0;
+	ep_cfg->aggr.aggr_time_limit = 0;
+
+	// Route configuration in IPA end-point
+	ep_cfg->route.rt_tbl_hdl = 0;
+
+	// Get the routing table handle from routing lookup filled by IPA
+	lookup.ip = IPA_IP_v4;
+
+	//lookup.name = IPA_DFLT_HDR_NAME; // "ipa_excp_hdr"
+	strcpy(lookup.name, IPA_DFLT_RT_TBL_NAME);
+	ret = ipa_get_rt_tbl(&lookup);
+	if(!ret) {
+		ep_cfg->route.rt_tbl_hdl = lookup.hdl;
+	}else {
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"IPA-CM: Failed to get the Routing Table %s, %d\n", __func__, __LINE__);
+		return ATH6KL_IPA_FAILURE;
+	}
+
+	return ATH6KL_IPA_SUCCESS;
+}
+
+EXPORT_SYMBOL(ath6kl_ipacm_get_ep_config_info);
+
+int ath6kl_data_ipa_ampdu_tx_complete_cb(enum ath6kl_bam_tx_evt_type evt_type, struct sk_buff *skb)
+{
+	switch (evt_type){
+		case AMPDU_FLUSH:
+			if (!skb || !skb->data)
+				goto fatal;
+				ath6kl_dbg(ATH6KL_DBG_OOO,
+					"ooo:AMPDU TX complete Callback received, Freeing the SKB...\n");
+				dev_kfree_skb(skb);
+				return 0;
+		default:
+				ath6kl_err("Unknown event from sysbam tx_complete\n");
+		return 0;
+	}
+fatal:
+	WARN_ON(1);
+	return -1;
+
+}
+
+/* Callback function to handle only SYS BAM Pipe Tx Complete */
+void ath6kl_ipa_sysbam_tx_callback(void *priv, enum ipa_dp_evt_type evt, unsigned long data)
+{
+	u32 client;
+	struct sk_buff *skb;
+
+	/* typecast the skb buffer pointer */
+	skb = (struct sk_buff *) data;
+
+	client = *((enum ipa_client_type *)priv);
+	switch (evt)
+	{
+	/* IPA sends data to WLAN class driver */
+		case IPA_RECEIVE:
+			ath6kl_err("BAM-CM: Received Data from SysBAM pipe ...\n");
+			break;
+
+		/* IPA sends Tx complete Event to WLAN */
+		case IPA_WRITE_DONE:
+			switch (client)
+			{
+				case IPA_CLIENT_A5_WLAN_AMPDU_PROD: /* AMPDU Flush completed by IPA and event received */
+					ath6kl_dbg(ATH6KL_DBG_OOO,
+						"BAM-CM: %s: sys pipe: %d, AMPDU Tx complete event received...\n",
+						__func__, client);
+					/* send to wlan class driver */
+					ath6kl_data_ipa_ampdu_tx_complete_cb(AMPDU_FLUSH, skb);
+					break;
+				default :
+					ath6kl_err("BAM-CM: IPA sysbam pipe Tx complete callback received wrong context : %d\n", client);
+					break;
+			}
+			break;
+		default:
+			ath6kl_err("BAM-CM: IPA sysbam pipe Tx complete callback received wrong event type : %d\n", evt);
+			break;
+	}
+}
+/* Disconnect all the Sys BAM pipes, in our case, only 1 pipe */
+void ath6kl_disconnect_sysbam_pipes(void)
+{
+	int status,i;
+
+	for (i = 0; i < MAX_SYSBAM_PIPE; i++)
+	{
+		status = ipa_teardown_sys_pipe(sysbam_pipe[i].clnt_hdl);
+		if (status != 0)
+		{
+			ath6kl_err("BAM-CM: Error in disconnecting the SYSBAM pipe \n");
+		}
+	}
+
+}
+EXPORT_SYMBOL(ath6kl_disconnect_sysbam_pipes);
+
+/* Create the SysBAM pipe */
+int ath6kl_usb_create_sysbam_pipes(void)
+{
+	int status,i;
+
+	/* The config is similar to the RX Bam pipe configuration */
+	for (i = 0; i < MAX_SYSBAM_PIPE; i++)
+	{
+		sysbam_pipe[i].ipa_params.client = sysbam_info[i].client;
+
+		ath6kl_ipacm_get_ep_config_info(sysbam_pipe[i].ipa_params.client, &(sysbam_pipe[i].ipa_params.ipa_ep_cfg));
+
+		sysbam_pipe[i].ipa_params.desc_fifo_sz = 0x100;
+
+		sysbam_pipe[i].ipa_params.priv = (void *)&(sysbam_info[i].client);
+
+		/* sysbam pipe callback event handler same as bam pipe handler */
+		sysbam_pipe[i].ipa_params.notify = ath6kl_ipa_sysbam_tx_callback;
+
+		/* Create the SYS BAM pipe to send AMPDU re-ordered packets */
+		status = ipa_setup_sys_pipe(&(sysbam_pipe[i].ipa_params), &(sysbam_pipe[i].clnt_hdl));
+
+		if (status < 0) {
+			ath6kl_err("BAM-CM: Failed to create sys BAM :%d pipe \n",sysbam_pipe[i].ipa_params.client);
+		}
+		else
+		{
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+		   		"BAM-CM: Successfully created sysbam pipe client: %d, Control handle: %d\n",
+				sysbam_info[i].client, sysbam_pipe[i].clnt_hdl
+		   		);
+		}
+	}
+
+	return status;
+}
+EXPORT_SYMBOL(ath6kl_usb_create_sysbam_pipes);
+
+/* Send data to the IPA HW via BAM */
+int ath6kl_usb_data_send_to_sysbam_pipe(struct sk_buff *skb)
+{
+	int status;
+
+	ath6kl_dbg(ATH6KL_DBG_OOO,
+		"BAM-CM: Sending data to AMPDU sysbam pipe...\n");
+
+#if 0 /* only for internal debugging */
+	dev_kfree_skb(skb);
+	return 0;
+#endif
+
+	status = ipa_tx_dp(IPA_CLIENT_A5_WLAN_AMPDU_PROD, skb, NULL);
+	if (status == 0)
+	{
+		return 0; /* Success */
+	}
+	ath6kl_err("BAM-CM: Failed to send data over sys bam pipe :%d \n", IPA_CLIENT_A5_WLAN_AMPDU_PROD);
+	return -1; /* Failed */
+}
+
+#endif
+
 static inline u8 ath6kl_get_tid(u8 tid_mux)
 {
 	return tid_mux & ATH6KL_TID_MASK;
@@ -43,7 +620,7 @@ static inline u8 ath6kl_get_aid(u8 tid_mux)
 }
 
 static u8 ath6kl_ibss_map_epid(struct sk_buff *skb, struct net_device *dev,
-			       u32 *map_no)
+		u32 *map_no)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ethhdr *eth_hdr;
@@ -166,8 +743,8 @@ static bool ath6kl_process_uapsdq(struct ath6kl_sta *conn,
 	 */
 	if (is_apsdq_empty) {
 		ath6kl_wmi_set_apsd_bfrd_traf(ar->wmi,
-					      vif->fw_vif_idx,
-					      conn->aid, 1, 0);
+				vif->fw_vif_idx,
+				conn->aid, 1, 0);
 	}
 	*flags |= WMI_DATA_HDR_FLAGS_UAPSD;
 
@@ -203,8 +780,8 @@ static bool ath6kl_process_psq(struct ath6kl_sta *conn,
 	 */
 	if (is_psq_empty)
 		ath6kl_wmi_set_pvb_cmd(ar->wmi,
-				       vif->fw_vif_idx,
-				       conn->aid, 1);
+				vif->fw_vif_idx,
+				conn->aid, 1);
 	return true;
 }
 
@@ -248,8 +825,8 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 				 */
 				if (is_mcastq_empty)
 					ath6kl_wmi_set_pvb_cmd(ar->wmi,
-							       vif->fw_vif_idx,
-							       MCAST_AID, 1);
+							vif->fw_vif_idx,
+							MCAST_AID, 1);
 
 				ps_queued = true;
 			} else {
@@ -286,7 +863,7 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 /* Tx functions */
 
 int ath6kl_control_tx(void *devt, struct sk_buff *skb,
-		      enum htc_endpoint_id eid)
+		enum htc_endpoint_id eid)
 {
 	struct ath6kl *ar = devt;
 	int status = 0;
@@ -385,7 +962,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 
 	if (test_bit(WMI_ENABLED, &ar->flag)) {
 		if ((dev->features & NETIF_F_IP_CSUM) &&
-		    (csum == CHECKSUM_PARTIAL)) {
+				(csum == CHECKSUM_PARTIAL)) {
 			csum_start = skb->csum_start -
 					(skb_network_header(skb) - skb->head) +
 					sizeof(struct ath6kl_llc_snap_hdr);
@@ -409,7 +986,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		}
 
 		if ((dev->features & NETIF_F_IP_CSUM) &&
-		    (csum == CHECKSUM_PARTIAL)) {
+				(csum == CHECKSUM_PARTIAL)) {
 			meta_v2.csum_start = csum_start;
 			meta_v2.csum_dest = csum_dest;
 
@@ -434,18 +1011,18 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		}
 
 		if ((vif->nw_type == ADHOC_NETWORK) &&
-		    ar->ibss_ps_enable && test_bit(CONNECTED, &vif->flags))
+				ar->ibss_ps_enable && test_bit(CONNECTED, &vif->flags))
 			chk_adhoc_ps_mapping = true;
 		else {
 			/* get the stream mapping */
 			ret = ath6kl_wmi_implicit_create_pstream(ar->wmi,
-				    vif->fw_vif_idx, skb,
-				    0, test_bit(WMM_ENABLED, &vif->flags), &ac);
+					vif->fw_vif_idx, skb,
+					0, test_bit(WMM_ENABLED, &vif->flags), &ac);
 			if (ret)
 				goto fail_tx;
 		}
 	} else if (test_bit(TESTMODE_EPPING, &ar->flag)) {
-		struct epping_header    *epping_hdr;
+		struct epping_header	*epping_hdr;
 
 		epping_hdr = (struct epping_header *)skb->data;
 
@@ -509,7 +1086,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 	spin_unlock_bh(&ar->lock);
 
 	if (!IS_ALIGNED((unsigned long) skb->data - HTC_HDR_LENGTH, 4) &&
-	    skb_cloned(skb)) {
+			skb_cloned(skb)) {
 		/*
 		 * We will touch (move the buffer data to align it. Since the
 		 * skb buffer is cloned and not only the header is changed, we
@@ -574,7 +1151,7 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 		 * priority.
 		 */
 		if (ar->ac_stream_pri_map[traffic_class] >
-		    ar->hiac_stream_active_pri)
+				ar->hiac_stream_active_pri)
 			/* set the new highest active priority */
 			ar->hiac_stream_active_pri =
 					ar->ac_stream_pri_map[traffic_class];
@@ -595,8 +1172,8 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 
 			for (i = 0; i < WMM_NUM_AC; i++) {
 				if (ar->ac_stream_active[i] &&
-				    (ar->ac_stream_pri_map[i] >
-				     ar->hiac_stream_active_pri))
+						(ar->ac_stream_pri_map[i] >
+						 ar->hiac_stream_active_pri))
 					/*
 					 * Set the new highest active
 					 * priority.
@@ -615,7 +1192,7 @@ notify_htc:
 }
 
 enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
-					       struct htc_packet *packet)
+		struct htc_packet *packet)
 {
 	struct ath6kl *ar = target->dev->ar;
 	struct ath6kl_vif *vif;
@@ -672,8 +1249,8 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 	 * the highest active stream.
 	 */
 	if (ar->ac_stream_pri_map[ar->ep2ac_map[endpoint]] <
-	    ar->hiac_stream_active_pri &&
-	    ar->cookie_count <=
+			ar->hiac_stream_active_pri &&
+			ar->cookie_count <=
 			target->endpoint[endpoint].tx_drop_packet_threshold)
 		/*
 		 * Give preference to the highest priority stream by
@@ -685,7 +1262,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (vif->nw_type == ADHOC_NETWORK ||
-		    action != HTC_SEND_FULL_DROP) {
+				action != HTC_SEND_FULL_DROP) {
 			spin_unlock_bh(&ar->list_lock);
 
 			set_bit(NETQ_STOPPED, &vif->flags);
@@ -701,7 +1278,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 
 /* TODO this needs to be looked at */
 static void ath6kl_tx_clear_node_map(struct ath6kl_vif *vif,
-				     enum htc_endpoint_id eid, u32 map_no)
+		enum htc_endpoint_id eid, u32 map_no)
 {
 	struct ath6kl *ar = vif->ar;
 	u32 i;
@@ -732,7 +1309,7 @@ static void ath6kl_tx_clear_node_map(struct ath6kl_vif *vif,
 			break;
 
 		memset(&ar->node_map[i - 1], 0,
-		       sizeof(struct ath6kl_node_mapping));
+				sizeof(struct ath6kl_node_mapping));
 		ar->node_num--;
 	}
 }
@@ -884,13 +1461,39 @@ void ath6kl_tx_data_cleanup(struct ath6kl *ar)
 	/* flush all the data (non-control) streams */
 	for (i = 0; i < WMM_NUM_AC; i++)
 		ath6kl_htc_flush_txep(ar->htc_target, ar->ac2ep_map[i],
-				      ATH6KL_DATA_PKT_TAG);
+				ATH6KL_DATA_PKT_TAG);
 }
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+static void ath6kl_deliver_ampdu_frames_to_ipa(struct net_device *dev,
+		struct sk_buff *skb)
+{
+	int status;
+
+	if (!skb)
+		return;
+
+	skb->dev = dev;
+
+	if (!(skb->dev->flags & IFF_UP)) {
+		dev_kfree_skb(skb);
+		return;
+	}
+
+	skb->protocol = eth_type_trans(skb, skb->dev);
+
+	status = ath6kl_usb_data_send_to_sysbam_pipe(skb);
+	if (status < 0)
+	{
+		ath6kl_dbg(ATH6KL_DBG_OOO,
+			"BAM-CM: Failed to send data over sysbam pipe %s\n", __func__);
+	}
+}
+#endif
 /* Rx functions */
 
 static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
-					      struct sk_buff *skb)
+		struct sk_buff *skb)
 {
 	if (!skb)
 		return;
@@ -920,20 +1523,6 @@ static void ath6kl_alloc_netbufs(struct sk_buff_head *q, u16 num)
 		skb_queue_tail(q, skb);
 		num--;
 	}
-}
-
-static struct sk_buff *aggr_get_free_skb(struct aggr_info *p_aggr)
-{
-	struct sk_buff *skb = NULL;
-
-	if (skb_queue_len(&p_aggr->rx_amsdu_freeq) <
-	    (AGGR_NUM_OF_FREE_NETBUFS >> 2))
-		ath6kl_alloc_netbufs(&p_aggr->rx_amsdu_freeq,
-				     AGGR_NUM_OF_FREE_NETBUFS);
-
-	skb = skb_dequeue(&p_aggr->rx_amsdu_freeq);
-
-	return skb;
 }
 
 void ath6kl_rx_refill(struct htc_target *target, enum htc_endpoint_id endpoint)
@@ -1004,8 +1593,8 @@ void ath6kl_refill_amsdu_rxbufs(struct ath6kl *ar, int count)
  * pre-allocated list of buffers of maximum AMSDU size (4K).
  */
 struct htc_packet *ath6kl_alloc_amsdu_rxbuf(struct htc_target *target,
-					    enum htc_endpoint_id endpoint,
-					    int len)
+		enum htc_endpoint_id endpoint,
+		int len)
 {
 	struct ath6kl *ar = target->dev->ar;
 	struct htc_packet *packet = NULL;
@@ -1016,7 +1605,7 @@ struct htc_packet *ath6kl_alloc_amsdu_rxbuf(struct htc_target *target,
 		   __func__, endpoint, len);
 
 	if ((len <= ATH6KL_BUFFER_SIZE) ||
-	    (len > ATH6KL_AMSDU_BUFFER_SIZE))
+			(len > ATH6KL_AMSDU_BUFFER_SIZE))
 		return NULL;
 
 	spin_lock_bh(&ar->lock);
@@ -1046,8 +1635,225 @@ refill_buf:
 	return packet;
 }
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+static void aggr_deque_frms(struct aggr_info_conn *agg_conn, u8 tid,
+		u16 seq_no, u8 order)
+{
+	struct sk_buff *skb;
+	struct rxtid *rxtid;
+	struct skb_hold_q *node;
+	u16 idx, idx_end, seq_end, i, j;
+	struct rxtid_stats *stats;
+
+	rxtid = &agg_conn->rx_tid[tid];
+	stats = &agg_conn->stat[tid];
+
+	spin_lock_bh(&rxtid->lock);
+	if (order == 1) {
+		idx = AGGR_WIN_IDX(seq_no, rxtid->hold_q_sz);
+		rxtid->seq_next = seq_no;
+		ath6kl_dbg(ATH6KL_DBG_OOO,
+			"ooo:flush seq_no with order 1= %d\n", seq_no);
+	} else {
+		idx = AGGR_WIN_IDX(rxtid->seq_next, rxtid->hold_q_sz);
+		ath6kl_dbg(ATH6KL_DBG_OOO,
+			"ooo:flush seq_no = %d\n", seq_no);
+	}
+	/*
+	 * idx_end is typically the last possible frame in the window,
+	 * but changes to 'the' seq_no, when BAR comes. If seq_no
+	 * is non-zero, we will go up to that and stop.
+	 * Note: last seq no in current window will occupy the same
+	 * index position as index that is just previous to start.
+	 * An imp point : if win_sz is 7, for seq_no space of 4095,
+	 * then, there would be holes when sequence wrap around occurs.
+	 * Target should judiciously choose the win_sz, based on
+	 * this condition. For 4095, (TID_WINDOW_SZ = 2 x win_sz
+	 * 2, 4, 8, 16 win_sz works fine).
+	 * We must deque from "idx" to "idx_end", including both.
+	 */
+	if (!order || order == 2) {
+		seq_end = rxtid->seq_next;
+	} else {
+		seq_end = seq_no;
+	}
+	idx_end = AGGR_WIN_IDX(seq_end, rxtid->hold_q_sz);
+
+	do {
+		node = &rxtid->hold_q[idx];
+		if ((order == 1) && (!node->skb))
+			break;
+
+		if (node->skb) {
+			skb_queue_tail(&rxtid->q, node->skb);
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+				"ooo:Data removed = %d\n", rxtid->seq_next);
+			node->skb = NULL;
+		} else
+			stats->num_hole++;
+
+		rxtid->seq_next = ATH6KL_NEXT_SEQ_NO(rxtid->seq_next);
+		idx = AGGR_WIN_IDX(rxtid->seq_next, rxtid->hold_q_sz);
+	} while (idx != idx_end);
+
+	spin_unlock_bh(&rxtid->lock);
+
+	stats->num_delivered += skb_queue_len(&rxtid->q);
+
+	while ((skb = skb_dequeue(&rxtid->q)))
+		ath6kl_deliver_ampdu_frames_to_ipa(agg_conn->dev, skb);
+
+	spin_lock_bh(&rxtid->lock);
+	if (!order) {
+		rxtid->seq_next = 0;
+	} else {
+		idx_end = idx;
+		do {
+			node = &rxtid->hold_q[idx];
+			if (node->skb) {
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+				"ooo:Now seq_next = %d\n", rxtid->seq_next);
+				break;
+			}
+			rxtid->seq_next = ATH6KL_NEXT_SEQ_NO(rxtid->seq_next);
+			idx = AGGR_WIN_IDX(rxtid->seq_next, rxtid->hold_q_sz);
+		} while (idx != idx_end);
+	}
+	spin_unlock_bh(&rxtid->lock);
+
+
+	if (agg_conn->timer_scheduled) {
+		agg_conn->timer_scheduled = false;
+		for (i = 0; i < NUM_OF_TIDS; i++) {
+			rxtid = &agg_conn->rx_tid[i];
+
+			if (rxtid->aggr && rxtid->hold_q) {
+				spin_lock_bh(&rxtid->lock);
+				for (j = 0; j < rxtid->hold_q_sz; j++) {
+					if (rxtid->hold_q[j].skb) {
+						agg_conn->timer_scheduled = true;
+						rxtid->timer_mon = true;
+						break;
+					}
+				}
+				spin_unlock_bh(&rxtid->lock);
+
+				if (j >= rxtid->hold_q_sz) {
+					rxtid->timer_mon = false;
+					ath6kl_dbg(ATH6KL_DBG_OOO,
+   						"ooo:No hole is present and timer is stopped\n");
+				}
+			}
+		}
+
+
+		if (agg_conn->timer_scheduled) {
+			mod_timer(&agg_conn->timer,
+			jiffies + msecs_to_jiffies(AGGR_RX_TIMEOUT));
+		} else {
+			del_timer(&agg_conn->timer);
+		}
+	}
+}
+
+static bool aggr_process_recv_frm(struct aggr_info_conn *agg_conn, u8 tid,
+				  u16 seq_no,
+				  bool is_amsdu, struct sk_buff *frame)
+{
+	struct rxtid *rxtid;
+	struct rxtid_stats *stats;
+	struct skb_hold_q *node;
+	u16 idx;
+	bool is_queued = false;
+
+	rxtid = &agg_conn->rx_tid[tid];
+	stats = &agg_conn->stat[tid];
+
+	stats->num_into_aggr++;
+
+	/* Check the incoming sequence no, if it's in the window */
+	if ((rxtid->timer_mon != true) || (!rxtid->seq_next)) {
+		rxtid->seq_next = seq_no;
+	} else {
+	   // end = (st + rxtid->hold_q_sz-1) & ATH6KL_MAX_SEQ_NO;
+	}
+
+	idx = AGGR_WIN_IDX(seq_no, rxtid->hold_q_sz);
+
+	node = &rxtid->hold_q[idx];
+
+	spin_lock_bh(&rxtid->lock);
+	ath6kl_dbg(ATH6KL_DBG_OOO,
+			"ooo:frame %d is in idx = %d\n",seq_no, idx);
+
+	/*
+	 * Is the cur frame duplicate or something beyond our window(hold_q
+	 * -> which is 2x, already)?
+	 *
+	 * 1. Duplicate is easy - drop incoming frame.
+	 * 2. Not falling in current sliding window.
+	 *  2a. is the frame_seq_no preceding current tid_seq_no?
+	 *      -> drop the frame. perhaps sender did not get our ACK.
+	 *         this is taken care of above.
+	 *  2b. is the frame_seq_no beyond window(st, TID_WINDOW_SZ);
+	 *      -> Taken care of it above, by moving window forward.
+	 */
+	dev_kfree_skb(node->skb);
+	stats->num_dups++;
+
+	node->skb = frame;
+	is_queued = true;
+	stats->num_mpdu++;
+
+	spin_unlock_bh(&rxtid->lock);
+
+	if (agg_conn->timer_scheduled) {
+		ath6kl_dbg(ATH6KL_DBG_OOO,
+			"ooo:timer is already scheduled \n");
+		return is_queued;
+	}
+
+	spin_lock_bh(&rxtid->lock);
+	for (idx = 0 ; idx < rxtid->hold_q_sz; idx++) {
+		if (rxtid->hold_q[idx].skb) {
+			/*
+			 * There is a frame in the queue and no
+			 * timer so start a timer to ensure that
+			 * the frame doesn't remain stuck
+			 * forever.
+			 */
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+				"ooo:start the timer\n");
+			agg_conn->timer_scheduled = true;
+			mod_timer(&agg_conn->timer,
+				  (jiffies + (HZ * AGGR_RX_TIMEOUT) / 1000));
+			rxtid->timer_mon = true;
+			break;
+		}
+	}
+	spin_unlock_bh(&rxtid->lock);
+
+	return is_queued;
+}
+#else
+
+static struct sk_buff *aggr_get_free_skb(struct aggr_info *p_aggr)
+{
+	struct sk_buff *skb = NULL;
+
+	if (skb_queue_len(&p_aggr->rx_amsdu_freeq) <
+			(AGGR_NUM_OF_FREE_NETBUFS >> 2))
+		ath6kl_alloc_netbufs(&p_aggr->rx_amsdu_freeq,
+				AGGR_NUM_OF_FREE_NETBUFS);
+
+	skb = skb_dequeue(&p_aggr->rx_amsdu_freeq);
+
+	return skb;
+}
+
+
 static void aggr_slice_amsdu(struct aggr_info *p_aggr,
-			     struct rxtid *rxtid, struct sk_buff *skb)
+		struct rxtid *rxtid, struct sk_buff *skb)
 {
 	struct sk_buff *new_skb;
 	struct ethhdr *hdr;
@@ -1063,7 +1869,7 @@ static void aggr_slice_amsdu(struct aggr_info *p_aggr,
 		payload_8023_len = ntohs(hdr->h_proto);
 
 		if (payload_8023_len < MIN_MSDU_SUBFRAME_PAYLOAD_LEN ||
-		    payload_8023_len > MAX_MSDU_SUBFRAME_PAYLOAD_LEN) {
+				payload_8023_len > MAX_MSDU_SUBFRAME_PAYLOAD_LEN) {
 			ath6kl_err("802.3 AMSDU frame bound check failed. len %d\n",
 				   payload_8023_len);
 			break;
@@ -1103,7 +1909,7 @@ static void aggr_slice_amsdu(struct aggr_info *p_aggr,
 }
 
 static void aggr_deque_frms(struct aggr_info_conn *agg_conn, u8 tid,
-			    u16 seq_no, u8 order)
+		u16 seq_no, u8 order)
 {
 	struct sk_buff *skb;
 	struct rxtid *rxtid;
@@ -1195,14 +2001,14 @@ static bool aggr_process_recv_frm(struct aggr_info_conn *agg_conn, u8 tid,
 	end = (st + rxtid->hold_q_sz-1) & ATH6KL_MAX_SEQ_NO;
 
 	if (((st < end) && (cur < st || cur > end)) ||
-	    ((st > end) && (cur > end) && (cur < st))) {
+			((st > end) && (cur > end) && (cur < st))) {
 		extended_end = (end + rxtid->hold_q_sz - 1) &
 			ATH6KL_MAX_SEQ_NO;
 
 		if (((end < extended_end) &&
-		     (cur < end || cur > extended_end)) ||
-		    ((end > extended_end) && (cur > extended_end) &&
-		     (cur < end))) {
+					(cur < end || cur > extended_end)) ||
+				((end > extended_end) && (cur > extended_end) &&
+	 (cur < end))) {
 			aggr_deque_frms(agg_conn, tid, 0, 0);
 			spin_lock_bh(&rxtid->lock);
 			if (cur >= rxtid->hold_q_sz - 1)
@@ -1286,7 +2092,7 @@ static bool aggr_process_recv_frm(struct aggr_info_conn *agg_conn, u8 tid,
 
 	return is_queued;
 }
-
+#endif
 static void ath6kl_uapsd_trigger_frame_rx(struct ath6kl_vif *vif,
 						 struct ath6kl_sta *conn)
 {
@@ -1305,7 +2111,7 @@ static void ath6kl_uapsd_trigger_frame_rx(struct ath6kl_vif *vif,
 	 */
 
 	num_frames_to_deliver = (conn->apsd_info >> ATH6KL_APSD_NUM_OF_AC) &
-						    ATH6KL_APSD_FRAME_MASK;
+		ATH6KL_APSD_FRAME_MASK;
 	/*
 	 * Number of frames to send in a service period is
 	 * indicated by the station
@@ -1350,8 +2156,8 @@ static void ath6kl_uapsd_trigger_frame_rx(struct ath6kl_vif *vif,
 			flags = 0;
 
 		ath6kl_wmi_set_apsd_bfrd_traf(ar->wmi,
-					      vif->fw_vif_idx,
-					      conn->aid, 0, flags);
+				vif->fw_vif_idx,
+				conn->aid, 0, flags);
 	}
 
 	return;
@@ -1365,7 +2171,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	struct wmi_data_hdr *dhdr;
 	int min_hdr_len;
 	u8 meta_type, dot11_hdr = 0;
-	u8 pad_before_data_start;
+	u8 pad_before_data_start = 0;
 	int status = packet->status;
 	enum htc_endpoint_id ept = packet->endpoint;
 	bool is_amsdu, prev_ps, ps_state = false;
@@ -1377,6 +2183,17 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	struct aggr_info_conn *aggr_conn;
 	u16 seq_no, offset;
 	u8 tid, if_idx;
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	bool is_flush, is_exception;
+#endif
+
+#if 0 
+	int i;
+
+	printk(" Rx:");
+	for (i=0;i<12;i++) printk("%02x ", skb->data[i]);
+	printk("\n");
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_RX,
 		   "%s: ar=0x%p eid=%d, skb=0x%p, data=0x%p, len=0x%x status:%d",
@@ -1414,6 +2231,11 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		if_idx = 0;
 	}
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+		"Rx data received --> %d\n", __LINE__);
+#endif
+
 	vif = ath6kl_get_vif_by_index(ar, if_idx);
 	if (!vif) {
 		dev_kfree_skb(skb);
@@ -1443,7 +2265,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	ath6kl_check_wow_status(ar);
 
 	min_hdr_len = sizeof(struct ethhdr) + sizeof(struct wmi_data_hdr) +
-		      sizeof(struct ath6kl_llc_snap_hdr);
+		sizeof(struct ath6kl_llc_snap_hdr);
 
 	dhdr = (struct wmi_data_hdr *) skb->data;
 
@@ -1453,8 +2275,8 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	 * Allow these frames in the AP mode.
 	 */
 	if (vif->nw_type != AP_NETWORK &&
-	    ((packet->act_len < min_hdr_len) ||
-	     (packet->act_len > WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH))) {
+			((packet->act_len < min_hdr_len) ||
+			 (packet->act_len > WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH))) {
 		ath6kl_info("frame len is too short or too long\n");
 		vif->net_stats.rx_errors++;
 		vif->net_stats.rx_length_errors++;
@@ -1467,7 +2289,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		meta_type = wmi_data_hdr_get_meta(dhdr);
 
 		ps_state = !!((dhdr->info >> WMI_DATA_HDR_PS_SHIFT) &
-			      WMI_DATA_HDR_PS_MASK);
+				WMI_DATA_HDR_PS_MASK);
 
 		offset = sizeof(struct wmi_data_hdr);
 		trig_state = !!(le16_to_cpu(dhdr->info3) & WMI_DATA_HDR_TRIG);
@@ -1504,11 +2326,21 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		 */
 		prev_ps = !!(conn->sta_flags & STA_PS_SLEEP);
 
-		if (ps_state)
+		if (ps_state){
+#ifndef CONFIG_ATH6KL_BAM2BAM
+#if 0
+			ipa_wlan_msg(WLAN_CLIENT_POWER_SAVE_MODE, datap->h_source);
+#endif
+#endif
 			conn->sta_flags |= STA_PS_SLEEP;
-		else
+		}else{
+#ifndef CONFIG_ATH6KL_BAM2BAM
+#if 0
+			ipa_wlan_msg(WLAN_CLIENT_NORMAL_MODE, datap->h_source);
+#endif
+#endif
 			conn->sta_flags &= ~STA_PS_SLEEP;
-
+		}
 		/* Accept trigger only when the station is in sleep */
 		if ((conn->sta_flags & STA_PS_SLEEP) && trig_state)
 			ath6kl_uapsd_trigger_frame_rx(vif, conn);
@@ -1566,14 +2398,14 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 				/* Clear the PVB for this STA */
 				ath6kl_wmi_set_pvb_cmd(ar->wmi, vif->fw_vif_idx,
-						       conn->aid, 0);
+						conn->aid, 0);
 			}
 		}
 
 		/* drop NULL data frames here */
 		if ((packet->act_len < min_hdr_len) ||
-		    (packet->act_len >
-		     WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH)) {
+				(packet->act_len >
+				 WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH)) {
 			dev_kfree_skb(skb);
 			return;
 		}
@@ -1584,9 +2416,18 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	seq_no = wmi_data_hdr_get_seqno(dhdr);
 	meta_type = wmi_data_hdr_get_meta(dhdr);
 	dot11_hdr = wmi_data_hdr_get_dot11(dhdr);
-	pad_before_data_start =
-		(le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_PAD_BEFORE_DATA_SHIFT)
+#ifdef CONFIG_ATH6KL_BAM2BAM
+//	ath6kl_dbg(ATH6KL_DBG_OOO,
+//		"SeqNo: Incoming:%d, ",seq_no); 
+	is_exception = wmi_data_hdr_is_exception(dhdr);
+	is_flush = wmi_data_hdr_is_ampdu_flush(dhdr);
+#endif
+	// Padding is done only for 1_3 HW VERSION
+	if (ar->version.target_ver == AR6004_HW_1_3_VERSION) {
+		pad_before_data_start =
+			(le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_PAD_BEFORE_DATA_SHIFT)
 			& WMI_DATA_HDR_PAD_BEFORE_DATA_MASK;
+	}
 
 	skb_pull(skb, sizeof(struct wmi_data_hdr));
 
@@ -1671,12 +2512,21 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 			aggr_conn = conn->aggr_conn;
 		} else
 			aggr_conn = vif->aggr_cntxt->aggr_conn;
-
+#ifdef CONFIG_ATH6KL_BAM2BAM		
+		if (is_exception && aggr_process_recv_frm(aggr_conn, tid, seq_no,
+					  is_amsdu, skb)) {
+			if (is_flush)
+				aggr_deque_frms(aggr_conn, tid, seq_no, 1);
+			/* aggregation code will handle the skb */
+			return;
+		}
+#else
 		if (aggr_process_recv_frm(aggr_conn, tid, seq_no,
 					  is_amsdu, skb)) {
 			/* aggregation code will handle the skb */
 			return;
 		}
+#endif
 	} else if (!is_broadcast_ether_addr(datap->h_dest))
 		vif->net_stats.multicast++;
 
@@ -1759,7 +2609,7 @@ static void aggr_delete_tid_state(struct aggr_info_conn *aggr_conn, u8 tid)
 }
 
 void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid_mux, u16 seq_no,
-			     u8 win_sz)
+		u8 win_sz)
 {
 	struct ath6kl_sta *sta;
 	struct aggr_info_conn *aggr_conn = NULL;
@@ -1808,7 +2658,7 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid_mux, u16 seq_no,
 }
 
 void aggr_conn_init(struct ath6kl_vif *vif, struct aggr_info *aggr_info,
-		    struct aggr_info_conn *aggr_conn)
+		struct aggr_info_conn *aggr_conn)
 {
 	struct rxtid *rxtid;
 	u8 i;
@@ -1933,3 +2783,31 @@ void aggr_module_destroy(struct aggr_info *aggr_info)
 	kfree(aggr_info->aggr_conn);
 	kfree(aggr_info);
 }
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+void aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid, u8 aid) 
+{
+	struct ath6kl_sta *sta;
+	struct aggr_info_conn *aggr_conn = NULL;
+
+	if (vif->nw_type == AP_NETWORK) {
+		sta = ath6kl_find_sta_by_aid(vif->ar, aid);
+		if (sta)
+			aggr_conn = sta->aggr_conn;
+	} else {
+		aggr_conn = vif->aggr_cntxt->aggr_conn;
+	}
+	if (!aggr_conn)
+		return;
+
+	if (tid >= NUM_OF_TIDS)
+		return;
+	ath6kl_dbg(ATH6KL_DBG_OOO,
+		"ooo: Control Packet from Rx-non bam2bam Event pipe...\n");
+	if (seq_no >= ATH6KL_MAX_SEQ_NO) {
+		aggr_deque_frms(aggr_conn, tid, 0, 0);
+	} else {
+		aggr_deque_frms(aggr_conn, tid, seq_no, 2);
+	}
+}
+#endif

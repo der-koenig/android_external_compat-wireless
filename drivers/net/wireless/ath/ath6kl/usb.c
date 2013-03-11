@@ -128,6 +128,548 @@ static void ath6kl_usb_recv_complete(struct urb *urb);
 #define ATH6KL_USB_IS_ISOC_EP(attr)  (((attr) & 3) == 0x01)
 #define ATH6KL_USB_IS_DIR_IN(addr)  ((addr) & 0x80)
 
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#define IPA_TX_BK_CON_IDX       3
+#define IPA_TX_BE_CON_IDX       4
+#define IPA_TX_VI_CON_IDX       5
+#define IPA_TX_VO_CON_IDX       6
+#define IPA_RX_CON_IDX          7
+void ath6kl_usb_bam_transmit_complete(struct ath6kl_urb_context *urb_context);
+
+/* Structure decl for BAM pipes */
+static struct usb_bam_pipe {
+ u32 src_pipe;
+ u32 dst_pipe;
+	struct urb *urb;
+	struct usb_bam_connect_ipa_params ipa_params;
+} bam_pipe[ATH6KL_USB_PIPE_MAX];
+
+static struct bam_inf {
+	enum 	ipa_client_type client;
+}bam_info[ATH6KL_USB_PIPE_MAX] = {
+/* TX Pipes */
+	{0}, /* non-bam pipe */
+	/* BK traffic */
+	{IPA_CLIENT_HSIC1_CONS},
+	 /* BE traffic */
+	{IPA_CLIENT_HSIC2_CONS},
+	/* VI traffic */
+	{IPA_CLIENT_HSIC3_CONS},
+	/* VO traffic */
+	{IPA_CLIENT_HSIC4_CONS},
+
+/* RX Pipes */
+	{0}, /* non-bam pipe */
+	{0}, /* non-bam pipe */
+	/* RX - WLAN/WWAN traffic */
+	{IPA_CLIENT_HSIC1_PROD},
+	{0} /* non-bam pipe */
+ };
+
+static inline void ath6kl_put_context(struct sk_buff *skb, struct ath6kl_urb_context *context)
+{
+	*((unsigned long *)(skb->cb+32)) = (unsigned long)context;
+}
+
+static inline void *ath6kl_get_context(struct sk_buff *skb)
+{
+	return (void *)(*((unsigned long  *)(skb->cb+32)));
+}
+
+static inline bool ath6kl_is_bam_pipe(struct ath6kl_usb_pipe *pipe)
+{
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+		"BAM-CM: -->Is bam pipe %d \n",pipe->logical_pipe_num);
+	switch(pipe->logical_pipe_num)
+	{
+		case ATH6KL_USB_PIPE_TX_CTRL: return 0; /* WMI-Command */
+		case ATH6KL_USB_PIPE_TX_DATA_LP: return 1; /* Tx-BAM */
+		case ATH6KL_USB_PIPE_TX_DATA_MP: return 1; /* Tx-BAM */
+		case ATH6KL_USB_PIPE_TX_DATA_HP: return 1; /* Tx-BAM */
+		case ATH6KL_USB_PIPE_TX_DATA_VHP: return 1; /* Tx-BAM */
+		case ATH6KL_USB_PIPE_RX_CTRL: return 0; /* Not used */
+		case ATH6KL_USB_PIPE_RX_DATA: return 0; /* WMI-Event */
+		case ATH6KL_USB_PIPE_RX_DATA2: return 1; /* Rx-BAM */
+		case ATH6KL_USB_PIPE_RX_INT: return 0; /* WMI-Event */
+
+		default:
+			ath6kl_err("Wrong logical pipe number : %d\n",pipe->logical_pipe_num);
+			return 0;
+	}
+}
+
+static inline unsigned long ath6kl_buffer_offset(void *buf)
+{
+	return (unsigned long)buf & (ARCH_KMALLOC_MINALIGN - 1);
+}
+
+/* This free function is used only for the BAM pipes */
+static void ath6kl_bam_free_urb(struct urb *urb)
+{
+	unsigned long offset = ath6kl_buffer_offset(urb->transfer_buffer);
+
+	if (urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP)
+		usb_free_coherent(
+			urb->dev,
+			urb->transfer_buffer_length + offset,
+			urb->transfer_buffer - offset,
+			urb->transfer_dma - offset);
+	else
+		kfree(urb->transfer_buffer - offset);
+	usb_free_urb(urb);
+}
+
+/* Disconnects all the bam pipes Tx-4, Rx-1 */
+static void ath6kl_disconnect_bam_pipes(void)
+{
+	int status, i,pipe_num;
+
+	for(i=0; i< ATH6KL_USB_PIPE_MAX;i++)
+	{
+		pipe_num = i;
+		if ((pipe_num >= ATH6KL_USB_PIPE_TX_DATA_LP) && (pipe_num <= ATH6KL_USB_PIPE_TX_DATA_VHP))
+		{
+			ath6kl_bam_free_urb(bam_pipe[i].urb);
+#if 0
+			status = usb_bam_disconnect_ipa(bam_info[i].idx, &bam_pipe[i].ipa_params);
+#else
+			status = usb_bam_disconnect_ipa(&bam_pipe[i].ipa_params);
+#endif
+			if (status < 0)
+				ath6kl_err("BAM-CM: Error in disconnecting the TX BAM pipe %d\n",i);
+		}
+		else
+		if ((pipe_num >= ATH6KL_USB_PIPE_RX_DATA2) && (pipe_num <= ATH6KL_USB_PIPE_RX_DATA2))
+		{
+			ath6kl_bam_free_urb(bam_pipe[i].urb);
+#if 0
+			status = usb_bam_disconnect_ipa(bam_info[i].idx, &bam_pipe[i].ipa_params);
+#else
+			status = usb_bam_disconnect_ipa(&bam_pipe[i].ipa_params);
+#endif
+			if (status < 0)
+				ath6kl_err("BAM-CM: Error in disconnecting the RX BAM pipe %d\n",i);
+		}
+	}
+
+}
+/* BAM PIPE Callback function , called while Tx complete and Rx Receive */
+static void ath6kl_ipa_data_callback(void *priv, enum ipa_dp_evt_type evt, unsigned long data)
+{
+	struct ath6kl_urb_context *urb_context;
+	struct ath6kl_usb_pipe *pipe;
+	struct sk_buff *skb;
+
+	/* typecast the skb buffer pointer */
+	skb = (struct sk_buff *) data;
+
+	/* check the callback event type */
+	switch (evt)
+	{
+		/* IPA sends data to WLAN class driver */
+		case IPA_RECEIVE:
+			pipe = (struct ath6kl_usb_pipe *)priv; /* Since we have only 1 Rx pipe, priv always points to that */
+			/* Queue the skb and wake-up the worker thread. Please note that non-bam2bam pipe (usb.c)
+			 also uses the same worker thread after queuing the skb in Rx-Event pipe */
+			ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+				"BAM-CM: --->skb received from IPA %s\n", __func__);
+			ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+				"BAM-CM: %s: pipe: %d, Received skb from IPA module\n",
+				__func__, pipe->logical_pipe_num);
+			skb_queue_tail(&pipe->io_comp_queue, skb);
+			schedule_work(&pipe->io_complete_work);
+			break;
+
+		/* IPA sends Tx complete Event to WLAN */
+		case IPA_WRITE_DONE:
+			urb_context = (struct ath6kl_urb_context *)ath6kl_get_context(skb);
+			switch (urb_context->pipe->logical_pipe_num)
+			{
+				case	ATH6KL_USB_PIPE_TX_DATA_LP:
+				case	ATH6KL_USB_PIPE_TX_DATA_MP:
+				case	ATH6KL_USB_PIPE_TX_DATA_HP:
+				case	ATH6KL_USB_PIPE_TX_DATA_VHP:
+					ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+						"BAM-CM: %s: pipe: %d, Tx Complete callback IPA module\n",
+						__func__, urb_context->pipe->logical_pipe_num);
+					ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+						"BAM-CM: Write done received %s , %d\n", __func__, urb_context->pipe->logical_pipe_num);
+					ath6kl_usb_bam_transmit_complete(urb_context);
+					break;
+				default:
+					ath6kl_err("BAM-CM: IPA Tx complete callback not matching with Tx-pipe: %d\n",
+									urb_context->pipe->logical_pipe_num);
+					break;
+			}
+			break; /* IPA WRITE DONE */
+		default :
+			ath6kl_err("BAM-CM: IPA Tx complete callback received wrong event type : %d\n", evt);
+			break;
+	}
+}
+/* Create BAM pipes, this function will be called from usb.c file whilte iterating each pipe */
+/* returns 0 - On Success, -1 on Error */
+static int ath6kl_create_bam_pipe(struct ath6kl_usb_pipe *pipe)
+{
+	u8 i;
+	int status;
+	u8 temp_idx;
+
+	i = pipe->logical_pipe_num;
+
+	/* Configure Tx Pipes */
+	if ((i >= ATH6KL_USB_PIPE_TX_DATA_LP) && (i <= ATH6KL_USB_PIPE_TX_DATA_VHP))
+	{
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"BAM-CM: Creating bam pipe for TX MP %s, %d\n", __func__, __LINE__);
+		temp_idx = set_connection_name(HSIC_CORE, "ipa", PEER_PERIPHERAL_TO_USB, i - 1);
+
+		if (temp_idx < 0) {
+			ath6kl_dbg(ATH6KL_DBG_BAM2BAM, "TX: Peer Peripheral to USB  (dst) failed %d: %d\n", i - 1, temp_idx);
+			return -1;
+		}
+
+		bam_pipe[i].ipa_params.dst_idx = temp_idx;
+
+		temp_idx = set_connection_name(HSIC_CORE, "ipa", USB_TO_PEER_PERIPHERAL, i - 1);
+
+		if (temp_idx < 0) {
+			ath6kl_dbg(ATH6KL_DBG_BAM2BAM, "TX: USB to Peer Peripheral (src) failed %d: %d\n", i - 1, temp_idx);
+			return -1;
+		}
+
+		bam_pipe[i].ipa_params.src_idx = temp_idx;
+
+		bam_pipe[i].ipa_params.dir = PEER_PERIPHERAL_TO_USB;
+		bam_pipe[i].ipa_params.client = bam_info[i].client;
+		bam_pipe[i].ipa_params.src_pipe = NULL;
+		bam_pipe[i].ipa_params.dst_pipe = &(bam_pipe[i].dst_pipe);
+		/* Fill the Tx pipe endpoint configurations from IPA Config module */
+		ath6kl_ipacm_get_ep_config_info(bam_pipe[i].ipa_params.client, &(bam_pipe[i].ipa_params.ipa_ep_cfg));
+		bam_pipe[i].ipa_params.priv = NULL;
+		bam_pipe[i].ipa_params.notify = ath6kl_ipa_data_callback;
+
+		if((status = usb_bam_connect_ipa(&bam_pipe[i].ipa_params))) {
+			ath6kl_err ("BAM-CM: Error while creating BAM Tx pipe num %d\n", i);
+			return -1;
+		}
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"BAM-CM: Successfully created bam pipe for TX %d : status: %d\n", i, status);
+	} else
+	if ((i == ATH6KL_USB_PIPE_RX_DATA2))
+	{
+	/* Configure Rx Pipes */
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"BAM-CM: Creating bam pipe for RX DATA2 %s, %d\n", __func__, __LINE__);
+
+		temp_idx = set_connection_name(HSIC_CORE, "ipa", PEER_PERIPHERAL_TO_USB, 0);
+
+		if (temp_idx < 0) {
+			ath6kl_dbg(ATH6KL_DBG_BAM2BAM, "RX: Peer Peripheral to USB  (dst) failed %d: %d\n", 0, temp_idx);
+			return -1;
+		}
+
+		bam_pipe[i].ipa_params.dst_idx = temp_idx;
+
+		temp_idx = set_connection_name(HSIC_CORE, "ipa", USB_TO_PEER_PERIPHERAL, 0);
+
+		if (temp_idx < 0) {
+			ath6kl_dbg(ATH6KL_DBG_BAM2BAM, "RX: USB to Peer Peripheral (src) failed %d: %d\n", 0, temp_idx);
+			return -1;
+		}
+
+		bam_pipe[i].ipa_params.src_idx = temp_idx;
+
+		bam_pipe[i].ipa_params.dir = USB_TO_PEER_PERIPHERAL;
+		bam_pipe[i].ipa_params.client = bam_info[i].client;
+		bam_pipe[i].ipa_params.src_pipe = &(bam_pipe[i].src_pipe);
+		bam_pipe[i].ipa_params.dst_pipe = NULL;
+		/* Fill the Tx pipe endpoint configurations from IPA Config module */
+		ath6kl_ipacm_get_ep_config_info(bam_pipe[i].ipa_params.client, &(bam_pipe[i].ipa_params.ipa_ep_cfg));
+		bam_pipe[i].ipa_params.priv = (void *)pipe;
+		bam_pipe[i].ipa_params.notify = ath6kl_ipa_data_callback;
+
+		if((status = usb_bam_connect_ipa(&bam_pipe[i].ipa_params))) {
+			ath6kl_err ("BAM-CM: Error while creating BAM Rx pipe num %d\n", i);
+			return -1;
+		}
+
+		status = ath6kl_ipa_add_flt_rule(bam_info[i].client);
+		if (status == ATH6KL_IPA_FAILURE)
+		{
+			ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+				"BAM-CM: Failed to add filter rule for RX pipe DATA2 : status: %d\n", status);
+			return -1;
+		}
+
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"BAM-CM: Successfully created bam pipe for RX DATA2 : status: %d\n", status);
+	}
+	else
+	{
+		return -1;
+	}
+
+	return 0;
+}
+
+/* Callback function used while intializing the BAM pipe, This is required only
+	to stop/resume the BAM pipe data, not used now */
+void ath6kl_bam_pipe_callback(struct urb *urb)
+{
+	struct ath6kl_usb_pipe *pipe;
+
+	pipe = (struct ath6kl_usb_pipe *)urb->context;
+	ath6kl_err("BAM-CM: Callback function called for the BAM tx/rx pipe:%d \n", pipe->logical_pipe_num);
+}
+
+/* special urb allocation for BAM pipe only */
+/* returns urb -On Success, NULL - On Failure */
+static struct urb *ath6kl_alloc_urb(struct usb_device *udev,int	pipe,unsigned long	bytes,
+									unsigned transfer_flags,unsigned offset)
+{
+	#define INTERRUPT_RATE 	1
+	#define GUARD_BYTE 	0xA5
+
+	struct urb		*urb;
+
+
+	urb = usb_alloc_urb(0, GFP_KERNEL);
+	if (!urb){
+		ath6kl_err ("BAM-CM: usbtest_alloc_urb error\n");
+		return urb;
+	}
+
+	usb_fill_bulk_urb(urb, udev, pipe, NULL, bytes, ath6kl_bam_pipe_callback, NULL);
+	urb->interval = (udev->speed == USB_SPEED_HIGH)
+			? (INTERRUPT_RATE << 3)
+			: INTERRUPT_RATE;
+	urb->transfer_flags = transfer_flags;
+	if (usb_pipein(pipe))
+		urb->transfer_flags |= URB_SHORT_NOT_OK;
+	if (urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP)
+		urb->transfer_buffer = usb_alloc_coherent(udev, bytes + offset,
+			GFP_KERNEL, &urb->transfer_dma);
+	else
+#ifndef USB_ON_R3PC
+		urb->transfer_buffer = kmalloc(bytes + offset, GFP_KERNEL);
+#else
+		urb->transfer_buffer = ipa_mem_alloc(bytes + offset, &urb->transfer_dma);
+#endif
+	if (!urb->transfer_buffer) {
+		usb_free_urb(urb);
+		ath6kl_err ("BAM-CM: transfer_buffer alloc err\n");
+		return NULL;
+	}
+	/* To test unaligned transfers add an offset and fill the
+		unused memory with a guard value */
+	if (offset) {
+		memset(urb->transfer_buffer, GUARD_BYTE, offset);
+		urb->transfer_buffer += offset;
+		if (urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP)
+			urb->transfer_dma += offset;
+	}
+	/* For inbound transfers use guard byte so that test fails if
+		data not correctly copied */
+	memset(urb->transfer_buffer,
+			usb_pipein(urb->pipe) ? GUARD_BYTE : 0,
+			bytes);
+	return urb;
+}
+
+static struct urb *ath6kl_simple_alloc_urb(
+	struct usb_device	*udev,
+	int			pipe,
+	unsigned long		bytes)
+{
+	return ath6kl_alloc_urb(udev, pipe, bytes, URB_NO_TRANSFER_DMA_MAP, 0);
+}
+
+/* Setup BAM pipe, returns 0 -On Success ,-ENOMEM - on Failure*/
+int ath6kl_usb_setup_bam_pipe(struct ath6kl_usb_pipe *pipe)
+{
+	struct usb_device *udev;
+	unsigned int pipe_handle;
+	u8 pipe_num;
+	u32 flag;
+	struct urb *urb;
+	int length = 0x100; /* can be any value >= 32 */
+	int retval;
+
+	udev = pipe->ar_usb->udev;
+	pipe_handle = pipe->usb_pipe_handle;
+	pipe_num = pipe->logical_pipe_num;
+	flag = pipe->flags;
+
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+		"BAM-CM: -->usb create bam pipe pipe number = %d\n", pipe_num);
+	retval = ath6kl_create_bam_pipe(pipe);
+
+	if (retval != 0) {
+		ath6kl_err("BAM-CM: Failed to create bam pipe %s, %d\n",__func__,__LINE__);
+		return retval;
+	}
+
+	urb = ath6kl_simple_alloc_urb(udev, pipe_handle, length);
+	if (!urb) {
+		retval = -ENOMEM;
+		ath6kl_err("BAM-CM: Failed urb allocation %s, %d\n",__func__,__LINE__);
+		return retval;
+	}
+	urb->usb_host_bam = kzalloc(sizeof(struct usb_host_bam_type), GFP_KERNEL);
+	urb->usb_host_bam->dir = bam_pipe[pipe_num].ipa_params.dir;
+	if (urb->usb_host_bam->dir == USB_TO_PEER_PERIPHERAL) {
+		urb->usb_host_bam->pipe_num = *(bam_pipe[pipe_num].ipa_params.src_pipe);
+	} else {
+		urb->usb_host_bam->pipe_num = *(bam_pipe[pipe_num].ipa_params.dst_pipe);
+	}
+
+	bam_pipe[pipe_num].urb = urb;
+	urb->context = &bam_pipe[pipe_num];
+	retval = usb_submit_urb(urb, GFP_KERNEL);
+
+	if (retval != 0)
+	{
+		ath6kl_err("BAM-CM: Failed usb submit %s, %d\n",__func__,__LINE__);
+	}
+	return retval;
+}
+
+void ath6kl_dump_packet(struct sk_buff *skb)
+{
+	int i, j =0;
+
+	if(skb->len == 0x296) // 662 bytes
+	{
+	printk("Packet Length : %d\n", skb->len);
+	for (i=0;i<skb->len;i++)
+	{
+		printk("%02x ", skb->data[i]);
+		j++;
+		if(j > 47) {
+			printk("\n");
+			j = 0;
+		}
+	}
+	printk("\n");
+	}
+}
+
+/* Sends data to the BAM pipe without applying the IPA HW rules */
+int ath6kl_usb_data_send_to_bam_pipe(int pipe_no, struct sk_buff *skb)
+{
+	int status;
+#if 0
+	// just for debugging
+
+	static int sent=0;
+
+	if(skb->len == 0x296) {
+		sent++;
+	}
+	if (sent > 2) return 0; //drop the packet only for testing
+	ath6kl_dump_packet(skb);
+#endif
+
+	status = ipa_tx_dp(bam_pipe[pipe_no].ipa_params.client, skb, NULL);
+	if (status == 0)
+	{
+		return 0; /* Success */
+	}
+	ath6kl_err("BAM-CM: Failed to send data over bam2bam pipe :%d \n", pipe_no);
+
+	return -1; /* Failed */
+}
+
+/* Gets the control handle for the given logical pipe number */
+int ath6kl_get_bam_cntl_hdl(int pipeno)
+{
+	int i, pipe_num;
+
+	for(i=0; i< ATH6KL_USB_PIPE_MAX;i++)
+	{
+		pipe_num = i;
+		if ((pipe_num >= ATH6KL_USB_PIPE_TX_DATA_LP) && (pipe_num <= ATH6KL_USB_PIPE_TX_DATA_VHP))
+		{
+			if(pipe_num == pipeno)
+				return (bam_pipe[i].ipa_params.cons_clnt_hdl);
+		}
+		else
+		if ((pipe_num >= ATH6KL_USB_PIPE_RX_DATA2) && (pipe_num <= ATH6KL_USB_PIPE_RX_DATA2))
+		{
+			if(pipe_num == pipeno)
+				return (bam_pipe[i].ipa_params.prod_clnt_hdl);
+		}
+	}
+
+	ath6kl_err("BAM-CM: Error in getting the control handle for pipe %d\n", pipeno);
+	return -1;
+}
+
+void usb_bam_detached(struct usb_interface *interface)
+{
+	ath6kl_disconnect_bam_pipes();
+	ath6kl_disconnect_sysbam_pipes();
+	return ;
+}
+
+int usb_bam_suspend(struct usb_interface *interface)
+{
+ /* USB BAM is a hw connection between two BAM devices, So suspend/resume is not required
+ as per the discussion with QI
+ */
+	return 0;
+}
+int usb_bam_resume(struct usb_interface *interface)
+{
+ /* USB BAM is a hw connection between two BAM devices, So suspend/resume is not required
+ as per the discussion with QI
+ */
+	return 0;
+}
+
+void ath6kl_usb_bam_detached(struct usb_interface *interface)
+{
+ /* If USB device is removed, BAM2BAM endpoints have be flushed/cleaned */
+	usb_bam_detached(interface);
+
+	return;
+}
+
+int ath6kl_usb_bam_suspend(struct usb_interface *interface)
+{
+/* USB device goes to suspend mode, informing to BAM2BAM connection module */
+	usb_bam_suspend(interface);
+
+	return 0;
+}
+
+int ath6kl_usb_bam_resume(struct usb_interface *interface)
+{
+/* USB device goes to resume mode, informing to BAM2BAM connection module */
+	usb_bam_resume(interface);
+
+	return 0;
+}
+
+int ath6kl_usb_bam_init(struct usb_interface *interface)
+{
+	int status;
+
+	/* Crate the SYS BAM pipe for WLAN AMPDU Flushing */
+	status = ath6kl_usb_create_sysbam_pipes();
+
+	return status;
+}
+
+#endif
+
+
+
+/* function declarations */
+static void ath6kl_usb_recv_complete(struct urb *urb);
+
 /* pipe/urb operations */
 static struct ath6kl_urb_context *
 ath6kl_usb_alloc_urb_from_pipe(struct ath6kl_usb_pipe *pipe)
@@ -401,7 +943,22 @@ static int ath6kl_usb_setup_pipe_resources(struct ath6kl_usb *ar_usb)
 		status = ath6kl_usb_alloc_pipe_resources(pipe, urbcount);
 		if (status != 0)
 			break;
-	}
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		/* Create and setup BAM pipes */
+		if(ath6kl_is_bam_pipe(pipe))
+		{
+			status = ath6kl_usb_setup_bam_pipe(pipe);
+			if (status != 0)
+				break;
+		}
+#endif
+
+	} /* for loop */
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	/* Init sys bam pipe, bam2bam pipe initialized in the above for loop */
+	status  = ath6kl_usb_bam_init(interface);
+#endif
 
 	return status;
 }
@@ -413,6 +970,11 @@ static void ath6kl_usb_post_recv_transfers(struct ath6kl_usb_pipe *recv_pipe,
 	struct ath6kl_urb_context *urb_context;
 	struct urb *urb;
 	int usb_status;
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	if(ath6kl_is_bam_pipe(recv_pipe))
+		return;
+#endif
 
 	while (true) {
 		urb_context = ath6kl_usb_alloc_urb_from_pipe(recv_pipe);
@@ -463,17 +1025,24 @@ err_cleanup_urb:
 static void ath6kl_usb_flush_all(struct ath6kl_usb *ar_usb)
 {
 	int i;
+	struct ath6kl_usb_pipe *pipe;
 
 	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
-		if (ar_usb->pipes[i].ar_usb != NULL)
-			usb_kill_anchored_urbs(&ar_usb->pipes[i].urb_submitted);
+		if (ar_usb->pipes[i].ar_usb) {
+			pipe = &ar_usb->pipes[i].ar_usb->pipes[i];
+			if (pipe) {
+				flush_work(&pipe->io_complete_work);
+			}
+			if (&ar_usb->pipes[i].urb_submitted)
+				usb_kill_anchored_urbs(&ar_usb->pipes[i].urb_submitted);
+		}
 	}
 
 	/*
 	 * Flushing any pending I/O may schedule work this call will block
 	 * until all scheduled work runs to completion.
 	 */
-	flush_scheduled_work();
+	//flush_scheduled_work();
 }
 
 static void ath6kl_usb_start_recv_pipes(struct ath6kl_usb *ar_usb)
@@ -491,6 +1060,16 @@ static void ath6kl_usb_start_recv_pipes(struct ath6kl_usb *ar_usb)
 	    ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA].urb_alloc / 2;
 	ath6kl_usb_post_recv_transfers(&ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA],
 				       ATH6KL_USB_RX_BUFFER_SIZE);
+
+	/* BAM2BAM mode */
+#ifndef CONFIG_ATH6KL_BAM2BAM
+	ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA2].urb_cnt_thresh =
+	    ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA2].urb_alloc / 2;
+	ath6kl_usb_post_recv_transfers(&ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA2],
+				       ATH6KL_USB_RX_BUFFER_SIZE);
+#else
+	/* Bam receive pipe can be configured here if required */
+#endif
 }
 
 /* hif usb rx/tx completion functions */
@@ -577,6 +1156,24 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 	skb_queue_tail(&pipe->io_comp_queue, skb);
 	schedule_work(&pipe->io_complete_work);
 }
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+void ath6kl_usb_bam_transmit_complete(struct ath6kl_urb_context *urb_context)
+{
+	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
+	struct sk_buff *skb;
+
+
+	skb = urb_context->skb;
+	urb_context->skb = NULL;
+	ath6kl_usb_free_urb_to_pipe(urb_context->pipe, urb_context);
+	ath6kl_put_context(skb, NULL);
+
+	/* note: queue implements a lock */
+	skb_queue_tail(&pipe->io_comp_queue, skb);
+	schedule_work(&pipe->io_complete_work);
+}
+#endif
 
 static void ath6kl_usb_io_comp_work(struct work_struct *work)
 {
@@ -728,6 +1325,10 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 
 	urb_context->skb = skb;
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	if (!ath6kl_is_bam_pipe(pipe))
+	{
+#endif
 	data = skb->data;
 	len = skb->len;
 
@@ -769,6 +1370,24 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 		status = -EINVAL;
 	}
 	usb_free_urb(urb);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	}
+	else
+	{
+	/* send to IPA bam driver */
+	ath6kl_put_context(skb, urb_context);
+	status = ath6kl_usb_data_send_to_bam_pipe(pipe->logical_pipe_num, skb);
+	if (status) {
+		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+			   "ath6kl usb : usb bulk transmit failed %d\n",
+			   status);
+		ath6kl_usb_free_urb_to_pipe(urb_context->pipe,
+					    urb_context);
+		status = -EINVAL;
+	}
+
+	}
+#endif
 
 fail_hif_send:
 	return status;
@@ -792,8 +1411,67 @@ static int ath6kl_usb_map_service_pipe(struct ath6kl *ar, u16 svc_id,
 				       u8 *ul_pipe, u8 *dl_pipe)
 {
 	int status = 0;
-
+/* change this, while testing with all 4 Tx pipes */
+#ifdef CONFIG_ATH6KL_BAM2BAM
 	switch (svc_id) {
+	case HTC_CTRL_RSVD_SVC:
+	case WMI_CONTROL_SVC:
+	        *ul_pipe = ATH6KL_USB_PIPE_TX_CTRL;
+		/* due to large control packets, shift to data pipe */
+		*dl_pipe = ATH6KL_USB_PIPE_RX_DATA;
+		break;
+	case WMI_DATA_BE_SVC:
+	       if (ar->version.target_ver == AR6004_HW_1_6_VERSION) {
+#ifndef CONFIG_ATH6KL_BAM2BAM
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_MP;
+#else
+/* BE and BK pipe hardware fifo are interchanged in HW, so need changes for BAM */
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
+#endif
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               } else {
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               }
+		break;
+	case WMI_DATA_BK_SVC:
+	       if (ar->version.target_ver == AR6004_HW_1_6_VERSION) {
+#ifndef CONFIG_ATH6KL_BAM2BAM
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
+#else
+/* BE and BK pipe hardware fifo are interchanged in HW, so need changes for BAM */
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_MP;
+#endif
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               } else {
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               }
+		break;
+	case WMI_DATA_VI_SVC:
+	       if (ar->version.target_ver == AR6004_HW_1_6_VERSION) {
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_HP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               } else {
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_MP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               }
+		break;
+	case WMI_DATA_VO_SVC:
+	       if (ar->version.target_ver == AR6004_HW_1_6_VERSION) {
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_VHP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               } else {
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_HP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
+               }
+		break;
+	default:
+		status = -EPERM;
+		break;
+	}
+#else
+        switch (svc_id) {
 	case HTC_CTRL_RSVD_SVC:
 	case WMI_CONTROL_SVC:
 		*ul_pipe = ATH6KL_USB_PIPE_TX_CTRL;
@@ -829,6 +1507,7 @@ static int ath6kl_usb_map_service_pipe(struct ath6kl *ar, u16 svc_id,
 		status = -EPERM;
 		break;
 	}
+#endif
 
 	return status;
 }

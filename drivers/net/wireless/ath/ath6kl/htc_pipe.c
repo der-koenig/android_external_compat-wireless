@@ -22,6 +22,11 @@
 #include <asm/unaligned.h>
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29))
+#include <asm/unaligned.h>
+#endif
+
+
 #define HTC_PACKET_CONTAINER_ALLOCATION 32
 #define HTC_CONTROL_BUFFER_SIZE (HTC_MAX_CTRL_MSG_LEN + HTC_HDR_LENGTH)
 #define DATA_EP_SIZE 4
@@ -261,6 +266,10 @@ static int htc_issue_packets(struct htc_target *target,
 
 		/* Endianess? */
 		put_unaligned((u16) payload_len, &htc_hdr->payld_len);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		/* IPA process the data in Big Endian, So convert to BE */
+		htc_hdr->payld_len = cpu_to_be16(htc_hdr->payld_len);
+#endif
 		htc_hdr->flags = packet->info.tx.flags;
 		htc_hdr->eid = (u8) packet->endpoint;
 		htc_hdr->ctrl[0] = 0;
@@ -1089,7 +1098,7 @@ static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 		skb = NULL;
 		goto free_skb;
 	}
- 
+
 	htc_hdr = (struct htc_frame_hdr *) netdata;
 
 	ep = &target->endpoint[htc_hdr->eid];
@@ -1401,7 +1410,11 @@ static int ath6kl_htc_pipe_conn_service(struct htc_target *target,
 		/* tell target desired recv alloc for this ep */
 		flags = tx_alloc << HTC_CONN_FLGS_SET_RECV_ALLOC_SHIFT;
 		conn_msg->conn_flags |= cpu_to_le16(flags);
-
+#ifdef CONFIG_ATH6KL_BAM2BAM
+                conn_msg->conn_flags |= cpu_to_le16(conn_req->conn_flags |
+                                         HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL);
+		disable_credit_flowctrl = true;
+#endif
 		if (conn_req->conn_flags &
 		    HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL) {
 			disable_credit_flowctrl = true;

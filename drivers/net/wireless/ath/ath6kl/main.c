@@ -164,6 +164,11 @@ static u8 ath6kl_remove_sta(struct ath6kl_vif *vif, u8 *mac, u16 reason)
 	} else {
 		for (i = 0; i < AP_MAX_NUM_STA; i++) {
 			if (memcmp(ar->sta_list[i].mac, mac, ETH_ALEN) == 0) {
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#if 0
+				ipa_wlan_msg(WLAN_CLIENT_DISCONNECT, ar->sta_list[i].mac);
+#endif
+#endif
 				ath6kl_dbg(ATH6KL_DBG_TRC,
 					   "deleting station %pM aid=%d reason=%d\n",
 					   mac, ar->sta_list[i].aid, reason);
@@ -445,6 +450,11 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 	ik = &ar->ap_mode_bkey;
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+		"----> Connect Event Received for AP : %s %d\n",__func__,__LINE__);
+#endif
+
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "AP mode started on %u MHz\n", channel);
 
 	switch (vif->auth_mode) {
@@ -702,7 +712,13 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 			  u8 *assoc_info)
 {
 	struct ath6kl *ar = vif->ar;
-
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#if 0
+	ipa_wlan_msg(WLAN_CLIENT_CONNECT, bssid);
+#endif
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+		"----> Connect Event Received : %s %d\n",__func__,__LINE__);
+#endif
 	ath6kl_cfg80211_connect_event(vif, channel, bssid,
 				      listen_int, beacon_int,
 				      net_type, beacon_ie_len,
@@ -1065,12 +1081,22 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		}
 
 		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#if 0
+			ipa_wlan_msg(WLAN_CLIENT_DISCONNECT, bssid);
+#endif
+#endif
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
 		}
 		return;
 	}
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#if 0
+	ipa_wlan_msg(WLAN_CLIENT_DISCONNECT, bssid);
+#endif
+#endif
 	ath6kl_cfg80211_disconnect_event(vif, reason, bssid,
 					 assoc_resp_len, assoc_info,
 					 prot_reason_status);

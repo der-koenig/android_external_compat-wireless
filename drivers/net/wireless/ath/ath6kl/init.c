@@ -633,6 +633,20 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return -EIO;
 	}
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+        param = 0;
+        /* AMSDU is offloaded to f/w for BAM2BAM mode */
+        if (ath6kl_bmi_read_hi32(ar, hi_option_flag2, &param) != 0) {
+                printk("bmi_read_memory for setting amsdu failed\n");
+                return -EIO;
+        }
+
+        param |= AMSDU_SLICING_OFFLOAD_TO_FW;
+        if (ath6kl_bmi_write_hi32(ar, hi_option_flag2, param) != 0) {
+                printk("bmi_write_memory for setting amsdu failed\n");
+                return -EIO;
+        }
+#endif
 	/* set the firmware mode to STA/IBSS/AP */
 	param = 0;
 
