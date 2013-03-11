@@ -2708,7 +2708,7 @@ static int ath6kl_parse_tx_amsdu_params(const char __user *user_buf,
 	u8 tx_amsdu_max_aggr_num;
 	u16 tx_amsdu_max_pdu_len, tx_amsdu_timeout;
 	bool tx_amsdu_seq_pkt;
-
+	bool tx_amsdu_progressive;
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
@@ -2742,8 +2742,18 @@ static int ath6kl_parse_tx_amsdu_params(const char __user *user_buf,
 	else
 		tx_amsdu_seq_pkt = false;
 
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &value);
+	if (value)
+		tx_amsdu_progressive = true;
+	else
+		tx_amsdu_progressive = false;
+
 	aggr_tx_config(vif,
 			tx_amsdu_seq_pkt,
+			tx_amsdu_progressive,
 			tx_amsdu_max_aggr_num,
 			tx_amsdu_max_pdu_len,
 			tx_amsdu_timeout);
@@ -2798,7 +2808,7 @@ static ssize_t ath6kl_tx_amsdu_params_read(struct file *file,
 		if ((vif) &&
 			(vif->aggr_cntxt)) {
 			len += scnprintf(buf + len, _BUF_SIZE - len,
-				"DEV-%d %s max_aggr_len: %d max_aggr_num: %d, max_pdu_len: %d, timeout = %d ms, seq_pkt %s\n",
+				"DEV-%d %s max_aggr_len: %d max_aggr_num: %d, max_pdu_len: %d, timeout = %d ms, seq_pkt %s, tx_prog %s\n",
 				i,
 				(vif->aggr_cntxt->tx_amsdu_enable == true ?
 							"Enable" : "Disable"),
@@ -2807,6 +2817,8 @@ static ssize_t ath6kl_tx_amsdu_params_read(struct file *file,
 				vif->aggr_cntxt->tx_amsdu_max_pdu_len,
 				vif->aggr_cntxt->tx_amsdu_timeout,
 				(vif->aggr_cntxt->tx_amsdu_seq_pkt == true ?
+							"Yes" : "No"),
+				(vif->aggr_cntxt->tx_amsdu_progressive == true ?
 							"Yes" : "No"));
 
 			num_sta = (vif->nw_type == INFRA_NETWORK) ?
@@ -2823,13 +2835,15 @@ static ssize_t ath6kl_tx_amsdu_params_read(struct file *file,
 						conn->aggr_conn_cntxt, k);
 					len += scnprintf(buf + len,
 							_BUF_SIZE - len,
-							"   %d-%d-%s AMSDU: %d PDU: %d TIMEOUT/FLUSH/NULL/OVERFLOW: %d/%d/%d/%d\n",
+							"   %d-%d-%s AMSDU: %d PDU: %d PROG: %d/%d TIMEOUT/FLUSH/NULL/OVERFLOW: %d/%d/%d/%d\n",
 							txtid->tid,
 							txtid->aid,
 							(txtid->max_aggr_sz ?
 							"ON " : "OFF"),
 							txtid->num_amsdu,
 							txtid->num_pdu,
+							txtid->last_num_amsdu,
+							txtid->last_num_timeout,
 							txtid->num_timeout,
 							txtid->num_flush,
 							txtid->num_tx_null,
@@ -4663,6 +4677,102 @@ static const struct file_operations fops_usb_pm_state = {
 
 #endif /* USB_AUTO_SUSPEND */
 
+/* File operation for P2P IE not append */
+static ssize_t ath6kl_p2p_ie_not_append_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u32 p2p_ie_not_append;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &p2p_ie_not_append))
+		return -EINVAL;
+
+	ar->p2p_ie_not_append = 0;
+	if (p2p_ie_not_append & P2P_IE_IN_PROBE_REQ)
+		ar->p2p_ie_not_append |= P2P_IE_IN_PROBE_REQ;
+
+	if (p2p_ie_not_append & P2P_IE_IN_ASSOC_REQ)
+		ar->p2p_ie_not_append |= P2P_IE_IN_ASSOC_REQ;
+
+	return count;
+}
+
+static ssize_t ath6kl_p2p_ie_not_append_read(struct file *file,
+					char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	char buf[64];
+	int len = 0;
+
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return -EIO;
+
+	if ((ar->p2p_concurrent) &&
+	    (vif->nw_type == INFRA_NETWORK)) {
+		len = snprintf(buf, sizeof(buf),
+				"ProbeReq %s append, AssocReq %s append\n",
+				((ar->p2p_ie_not_append & P2P_IE_IN_PROBE_REQ) ?
+					"NOT" : ""),
+				((ar->p2p_ie_not_append & P2P_IE_IN_ASSOC_REQ) ?
+					"NOT" : ""));
+	}
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+/* debug fs for P2P IE not append */
+static const struct file_operations fops_p2p_ie_not_append = {
+	.read = ath6kl_p2p_ie_not_append_read,
+	.write = ath6kl_p2p_ie_not_append_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+/* File operation for AP Admission-Control */
+static ssize_t ath6kl_ap_admc_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(256)
+	struct ath6kl *ar = file->private_data;
+	u8 *buf;
+	unsigned int len = 0;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	len = ath6kl_ap_admc_dump(ar, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+/* debug fs for AP Admission-Control. */
+static const struct file_operations fops_ap_admc = {
+	.read = ath6kl_ap_admc_read,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -4856,6 +4966,13 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("usb_pm_state", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_usb_pm_state);
 #endif
+
+	debugfs_create_file("p2p_ie_not_append", S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_p2p_ie_not_append);
+
+	debugfs_create_file("ap_admc", S_IRUSR,
+			    ar->debugfs_phy, ar, &fops_ap_admc);
+
 	return 0;
 }
 

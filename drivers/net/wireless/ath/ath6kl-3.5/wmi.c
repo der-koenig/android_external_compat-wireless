@@ -465,9 +465,11 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 
 	spin_lock_bh(&wmi->lock);
 	stream_exist = wmi->fat_pipe_exist;
-	spin_unlock_bh(&wmi->lock);
 
 	if (!(stream_exist & (1 << traffic_class))) {
+		wmi->fat_pipe_exist |= (1 << traffic_class);
+		spin_unlock_bh(&wmi->lock);
+
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.traffic_class = traffic_class;
 		cmd.user_pri = usr_pri;
@@ -476,7 +478,10 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 		/* Implicit streams are created with TSID 0xFF */
 		cmd.tsid = WMI_IMPLICIT_PSTREAM;
 		ath6kl_wmi_create_pstream_cmd(wmi, if_idx, &cmd);
+
+		spin_lock_bh(&wmi->lock);
 	}
+	spin_unlock_bh(&wmi->lock);
 
 	*ac = traffic_class;
 
@@ -941,6 +946,7 @@ static int ath6kl_wmi_rx_action_event_rx(struct wmi *wmi, u8 *datap, int len,
 	ath6kl_dbg(ATH6KL_DBG_WMI, "rx_action: len=%u freq=%u\n", dlen, freq);
 
 	if (vif->ar->p2p_frame_not_report &&
+	    !test_bit(CONNECTED, &vif->flags) &&
 	    test_bit(SCANNING, &vif->flags) &&
 	    ath6kl_p2p_is_p2p_frame(vif->ar, (const u8 *) ev->data, dlen)) {
 		ath6kl_dbg(ATH6KL_DBG_WMI, "rx_action: not report to user!\n");
@@ -1161,6 +1167,8 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 {
 	struct wmi_connect_event *ev;
 	u8 *pie, *peie;
+	u8 *assoc_req = NULL;
+	u16 assoc_req_len = 0;
 
 	if (len < sizeof(struct wmi_connect_event))
 		return -EINVAL;
@@ -1190,6 +1198,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			/* Start ACL if need. */
 			ath6kl_ap_acl_start(vif);
 
+			/* Start Admission-Control */
+			ath6kl_ap_admc_start(vif);
+
 			/* Report Channel Switch if need. */
 			ath6kl_ap_ch_switch(vif);
 		} else {
@@ -1205,14 +1216,20 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			ath6kl_p2p_flowctrl_set_conn_id(vif,
 							ev->u.ap_sta.mac_addr,
 							ev->u.ap_sta.aid);
+			ath6kl_ap_admc_assoc_req_fetch(vif,
+							ev,
+							&assoc_req,
+							&assoc_req_len);
 			ath6kl_connect_ap_mode_sta(
 				vif, ev->u.ap_sta.aid, ev->u.ap_sta.mac_addr,
 				ev->u.ap_sta.keymgmt,
 				le16_to_cpu(ev->u.ap_sta.cipher),
-				ev->u.ap_sta.auth, ev->assoc_req_len,
-				ev->assoc_info + ev->beacon_ie_len,
+				ev->u.ap_sta.auth, assoc_req_len,
+				assoc_req,
 				ev->u.ap_sta.apsd_info,
 				ev->u.ap_sta.phymode);
+			ath6kl_ap_admc_assoc_req_release(vif,
+							assoc_req);
 		}
 
 		ath6kl_ap_ht_update_ies(vif);
@@ -4026,6 +4043,27 @@ static int ath6kl_wmi_wmm_params_event_rx(struct wmi *wmi, u8 *datap,
 	return 0;
 }
 
+static int ath6kl_wmi_assoc_req_event_rx(struct ath6kl_vif *vif, u8 *datap,
+		int len)
+{
+	struct wmi_assoc_req_event *assoc_req_event =
+		(struct wmi_assoc_req_event *) datap;
+
+	/* At least include 802.11 header */
+	if (len < sizeof(*assoc_req_event) + 28)
+		return -EINVAL;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "wmi event assoc_req len %d\n", len);
+
+	ath6kl_ap_admc_assoc_req(vif,
+				assoc_req_event->assocReq,
+				len - sizeof(struct wmi_assoc_req_event),
+				assoc_req_event->rspType,
+				assoc_req_event->status);
+
+	return 0;
+}
+
 /* Control Path */
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 {
@@ -4319,6 +4357,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_REPORT_WMM_PARAMS_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_REPORT_WMM_PARAMS_EVENTID\n");
 		ret = ath6kl_wmi_wmm_params_event_rx(wmi, datap, len);
+		break;
+	case WMI_ASSOC_REQ_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_ASSOC_REQ_EVENTID\n");
+		ret = ath6kl_wmi_assoc_req_event_rx(vif, datap, len);
 		break;
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
@@ -5336,3 +5378,63 @@ int ath6kl_wmi_set_inact_cmd(struct wmi *wmi, u32 inacperiod)
 	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_AP_CONN_INACT_CMDID,
 				NO_SYNC_WMIFLAG);
 }
+
+int ath6kl_wmi_send_assoc_resp_cmd(struct wmi *wmi, u8 if_idx,
+	bool accept, u8 reason_code, u8 fw_status, u8 *sta_mac, u8 req_type)
+{
+	struct sk_buff *skb;
+	struct wmi_assoc_resp_send_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"assoc_resp_send: accept %d code %d fw %d type %d\n",
+			accept, reason_code, fw_status, req_type);
+
+	cmd = (struct wmi_assoc_resp_send_cmd *)skb->data;
+	if (accept) {
+		/*
+		 * Though request is validated successfully by the host,
+		 * association response will be sent with failure status
+		 * if firmware validation fails.
+		 */
+		cmd->host_accept = 1;
+		cmd->host_reasonCode = 0;	/* follow firmware's */
+	} else {
+		cmd->host_accept = 0;
+		cmd->host_reasonCode = reason_code;
+	}
+	cmd->target_status = fw_status;
+	cmd->rspType = req_type;
+	memcpy(cmd->sta_mac_addr, sta_mac, ETH_ALEN);
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SEND_ASSOC_RES_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_set_assoc_req_relay_cmd(struct wmi *wmi, u8 if_idx, bool enabled)
+{
+	struct sk_buff *skb;
+	struct wmi_assoc_req_relay_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"assoc_req_relay: %d\n",
+			enabled);
+
+	cmd = (struct wmi_assoc_req_relay_cmd *)skb->data;
+	if (enabled)
+		cmd->enable = 1;
+	else
+		cmd->enable = 0;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
+				WMI_SET_ASSOC_REQ_RELAY_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+

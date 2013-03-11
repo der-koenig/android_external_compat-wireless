@@ -711,8 +711,19 @@ enum wmi_cmd_id {
 	WMI_AP_POLL_STA_CMDID,
 	WMI_AP_PSBUF_OFFLOAD_CMDID,
 	WMI_SET_REGDOMAIN_CMDID,
-	WMI_SET_CREDIT_BYPASS_CMDID,
+/* merge from olca mainline for align command id - start */
+	WMI_ARGOS_CMDID,
+	WMI_SEND_MGMT_CMDID,
+	WMI_BEGIN_SCAN_CMDID,
+	WMI_SET_IE_CMDID,
+	WMI_SET_RSSI_FILTER_CMDID,
+	WMI_SET_CREDIT_REVERSE_CMDID   = 0xF0B6,
+	WMI_SET_RCV_DATA_CLASSIFIER_CMDID,
+	WMI_AP_SET_IDLE_CLOSE_TIME_CMDID,
+	WMI_SET_LTE_COEX_STATE_CMDID,
 	WMI_SET_MCC_PROFILE_CMDID,
+/* merge from olca mainline for align command id - end */
+	WMI_SET_CREDIT_BYPASS_CMDID,
 };
 
 enum wmi_mgmt_frame_type {
@@ -2951,6 +2962,25 @@ struct wmi_allow_aggr_cmd {
 	u16 rx_allow_aggr;	/* bitmask indicate TID */
 } __packed;
 
+/* AP Admission-Control */
+struct wmi_assoc_req_event {
+	u8 status;
+	u8 rspType;
+	u8 assocReq[0];
+} __packed;
+
+struct wmi_assoc_resp_send_cmd {
+	u8 host_accept;
+	u8 host_reasonCode;
+	u8 target_status;
+	u8 sta_mac_addr[ETH_ALEN];
+	u8 rspType;
+} __packed;
+
+struct wmi_assoc_req_relay_cmd {
+	u8 enable;
+} __packed;
+
 
 /* ARP OFFLOAD */
 struct wmi_ipv6_addr {
@@ -3298,4 +3328,8 @@ int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile);
 
 int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2);
 int ath6kl_wmi_set_inact_cmd(struct wmi *wmi, u32 inacperiod);
+int ath6kl_wmi_send_assoc_resp_cmd(struct wmi *wmi, u8 if_idx,
+	bool accept, u8 reason_code, u8 fw_status, u8 *sta_mac, u8 req_type);
+int ath6kl_wmi_set_assoc_req_relay_cmd(struct wmi *wmi, u8 if_idx,
+	bool enabled);
 #endif /* WMI_H */

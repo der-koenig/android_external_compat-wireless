@@ -129,8 +129,38 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 {
 	struct ath6kl_sta *sta = &vif->sta_list[i];
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	struct list_head container;
+	int reclaim = 0;
 
 	del_timer_sync(&sta->psq_age_timer);
+
+	if (p2p_flowctrl &&
+		p2p_flowctrl->sche_type == P2P_FLOWCTRL_SCHE_TYPE_CONNECTION) {
+
+		INIT_LIST_HEAD(&container);
+
+		spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+		fw_conn = &p2p_flowctrl->fw_conn_list[0];
+		for (i = 0; i < NUM_CONN; i++, fw_conn++) {
+			if (fw_conn->connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID)
+				continue;
+
+			if (memcmp(fw_conn->mac_addr,
+					sta->mac,
+					ETH_ALEN) == 0) {
+
+				ath6kl_p2p_flowctrl_conn_collect_by_conn(
+					fw_conn, &container, &reclaim);
+				break;
+			}
+		}
+
+		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+		ath6kl_tx_complete(ar->htc_target, &container);
+	}
 
 	spin_lock_bh(&sta->lock);
 	sta->vif = NULL;
@@ -1020,7 +1050,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel,
 
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
-				u8 assoc_req_len, u8 *assoc_info,
+				u16 assoc_req_len, u8 *assoc_info,
 				u8 apsd_info, u8 phymode)
 {
 	u8 *ies = NULL, *wpa_ie = NULL, *pos;
@@ -1753,6 +1783,9 @@ static int ath6kl_close(struct net_device *dev)
 	/* Stop ACL. */
 	ath6kl_ap_acl_stop(vif);
 
+	/* Stop Admission-Control */
+	ath6kl_ap_admc_stop(vif);
+
 	ath6kl_disconnect(vif);
 
 	vif->sme_state = SME_DISCONNECTED;
@@ -2007,6 +2040,8 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 						(user_cmd + 4),
 						NULL,
 						(android_cmd.used_len - 4));
+				else if (strstr(user_cmd, "SET_AP_WPS_P2P_IE"))
+					ret = 0; /* To avoid AP/GO up stuck. */
 				else {
 					ath6kl_dbg(ATH6KL_DBG_TRC,
 						"not yet support \"%s\"\n",

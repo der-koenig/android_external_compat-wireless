@@ -2255,6 +2255,80 @@ rx_aggr_process:
 	ath6kl_deliver_frames_to_nw_stack(vif->ndev, skb);
 }
 
+static void aggr_tx_progressive(struct txtid *txtid, bool tx_timeout)
+{
+	struct ath6kl_vif *vif = txtid->vif;
+	struct aggr_info *aggr = vif->aggr_cntxt;
+	unsigned long now = jiffies;
+
+	/* Only support STA mode now */
+	if (vif->nw_type != INFRA_NETWORK)
+		return;
+
+	txtid->last_num_amsdu++;
+	if (tx_timeout)
+		txtid->last_num_timeout++;
+
+	/* Check it every AGGR_TX_PROG_CHECK_INTVAL */
+	if (aggr->tx_amsdu_progressive &&
+	    ((txtid->last_check_time == 0) ||
+	     (now - txtid->last_check_time > AGGR_TX_PROG_CHECK_INTVAL))) {
+		/*
+		 * Change to high speed when mass of AMSDUs & most of it
+		 * are not-timeout case.
+		 * Back to normal speed when bit of AMSDUs & most of it
+		 * are timeout case.
+		 */
+		if (!aggr->tx_amsdu_progressive_hispeed) {
+			if ((txtid->last_num_amsdu > AGGR_TX_PROG_HS_THRESH) &&
+			    (txtid->last_num_timeout <
+			     (txtid->last_num_amsdu >>
+						AGGR_TX_PROG_HS_FACTOR))) {
+				aggr->tx_amsdu_progressive_hispeed = true;
+				aggr_tx_config(vif,
+						aggr->tx_amsdu_seq_pkt,
+						true,
+						AGGR_TX_PROG_HS_MAX_NUM,
+						AGGR_TX_MAX_PDU_SIZE,
+						AGGR_TX_PROG_HS_TIMEOUT);
+
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+					"%s: AMSDU change to high speed %d %d\n",
+					__func__,
+					txtid->last_num_amsdu,
+					txtid->last_num_timeout);
+			}
+		} else if (aggr->tx_amsdu_progressive_hispeed) {
+			if ((txtid->last_num_amsdu < AGGR_TX_PROG_NS_THRESH) &&
+			    (txtid->last_num_timeout >
+			     (txtid->last_num_amsdu >>
+						AGGR_TX_PROG_NS_FACTOR))) {
+				aggr->tx_amsdu_progressive_hispeed = false;
+				aggr_tx_config(vif,
+						aggr->tx_amsdu_seq_pkt,
+						true,
+						AGGR_TX_MAX_NUM,
+						AGGR_TX_MAX_PDU_SIZE,
+						AGGR_TX_TIMEOUT);
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+					"%s: AMSDU back to normal speed %d %d\n",
+					__func__,
+					txtid->last_num_amsdu,
+					txtid->last_num_timeout);
+			}
+		}
+
+		/* reset the counters */
+		txtid->last_num_amsdu = 0;
+		txtid->last_num_timeout = 0;
+
+		/* Update to current time */
+		txtid->last_check_time = now;
+	}
+
+	return;
+}
+
 static void aggr_tx_reset_aggr(struct txtid *txtid, bool free_buf,
 				bool timer_stop)
 {
@@ -2278,6 +2352,7 @@ static void aggr_tx_reset_aggr(struct txtid *txtid, bool free_buf,
 static void aggr_tx_delete_tid_state(struct aggr_conn_info *aggr_conn, u8 tid)
 {
 	struct txtid *txtid;
+	struct aggr_info *aggr = aggr_conn->aggr_cntxt;
 
 	txtid = AGGR_GET_TXTID(aggr_conn, tid);
 
@@ -2293,6 +2368,24 @@ static void aggr_tx_delete_tid_state(struct aggr_conn_info *aggr_conn, u8 tid)
 	txtid->num_flush = 0;
 	txtid->num_tx_null = 0;
 	txtid->num_overflow = 0;
+
+	txtid->last_check_time = 0;
+	txtid->last_num_amsdu = 0;
+	txtid->last_num_timeout = 0;
+	if (aggr->tx_amsdu_progressive_hispeed) {
+		aggr->tx_amsdu_progressive_hispeed = false;
+		aggr_tx_config(aggr->vif,
+				aggr->tx_amsdu_seq_pkt,
+				true,
+				AGGR_TX_MAX_NUM,
+				AGGR_TX_MAX_PDU_SIZE,
+				AGGR_TX_TIMEOUT);
+
+		ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+				"%s: AMSDU reset to normal speed\n",
+				__func__);
+	}
+
 	spin_unlock_bh(&txtid->lock);
 
 	return;
@@ -2498,6 +2591,7 @@ static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta,
 
 					*skb = amsdu_skb;
 					aggr_tx_reset_aggr(txtid, false, true);
+					aggr_tx_progressive(txtid, false);
 					spin_unlock_bh(&txtid->lock);
 
 					return AGGR_TX_DONE;
@@ -2580,6 +2674,8 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 
 	skb = amsdu_skb;
 	aggr_tx_reset_aggr(txtid, false, timer_stop);
+	if (!timer_stop)
+		aggr_tx_progressive(txtid, true);
 	spin_unlock_bh(&txtid->lock);
 
 	spin_lock_bh(&ar->lock);
@@ -2920,6 +3016,7 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 
 void aggr_tx_config(struct ath6kl_vif *vif,
 			bool tx_amsdu_seq_pkt,
+			bool tx_amsdu_progressive,
 			u8 tx_amsdu_max_aggr_num,
 			u16 tx_amsdu_max_pdu_len,
 			u16 tx_amsdu_timeout)
@@ -2929,6 +3026,15 @@ void aggr_tx_config(struct ath6kl_vif *vif,
 		struct aggr_info *aggr = vif->aggr_cntxt;
 
 		aggr->tx_amsdu_seq_pkt = tx_amsdu_seq_pkt;
+
+		if (!tx_amsdu_progressive &&
+			aggr->tx_amsdu_progressive)
+			aggr->tx_amsdu_progressive_hispeed = false;
+		else if (tx_amsdu_progressive &&
+			!aggr->tx_amsdu_progressive) {
+			; /* TODO : reset all last_XXXX in txtid */
+		}
+		aggr->tx_amsdu_progressive = tx_amsdu_progressive;
 
 		if (tx_amsdu_timeout == 0)
 			tx_amsdu_timeout = AGGR_TX_TIMEOUT;
@@ -2950,13 +3056,14 @@ void aggr_tx_config(struct ath6kl_vif *vif,
 		aggr->tx_amsdu_max_aggr_num = tx_amsdu_max_aggr_num;
 
 		ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
-			   "%s: aggr. config, vif_ifx=%d, tx_amsdu_max_pdu_len=%d, tx_amsdu_max_aggr_num=%d tx_amsdu_timeout=%d, tx_amsdu_seq_pkt=%d\n",
+			   "%s: aggr-conf, vif%d, pdu_len=%d, aggr_num=%d timeout=%d, seq_pkt=%d, prog=%d\n",
 			   __func__,
 			   vif->fw_vif_idx,
 			   aggr->tx_amsdu_max_pdu_len,
 			   aggr->tx_amsdu_max_aggr_num,
 			   aggr->tx_amsdu_timeout,
-			   aggr->tx_amsdu_seq_pkt);
+			   aggr->tx_amsdu_seq_pkt,
+			   aggr->tx_amsdu_progressive);
 	}
 
 	return;
@@ -2995,6 +3102,7 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 
 	aggr->tx_amsdu_enable = true;
 	aggr->tx_amsdu_seq_pkt = true;
+	aggr->tx_amsdu_progressive = false;
 	aggr->tx_amsdu_max_aggr_num = AGGR_TX_MAX_NUM;
 	aggr->tx_amsdu_max_aggr_len = AGGR_TX_MAX_AGGR_SIZE - 100;
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;
@@ -3155,11 +3263,11 @@ void aggr_module_destroy_conn(struct aggr_conn_info *aggr_conn)
 	for (i = 0; i < NUM_OF_TIDS; i++) {
 		rxtid = AGGR_GET_RXTID(aggr_conn, i);
 
-	if (rxtid->tid_timer_scheduled) {
-		del_timer(&rxtid->tid_timer);
-		rxtid->tid_timer_scheduled = false;
-		rxtid->continuous_count = 0;
-	}
+		if (rxtid->tid_timer_scheduled) {
+			del_timer(&rxtid->tid_timer);
+			rxtid->tid_timer_scheduled = false;
+			rxtid->continuous_count = 0;
+		}
 
 		if (rxtid->hold_q) {
 			for (k = 0; k < rxtid->hold_q_sz; k++)

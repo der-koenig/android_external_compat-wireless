@@ -47,7 +47,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.282)
+#define __BUILD_VERSION_ (3.5.0.288)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -603,6 +603,14 @@ enum ath6kl_recovery_mode {
 #define AGGR_TX_MAX_NUM		6
 #define AGGR_TX_TIMEOUT         4	/* in ms */
 
+#define AGGR_TX_PROG_HS_THRESH		1200
+#define AGGR_TX_PROG_HS_FACTOR		2
+#define AGGR_TX_PROG_NS_THRESH		250
+#define AGGR_TX_PROG_NS_FACTOR		4
+#define AGGR_TX_PROG_CHECK_INTVAL	(1 * HZ)
+#define AGGR_TX_PROG_HS_MAX_NUM		22
+#define AGGR_TX_PROG_HS_TIMEOUT		8	/* in ms */
+
 #define AGGR_GET_TXTID(_p, _x)           (&(_p->tx_tid[(_x)]))
 
 #define WMI_TIMEOUT (2 * HZ)
@@ -730,6 +738,12 @@ struct txtid {
 	spinlock_t lock;
 	struct ath6kl_vif *vif;
 
+	/* TX progressive */
+	unsigned long last_check_time;
+	u32 last_num_amsdu;
+	u32 last_num_timeout;
+
+	/* Statistics */
 	u32 num_pdu;
 	u32 num_amsdu;
 	u32 num_timeout;
@@ -748,6 +762,9 @@ struct aggr_info {
 	/* TX A-MSDU */
 	bool tx_amsdu_enable;	/* IOT : treat A-MPDU & A-MSDU are exclusive. */
 	bool tx_amsdu_seq_pkt;
+	bool tx_amsdu_progressive;
+	bool tx_amsdu_progressive_hispeed;	/* in high speed or not */
+
 	u8 tx_amsdu_max_aggr_num;
 	u32 tx_amsdu_max_aggr_len;
 	u16 tx_amsdu_max_pdu_len;
@@ -1148,6 +1165,7 @@ struct ath6kl_vif {
 	u32 scanband_chan;
 	struct ap_keepalive_info *ap_keepalive_ctx;
 	struct ap_acl_info *ap_acl_ctx;
+	struct ap_admc_info *ap_admc_ctx;
 	struct timer_list sche_scan_timer;
 	int sche_scan_interval;			/* in ms. */
 
@@ -1378,6 +1396,11 @@ struct ath6kl {
 	/* WAR EV119712 */
 	bool p2p_war_bad_intel_go;
 
+	/* IOT : Not to append P2P IE in concurrent STA interface */
+#define P2P_IE_IN_PROBE_REQ	(1 << 0)
+#define P2P_IE_IN_ASSOC_REQ	(1 << 1)
+	u8 p2p_ie_not_append;
+
 	bool sche_scan;
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
@@ -1583,6 +1606,7 @@ int ath6kl_start_tx(struct sk_buff *skb, struct net_device *dev);
 
 void aggr_tx_config(struct ath6kl_vif *vif,
 			bool tx_amsdu_seq_pkt,
+			bool tx_amsdu_progressive,
 			u8 tx_amsdu_max_aggr_num,
 			u16 tx_amsdu_max_pdu_len,
 			u16 tx_amsdu_timeout);
@@ -1617,7 +1641,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel,
 				u8 *beacon, u8 beacon_len);
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
-				u8 assoc_req_len, u8 *assoc_info,
+				u16 assoc_req_len, u8 *assoc_info,
 				u8 apsd_info, u8 phymode);
 void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 			     u8 *bssid, u8 assoc_resp_len,

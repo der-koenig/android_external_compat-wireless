@@ -2441,7 +2441,12 @@ int ath6kl_htc_pipe_stop_netif_queue_full(struct htc_target *target)
 int ath6kl_htc_pipe_wmm_schedule_change(struct htc_target *target,
 		bool change)
 {
-	return 0;
+	struct ath6kl *ar = target->dev->ar;
+
+	if (ar->target_type == TARGET_TYPE_AR6006) /* For KingFisher Only */
+		return 1;
+	else
+		return 0;
 }
 
 int ath6kl_htc_pipe_change_credit_bypass(struct htc_target *target,

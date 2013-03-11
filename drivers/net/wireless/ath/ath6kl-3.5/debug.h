@@ -146,6 +146,7 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_HIF		= BIT(6),
 	ATH6KL_DBG_IRQ		= BIT(7),     /* interrupt processing */
 	ATH6KL_DBG_ACL		= BIT(8),     /* access control list */
+	ATH6KL_DBG_ADMC		= ATH6KL_DBG_ACL,     /* admission control */
 	/* hole */
 	ATH6KL_DBG_WMI          = BIT(10),    /* wmi tracing */
 	ATH6KL_DBG_TRC	        = BIT(11),    /* generic func tracing */

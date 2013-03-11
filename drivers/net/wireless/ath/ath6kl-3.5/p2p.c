@@ -681,11 +681,47 @@ void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar)
 	return;
 }
 
+/* before calling this, p2p_flowctrl_lock shall be acquired,
+  *  pcontainer, preclaim shall be init by caller.
+  */
+void ath6kl_p2p_flowctrl_conn_collect_by_conn(
+	struct ath6kl_fw_conn_list *fw_conn,
+	struct list_head *pcontainer,
+	int *preclaim)
+{
+	struct htc_packet *packet, *tmp_pkt;
+
+	if (!list_empty(&fw_conn->re_queue)) {
+		list_for_each_entry_safe(packet,
+					tmp_pkt,
+					&fw_conn->re_queue,
+					list) {
+			list_del(&packet->list);
+			packet->status = 0;
+			list_add_tail(&packet->list, pcontainer);
+			fw_conn->sche_tx_queued--;
+			*preclaim += 1;
+		}
+	}
+
+	if (!list_empty(&fw_conn->conn_queue)) {
+		list_for_each_entry_safe(packet,
+					tmp_pkt,
+					&fw_conn->conn_queue,
+					list) {
+			list_del(&packet->list);
+			packet->status = 0;
+			list_add_tail(&packet->list, pcontainer);
+			fw_conn->sche_tx_queued--;
+			*preclaim += 1;
+		}
+	}
+}
+
 void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar)
 {
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
-	struct htc_packet *packet, *tmp_pkt;
 	struct list_head container;
 	int i, reclaim = 0;
 
@@ -696,31 +732,9 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar)
 	for (i = 0; i < NUM_CONN; i++) {
 		spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
-		if (!list_empty(&fw_conn->re_queue)) {
-			list_for_each_entry_safe(packet,
-						tmp_pkt,
-						&fw_conn->re_queue,
-						list) {
-				list_del(&packet->list);
-				packet->status = 0;
-				list_add_tail(&packet->list, &container);
-				fw_conn->sche_tx_queued--;
-				reclaim++;
-			}
-		}
-
-		if (!list_empty(&fw_conn->conn_queue)) {
-			list_for_each_entry_safe(packet,
-						tmp_pkt,
-						&fw_conn->conn_queue,
-						list) {
-				list_del(&packet->list);
-				packet->status = 0;
-				list_add_tail(&packet->list, &container);
-				fw_conn->sche_tx_queued--;
-				reclaim++;
-			}
-		}
+		ath6kl_p2p_flowctrl_conn_collect_by_conn(fw_conn,
+			&container,
+			&reclaim);
 		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	}
 
@@ -763,7 +777,6 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
-	struct htc_packet *packet, *tmp_pkt;
 	struct list_head container;
 	int i, reclaim = 0;
 	u8 vif_conn_id = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
@@ -785,34 +798,9 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(
 		if (fw_conn->parent_connId != vif_conn_id)
 			continue;
 
-		if (!list_empty(&fw_conn->re_queue)) {
-			list_for_each_entry_safe(packet,
-					tmp_pkt,
-					&fw_conn->re_queue,
-					list) {
-
-				list_del(&packet->list);
-				packet->status = 0;
-				list_add_tail(&packet->list,
-					&container);
-				fw_conn->sche_tx_queued--;
-				reclaim++;
-			}
-		}
-
-		if (!list_empty(&fw_conn->conn_queue)) {
-			list_for_each_entry_safe(packet,
-					tmp_pkt,
-					&fw_conn->conn_queue,
-					list) {
-				list_del(&packet->list);
-				packet->status = 0;
-				list_add_tail(&packet->list,
-					&container);
-				fw_conn->sche_tx_queued--;
-				reclaim++;
-			}
-		}
+		ath6kl_p2p_flowctrl_conn_collect_by_conn(fw_conn,
+			&container,
+			&reclaim);
 	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
@@ -1112,21 +1100,23 @@ void ath6kl_p2p_flowctrl_set_conn_id(struct ath6kl_vif *vif,
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
+	struct list_head container;
+	int reclaim = 0;
 
 	WARN_ON(!p2p_flowctrl);
+
+	INIT_LIST_HEAD(&container);
 
 	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	fw_conn = &p2p_flowctrl->fw_conn_list[connId];
 	if (mac_addr) {
 		if (fw_conn->sche_tx_queued != 0) {
-			ath6kl_err("memory leakage? [%d/%02x] %d,%d,%d,%d\n",
-					fw_conn->connId,
-					fw_conn->connect_status,
-					fw_conn->sche_tx,
-					fw_conn->sche_re_tx,
-					fw_conn->sche_re_tx_aging,
-					fw_conn->sche_tx_queued);
-			WARN_ON(1);
+			ath6kl_p2p_flowctrl_conn_collect_by_conn(fw_conn,
+				&container,
+				&reclaim);
+			spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+			ath6kl_tx_complete(ar->htc_target, &container);
+			spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 		}
 
 		fw_conn->vif = vif;
@@ -1402,5 +1392,24 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 	}
 
 	return;
+}
+
+bool ath6kl_p2p_ie_append(struct ath6kl_vif *vif, u8 mgmt_frame_type)
+{
+	struct ath6kl *ar = vif->ar;
+
+	/*
+	 * IOT : Some older APs' implementation may reject connection if
+	 *       concuurrent STA interface include P2P IEs even these APs
+	 *       don't understand P2P IEs.
+	 */
+	if (ar->p2p_concurrent &&
+	    ar->p2p_dedicate &&
+	    (vif->fw_vif_idx == 0) &&
+	    (vif->nw_type == INFRA_NETWORK) &&
+	    (ar->p2p_ie_not_append & mgmt_frame_type))
+		return false;
+
+	return true;
 }
 

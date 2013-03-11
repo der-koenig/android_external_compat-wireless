@@ -317,7 +317,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 14336,
 		.board_addr			= 0x46c800,
-		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED|
+						ATH6KL_HW_USB_FLOWCTRL,
 
 		.fw = {
 			.dir		= AR6006_HW_1_0_FW_DIR,
@@ -338,7 +339,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 11264,
 		.board_addr			= 0x45fc00,
-		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED|
+						ATH6KL_HW_USB_FLOWCTRL,
 
 		.fw = {
 			.dir		= AR6006_HW_1_1_FW_DIR,
@@ -888,7 +890,8 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		param |= HI_OPTION_DISABLE_P2P_DEDICATE;
 
 #ifndef CONFIG_ANDROID
-	param |= HI_OPTION_DISABLE_RTT;
+	if (ar->version.target_ver == AR6004_HW_1_3_VERSION)
+		param |= HI_OPTION_DISABLE_RTT;
 #endif
 
 	if (param & HI_OPTION_DISABLE_P2P_DEDICATE ||
@@ -958,6 +961,23 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	};
 #endif
 
+	/* set one shot noa enable to firmware */
+	param = 0;
+	if (ath6kl_bmi_read(ar,
+			ath6kl_get_hi_item_addr(ar,
+			HI_ITEM(hi_option_flag2)),
+			(u8 *)&param, 4) != 0) {
+		ath6kl_err("bmi_read_memory for setting fwmode failed\n");
+		return -EIO;
+	}
+	param |= HI_OPTION_ONE_SHOT_NOA_ENABLE ;
+	if (ath6kl_bmi_write(ar,
+			ath6kl_get_hi_item_addr(ar,
+			HI_ITEM(hi_option_flag2)),
+			(u8 *)&param, 4) != 0) {
+		ath6kl_err("bmi_write_memory for one shot noa enable flag failed\n");
+		return -EIO;
+	};
 	/* set the firmware mode to STA/IBSS/AP */
 	param = 0;
 

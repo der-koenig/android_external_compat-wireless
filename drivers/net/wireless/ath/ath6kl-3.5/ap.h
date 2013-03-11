@@ -108,6 +108,43 @@ struct ap_acl_info {
 	u8 *last_acl_config;
 };
 
+/* Admission-Control mode */
+#define ATH6KL_AP_ADMC_ASSOC_REQ_MAX_LEN	(1200)
+#define ATH6KL_AP_ADMC_ASSOC_REQ_TIMEOUT	(500)	/* in ms. */
+
+enum ap_admc_mode {
+	AP_ADMC_MODE_DISABLE = 0,	/* by firmware */
+	AP_ADMC_MODE_ACCEPT_ALWAYS = 1,	/* always accept */
+};
+
+enum ap_admc_action {
+	AP_ADMC_ACT_ACCPET = 0,
+	AP_ADMC_ACT_TIMEOUT = 1,
+	AP_ADMC_ACT_FLUSH = 2,
+};
+
+struct ap_admc_assoc_req {
+	struct list_head list;
+
+	struct ap_admc_info *ap_admc;
+	struct timer_list reclaim_timer;
+	u8 raw_frame[ATH6KL_AP_ADMC_ASSOC_REQ_MAX_LEN];
+	u16 frame_len;
+	u8 *sta_mac;
+	enum ap_admc_action action;
+};
+
+struct ap_admc_info {
+	struct ath6kl_vif *vif;
+
+	enum ap_admc_mode admc_mode;
+	spinlock_t assoc_req_lock;
+	struct list_head assoc_req_list;
+	int assoc_req_timeout;
+
+	u32 assoc_req_cnt;
+};
+
 /*
  * WLAN_EID_HT_INFORMATION & struct ieee80211_ht_info in ieee80211.h
  * is changed to WLAN_EID_HT_OPERATION & struct ieee80211_ht_operation
@@ -146,6 +183,23 @@ int ath6kl_ap_acl_config_mac_list(struct ath6kl_vif *vif,
 				u8 *mac_addr, bool removed);
 int ath6kl_ap_acl_config_mac_list_reset(struct ath6kl_vif *vif);
 int ath6kl_ap_acl_dump(struct ath6kl *ar, u8 *buf, int buf_len);
+struct ap_admc_info *ath6kl_ap_admc_init(struct ath6kl_vif *vif,
+	enum ap_admc_mode mode);
+void ath6kl_ap_admc_deinit(struct ath6kl_vif *vif);
+int ath6kl_ap_admc_start(struct ath6kl_vif *vif);
+int ath6kl_ap_admc_stop(struct ath6kl_vif *vif);
+void ath6kl_ap_admc_assoc_req(struct ath6kl_vif *vif,
+	u8 *assocReq,
+	u16 assocReq_len,
+	u8 req_type,
+	u8 fw_status);
+void ath6kl_ap_admc_assoc_req_fetch(struct ath6kl_vif *vif,
+	struct wmi_connect_event *ev,
+	u8 **assocReq,
+	u16 *assocReq_len);
+void ath6kl_ap_admc_assoc_req_release(struct ath6kl_vif *vif,
+	u8 *assocReq);
+int ath6kl_ap_admc_dump(struct ath6kl *ar, u8 *buf, int buf_len);
 int ath6kl_ap_ht_update_ies(struct ath6kl_vif *vif);
 void ath6kl_ap_beacon_info(struct ath6kl_vif *vif, u8 *beacon, u8 beacon_len);
 void ath6kl_ap_ch_switch(struct ath6kl_vif *vif);

@@ -526,9 +526,8 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 	vif->connect_ctrl_flags &= ~CONNECT_WPS_FLAG;
 
 	/*
-	 * Filter out RSN/WPA IE(s)
+	 * Filter out RSN/WPA or P2P/WFD IE(s)
 	 */
-
 	if (ies && ies_len) {
 		buf = kmalloc(ies_len, GFP_KERNEL);
 		if (buf == NULL)
@@ -538,9 +537,17 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 		while (pos + 1 < ies + ies_len) {
 			if (pos + 2 + pos[1] > ies + ies_len)
 				break;
-			if (!(ath6kl_is_wpa_ie(pos) || ath6kl_is_rsn_ie(pos))) {
-				memcpy(buf + len, pos, 2 + pos[1]);
-				len += 2 + pos[1];
+			if (!(ath6kl_is_wpa_ie(pos) ||
+			      ath6kl_is_rsn_ie(pos))) {
+				if ((ath6kl_is_p2p_ie(pos) ||
+				     ath6kl_is_wfd_ie(pos)) &&
+				    !ath6kl_p2p_ie_append(vif,
+							P2P_IE_IN_ASSOC_REQ))
+					ath6kl_info("Remove Asso's P2P IE\n");
+				else {
+					memcpy(buf + len, pos, 2 + pos[1]);
+					len += 2 + pos[1];
+				}
 			}
 
 			if (ath6kl_is_wps_ie(pos))
@@ -1502,6 +1509,47 @@ static int ath6kl_scan_timeout_cal(struct ath6kl *ar)
 	return ATH6KL_SCAN_TIMEOUT_SHORT;
 }
 
+static int ath6kl_set_probe_req_ies(struct ath6kl_vif *vif, const u8 *ies,
+				    size_t ies_len)
+{
+	struct ath6kl *ar = vif->ar;
+	const u8 *pos;
+	u8 *buf = NULL;
+	size_t len = 0;
+	int ret;
+
+	/*
+	 * Filter out P2P/WFD IE(s)
+	 */
+	if (ies && ies_len) {
+		buf = kmalloc(ies_len, GFP_KERNEL);
+		if (buf == NULL)
+			return -ENOMEM;
+		pos = ies;
+
+		while (pos + 1 < ies + ies_len) {
+			if (pos + 2 + pos[1] > ies + ies_len)
+				break;
+			if ((ath6kl_is_p2p_ie(pos) ||
+			     ath6kl_is_wfd_ie(pos)) &&
+			     !ath6kl_p2p_ie_append(vif,
+						P2P_IE_IN_PROBE_REQ))
+				ath6kl_info("Remove Probe's P2P IE\n");
+			else {
+				memcpy(buf + len, pos, 2 + pos[1]);
+				len += 2 + pos[1];
+			}
+			pos += 2 + pos[1];
+		}
+	}
+
+	ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+				       WMI_FRAME_PROBE_REQ, buf, len);
+	kfree(buf);
+
+	return ret;
+}
+
 static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 				struct cfg80211_scan_request *request)
 {
@@ -1624,9 +1672,9 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	if ((request->ie) &&
 	    (!sche_scan_trig)) {
-		ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
-					       WMI_FRAME_PROBE_REQ,
-					       request->ie, request->ie_len);
+		ret = ath6kl_set_probe_req_ies(vif,
+						request->ie,
+						request->ie_len);
 		if (ret) {
 			ath6kl_err("failed to set Probe Request appie for "
 				   "scan");
@@ -1753,15 +1801,16 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		vif->scan_req = request;
 		mod_timer(&vif->vifscan_timer,
 			jiffies + ath6kl_scan_timeout_cal(ar));
+#ifdef USB_AUTO_SUSPEND
+		ath6kl_hif_auto_pm_disable(ar);
+#endif
 	}
 
 	kfree(channels);
 
 	up(&ar->sem);
 
-#ifdef USB_AUTO_SUSPEND
-	ath6kl_hif_auto_pm_disable(ar);
-#endif
+
 
 	return ret;
 }
@@ -4166,6 +4215,9 @@ static int ath6kl_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 	/* Stop ACL. */
 	ath6kl_ap_acl_stop(vif);
 
+	/* Stop Admission-Control */
+	ath6kl_ap_admc_stop(vif);
+
 	ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
 	clear_bit(CONNECTED, &vif->flags);
 	ath6kl_judge_roam_parameter(vif, true);
@@ -5232,6 +5284,8 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 	else
 		ar->p2p_war_bad_intel_go = false;
 
+	ar->p2p_ie_not_append = 0;
+
 	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
 		" %s dedicate p2p-device,"
 		" multi-channel-concurrent %s, p2p-compat %s\n",
@@ -5622,6 +5676,12 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+	vif->ap_admc_ctx = ath6kl_ap_admc_init(vif, AP_ADMC_MODE_ACCEPT_ALWAYS);
+	if (!vif->ap_admc_ctx) {
+		ath6kl_err("failed to initialize ap_admc\n");
+		return -ENOMEM;
+	}
+
 	setup_timer(&vif->disconnect_timer, disconnect_timer_handler,
 		    (unsigned long) vif->ndev);
 	set_bit(WMM_ENABLED, &vif->flags);
@@ -5676,6 +5736,8 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 	ath6kl_ap_keepalive_deinit(vif);
 
 	ath6kl_ap_acl_deinit(vif);
+
+	ath6kl_ap_admc_deinit(vif);
 
 	ath6kl_sched_scan_deinit(vif);
 
@@ -5761,6 +5823,7 @@ err:
 	ath6kl_p2p_ps_deinit(vif);
 	ath6kl_ap_keepalive_deinit(vif);
 	ath6kl_ap_acl_deinit(vif);
+	ath6kl_ap_admc_deinit(vif);
 	free_netdev(ndev);
 	return NULL;
 }
@@ -6022,11 +6085,14 @@ int ath6kl_enable_wow_hb(struct ath6kl *ar)
 		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
 				WOW_LIST_ID, i);
 
-	filter |= WOW_FILTER_OPTION_MAGIC_PACKET | WOW_FILTER_OPTION_NWK_DISASSOC;
+	filter |= WOW_FILTER_OPTION_MAGIC_PACKET |
+		WOW_FILTER_OPTION_NWK_DISASSOC;
 
 	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
-	if (vif->auth_mode == WPA2_AUTH_CCKM || vif->auth_mode == WPA2_PSK_AUTH
-		|| vif->auth_mode == WPA_AUTH_CCKM || vif->auth_mode == WPA_PSK_AUTH) {
+	if (vif->auth_mode == WPA2_AUTH_CCKM ||
+			vif->auth_mode == WPA2_PSK_AUTH ||
+			vif->auth_mode == WPA_AUTH_CCKM ||
+			vif->auth_mode == WPA_PSK_AUTH) {
 		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
 	}
 

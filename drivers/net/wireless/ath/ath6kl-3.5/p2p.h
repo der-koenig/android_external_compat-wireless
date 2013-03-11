@@ -188,6 +188,9 @@ int ath6kl_p2p_utils_check_port(struct ath6kl_vif *vif,
 
 struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 	struct ath6kl *ar);
+void ath6kl_p2p_flowctrl_conn_collect_by_conn(
+	struct ath6kl_fw_conn_list *fw_conn, struct list_head *pcontainer,
+	int *preclaim);
 void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(struct ath6kl_vif *vif);
@@ -215,5 +218,6 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 				u8 assoc_req_len,
 				u8 assoc_resp_len,
 				u8 *assoc_info);
+bool ath6kl_p2p_ie_append(struct ath6kl_vif *vif, u8 mgmt_frame_type);
 #endif
 

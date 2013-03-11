@@ -347,6 +347,9 @@ struct host_interest {
 /*Enable watchdog*/
 #define HI_OPTION_FW_WATCHDOG_ENABLE          0x200000
 
+/* Enable one shot noa */
+#define HI_OPTION_ONE_SHOT_NOA_ENABLE         0x2000000 
+
 /*Enable/Disable Wifi Heart Beat Feature*/
 #define HI_OPTION_ENABLE_WLAN_HB              0x10000000
 

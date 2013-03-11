@@ -812,6 +812,415 @@ int ath6kl_ap_acl_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 	return len;
 }
 
+static inline void _ap_amdc_assoc_req_free(struct ap_admc_info *ap_admc,
+	struct ap_admc_assoc_req *admc_assoc_req)
+{
+	if (admc_assoc_req) {
+		/*
+		 * TODO: Check admc_assoc_req->action then do something.
+		 */
+		kfree(admc_assoc_req);
+	} else {
+		/*
+		 * This STA reject by Admission-Control check rule
+		 * or firmware's frame parser.
+		 */
+		;
+	}
+
+	return;
+}
+
+static void _ap_amdc_assoc_req_timeout(unsigned long arg)
+{
+	struct ap_admc_assoc_req *admc_assoc_req;
+	struct ap_admc_info *ap_admc;
+
+	admc_assoc_req = (struct ap_admc_assoc_req *)arg;
+	ap_admc = admc_assoc_req->ap_admc;
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc timeout assoResp %p len %d depth %d\n",
+			admc_assoc_req,
+			admc_assoc_req->frame_len,
+			ap_admc->assoc_req_cnt);
+
+	admc_assoc_req->action = AP_ADMC_ACT_TIMEOUT;
+	list_del(&admc_assoc_req->list);
+	ap_admc->assoc_req_cnt--;
+
+	_ap_amdc_assoc_req_free(ap_admc, admc_assoc_req);
+
+	return;
+}
+
+static inline void _ap_amdc_assoc_req_add(struct ap_admc_info *ap_admc,
+	u8 *frm,
+	u16 len)
+{
+	struct ieee80211_mgmt *assocReq;
+	struct ap_admc_assoc_req *admc_assoc_req;
+
+	if (len > ATH6KL_AP_ADMC_ASSOC_REQ_MAX_LEN) {
+		/* Is it possible? */
+		ath6kl_err("Not support so large assoc_req frame\n");
+		return;
+	}
+
+	admc_assoc_req = kzalloc(sizeof(struct ap_admc_assoc_req), GFP_KERNEL);
+	if (!admc_assoc_req) {
+		ath6kl_err("failed to alloc memory for admc_assoc_req\n");
+		return;
+	}
+
+	if (ap_admc->assoc_req_cnt)
+		ath6kl_info("Last assoc_req not yet finish!");
+
+	/* Add assocReq info. */
+	admc_assoc_req->ap_admc = ap_admc;
+	admc_assoc_req->frame_len = len;
+	memcpy(admc_assoc_req->raw_frame, frm, len);
+	assocReq = (struct ieee80211_mgmt *)(admc_assoc_req->raw_frame);
+	admc_assoc_req->sta_mac = assocReq->sa;
+	admc_assoc_req->action = AP_ADMC_ACT_ACCPET;
+
+	/*
+	 * It still possbile that the host accept the STA but something wrong
+	 * when sending assocResp. In this case, the target will not send
+	 * connection event and need a timer to reclaim this item.
+	 */
+	init_timer(&admc_assoc_req->reclaim_timer);
+	admc_assoc_req->reclaim_timer.function = _ap_amdc_assoc_req_timeout;
+	admc_assoc_req->reclaim_timer.data = (unsigned long) admc_assoc_req;
+	mod_timer(&admc_assoc_req->reclaim_timer,
+		jiffies + msecs_to_jiffies(ap_admc->assoc_req_timeout));
+
+	spin_lock_bh(&ap_admc->assoc_req_lock);
+	list_add_tail(&admc_assoc_req->list, &ap_admc->assoc_req_list);
+	ap_admc->assoc_req_cnt++;
+	spin_unlock_bh(&ap_admc->assoc_req_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc add assoResp len %d depth %d\n",
+			len,
+			ap_admc->assoc_req_cnt);
+
+	return;
+}
+
+static inline struct ap_admc_assoc_req *_ap_amdc_assoc_req_search(
+	struct ap_admc_info *ap_admc,
+	u8 *sta_mac)
+{
+	struct ap_admc_assoc_req *admc_assoc_req, *tmp;
+
+	/*
+	 * Here assume the first matched address is the STA we want
+	 * to handle if more than one the same addresses in the list.
+	 */
+	admc_assoc_req = NULL;
+	if (!list_empty(&ap_admc->assoc_req_list)) {
+		list_for_each_entry_safe(admc_assoc_req,
+					tmp,
+					&ap_admc->assoc_req_list,
+					list) {
+			if (memcmp(admc_assoc_req->sta_mac,
+					sta_mac,
+					ETH_ALEN) == 0)
+				break;
+		}
+	}
+
+	if (admc_assoc_req) {
+		spin_lock_bh(&ap_admc->assoc_req_lock);
+		del_timer(&admc_assoc_req->reclaim_timer);
+		list_del(&admc_assoc_req->list);
+		ap_admc->assoc_req_cnt--;
+		spin_unlock_bh(&ap_admc->assoc_req_lock);
+	}
+
+	return admc_assoc_req;
+}
+
+static inline void _ap_amdc_assoc_req_flush(struct ap_admc_info *ap_admc)
+{
+	struct ap_admc_assoc_req *admc_assoc_req, *tmp;
+	int freed = 0;
+
+	spin_lock_bh(&ap_admc->assoc_req_lock);
+	list_for_each_entry_safe(admc_assoc_req,
+				tmp,
+				&ap_admc->assoc_req_list,
+				list) {
+		admc_assoc_req->action = AP_ADMC_ACT_FLUSH;
+		del_timer(&admc_assoc_req->reclaim_timer);
+		list_del(&admc_assoc_req->list);
+		ap_admc->assoc_req_cnt--;
+
+		_ap_amdc_assoc_req_free(ap_admc, admc_assoc_req);
+		freed++;
+	}
+	spin_unlock_bh(&ap_admc->assoc_req_lock);
+
+	WARN_ON(ap_admc->assoc_req_cnt);
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc flush %d\n",
+			freed);
+
+	return;
+}
+
+static bool _ap_amdc_check(struct ap_admc_info *ap_admc,
+	u8 *frm,
+	u8 req_type,
+	u8 **sta_mac,
+	u8 *reason_code)
+{
+	struct ieee80211_mgmt *assocReq = (struct ieee80211_mgmt *)frm;
+	bool accept = true;
+
+	*reason_code = WLAN_STATUS_SUCCESS;
+
+	if (ap_admc->admc_mode == AP_ADMC_MODE_ACCEPT_ALWAYS) {
+		/* Assume the target already check DA & BSSID already. */
+		*sta_mac = assocReq->sa;
+
+		ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc check %02x:%02x:%02x:%02x:%02x:%02x\n",
+			assocReq->sa[0], assocReq->sa[1], assocReq->sa[2],
+			assocReq->sa[3], assocReq->sa[4], assocReq->sa[5]);
+	} else {
+		; /* TODO */
+	}
+
+	return accept;
+}
+
+struct ap_admc_info *ath6kl_ap_admc_init(struct ath6kl_vif *vif,
+	enum ap_admc_mode mode)
+{
+	struct ap_admc_info *ap_admc;
+
+	ap_admc = kzalloc(sizeof(struct ap_admc_info), GFP_KERNEL);
+	if (!ap_admc) {
+		ath6kl_err("failed to alloc memory for ap_admc\n");
+		return NULL;
+	}
+
+	ap_admc->vif = vif;
+	ap_admc->admc_mode = mode;
+	ap_admc->assoc_req_timeout = ATH6KL_AP_ADMC_ASSOC_REQ_TIMEOUT;
+	spin_lock_init(&ap_admc->assoc_req_lock);
+	INIT_LIST_HEAD(&ap_admc->assoc_req_list);
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc init (vif%d) mode %d timeout %d\n",
+			vif->fw_vif_idx,
+			ap_admc->admc_mode,
+			ap_admc->assoc_req_timeout);
+
+	return ap_admc;
+}
+
+void ath6kl_ap_admc_deinit(struct ath6kl_vif *vif)
+{
+	struct ap_admc_info *ap_admc = vif->ap_admc_ctx;
+
+	if (ap_admc != NULL) {
+		_ap_amdc_assoc_req_flush(ap_admc);
+		kfree(ap_admc);
+	}
+
+	vif->ap_admc_ctx = NULL;
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc deinit (vif%d)\n",
+			vif->fw_vif_idx);
+
+	return;
+}
+
+int ath6kl_ap_admc_start(struct ath6kl_vif *vif)
+{
+	struct ap_admc_info *ap_admc = vif->ap_admc_ctx;
+	bool enabled = false;
+	int ret;
+
+	if ((ap_admc) &&
+	    (ap_admc->admc_mode != AP_ADMC_MODE_DISABLE))
+		enabled = true;
+
+	ret = ath6kl_wmi_set_assoc_req_relay_cmd(vif->ar->wmi,
+					vif->fw_vif_idx,
+					enabled);
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc start %s (vif%d) ret %d\n",
+			(enabled ? "enable" : "disable"),
+			vif->fw_vif_idx,
+			ret);
+
+	return ret;
+}
+
+int ath6kl_ap_admc_stop(struct ath6kl_vif *vif)
+{
+	struct ap_admc_info *ap_admc = vif->ap_admc_ctx;
+	int ret;
+
+	if (ap_admc)
+		_ap_amdc_assoc_req_flush(ap_admc);
+
+	ret = ath6kl_wmi_set_assoc_req_relay_cmd(vif->ar->wmi,
+					vif->fw_vif_idx,
+					false);
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc stop (vif%d) ret %d\n",
+			vif->fw_vif_idx,
+			ret);
+
+	return 0;
+}
+
+void ath6kl_ap_admc_assoc_req(struct ath6kl_vif *vif,
+	u8 *assocReq,
+	u16 assocReq_len,
+	u8 req_type,
+	u8 fw_status)
+{
+	struct ap_admc_info *ap_admc = vif->ap_admc_ctx;
+	u8 reason_code, *sta_mac = NULL;
+	bool accept;
+
+	BUG_ON(!ap_admc);
+	BUG_ON(ap_admc->admc_mode == AP_ADMC_MODE_DISABLE);
+
+	if (vif->nw_type == AP_NETWORK) {
+		accept = _ap_amdc_check(ap_admc,
+					assocReq,
+					req_type,
+					&sta_mac,
+					&reason_code);
+		if (ath6kl_wmi_send_assoc_resp_cmd(vif->ar->wmi,
+						vif->fw_vif_idx,
+						accept,
+						reason_code,
+						fw_status,
+						sta_mac,
+						req_type))
+			ath6kl_err("ap_admc assoResp fail (vif%d)\n",
+					vif->fw_vif_idx);
+
+		/* Only add into list for successful case. */
+		if ((fw_status == WLAN_STATUS_SUCCESS) &&
+		    accept)
+			_ap_amdc_assoc_req_add(ap_admc,
+						assocReq,
+						assocReq_len);
+		else
+			_ap_amdc_assoc_req_free(ap_admc, NULL);
+	} else
+		WARN_ON(1);
+
+	return;
+}
+
+void ath6kl_ap_admc_assoc_req_fetch(struct ath6kl_vif *vif,
+	struct wmi_connect_event *ev,
+	u8 **assocReq,
+	u16 *assocReq_len)
+{
+	struct ap_admc_info *ap_admc = vif->ap_admc_ctx;
+	struct ap_admc_assoc_req *admc_assoc_req = NULL;
+	u8 *sta_mac = ev->u.ap_sta.mac_addr;
+
+	BUG_ON(!ap_admc);
+
+	*assocReq = NULL;
+	*assocReq_len = 0;
+
+	if (ap_admc->admc_mode == AP_ADMC_MODE_DISABLE) {
+		*assocReq = ev->assoc_info + ev->beacon_ie_len;
+		*assocReq_len = ev->assoc_req_len;
+
+		return;
+	}
+
+	admc_assoc_req = _ap_amdc_assoc_req_search(ap_admc, sta_mac);
+	if (admc_assoc_req) {
+		*assocReq = admc_assoc_req->raw_frame;
+		*assocReq_len = admc_assoc_req->frame_len;
+	} else
+		ath6kl_err("No asoc_req found!");
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc assoResp fetch %p %p len %d\n",
+			*assocReq,
+			admc_assoc_req,
+			*assocReq_len);
+
+	return;
+}
+
+void ath6kl_ap_admc_assoc_req_release(struct ath6kl_vif *vif,
+	u8 *assocReq)
+{
+	struct ap_admc_info *ap_admc = vif->ap_admc_ctx;
+	struct ap_admc_assoc_req *admc_assoc_req;
+
+	BUG_ON(!ap_admc);
+
+	if (ap_admc->admc_mode == AP_ADMC_MODE_DISABLE)
+		return;
+
+	admc_assoc_req = container_of(assocReq,
+					struct ap_admc_assoc_req,
+					raw_frame[0]);
+	_ap_amdc_assoc_req_free(ap_admc, admc_assoc_req);
+
+	ath6kl_dbg(ATH6KL_DBG_ADMC,
+			"ap_admc assoResp release %p %p\n",
+			assocReq,
+			admc_assoc_req);
+
+	return;
+}
+
+int ath6kl_ap_admc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
+{
+	int i, len = 0;
+
+	if (!buf)
+		return 0;
+
+	for (i = 0; i < ar->vif_max; i++) {
+		struct ath6kl_vif *vif;
+
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if ((vif) &&
+		    (vif->nw_type == AP_NETWORK)) {
+			struct ap_admc_info *ap_admc;
+
+			len += snprintf(buf + len, buf_len - len,
+					"\nVAP%d - ",
+					vif->fw_vif_idx);
+
+			ap_admc = vif->ap_admc_ctx;
+			if (!ap_admc)
+				return 0;
+
+			len += snprintf(buf + len, buf_len - len,
+					"mode %d timeout %d depth %d\n",
+					ap_admc->admc_mode,
+					ap_admc->assoc_req_timeout,
+					ap_admc->assoc_req_cnt);
+		}
+	}
+
+	return len;
+}
+
 int ath6kl_ap_ht_update_ies(struct ath6kl_vif *vif)
 {
 	int ret = 0;
