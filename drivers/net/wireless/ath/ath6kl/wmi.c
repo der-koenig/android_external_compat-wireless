@@ -1195,9 +1195,9 @@ static int ath6kl_wmi_bitrate_reply_rx(struct wmi *wmi, u8 *datap, int len)
 	return 0;
 }
 
-static int ath6kl_wmi_test_rx(struct wmi *wmi, u8 *datap, int len)
+static int ath6kl_wmi_test_rx(struct wmi *wmi, u8 *datap, int len, int evt_id)
 {
-	ath6kl_tm_rx_event(wmi->parent_dev, datap, len);
+	ath6kl_tm_rx_event(wmi->parent_dev, datap, len, evt_id);
 
 	return 0;
 }
@@ -3907,6 +3907,9 @@ static int ath6kl_wmi_proc_events_vif(struct wmi *wmi, u16 if_idx, u16 cmd_id,
 	case WMI_RX_ACTION_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_RX_ACTION_EVENTID\n");
 		return ath6kl_wmi_rx_action_event_rx(wmi, datap, len, vif);
+	case WMI_WLAN_INFO_LTE_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_WLAN_INFO_LTE_EVENTID\n");
+		return ath6kl_wmi_test_rx(wmi, datap, len, WMI_WLAN_INFO_LTE_EVENTID);
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", cmd_id);
 		return -EINVAL;
@@ -3996,7 +3999,7 @@ static int ath6kl_wmi_proc_events(struct wmi *wmi, struct sk_buff *skb)
 		break;
 	case WMI_TEST_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_TEST_EVENTID\n");
-		ret = ath6kl_wmi_test_rx(wmi, datap, len);
+		ret = ath6kl_wmi_test_rx(wmi, datap, len, WMI_TEST_EVENTID);
 		break;
 	case WMI_GET_FIXRATES_CMDID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_FIXRATES_CMDID\n");

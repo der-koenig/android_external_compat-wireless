@@ -19,13 +19,13 @@
 
 #ifdef CONFIG_NL80211_TESTMODE
 
-void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len);
+void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len, int evt_id);
 int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len);
 
 #else
 
 static inline void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf,
-				      size_t buf_len)
+				      size_t buf_len, int evt_id)
 {
 }
 

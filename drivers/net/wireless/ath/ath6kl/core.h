@@ -869,6 +869,8 @@ struct ath6kl {
 		struct sk_buff_head cdlog_queue;
 	} debug;
 #endif /* CONFIG_ATH6KL_DEBUG */
+        struct ath6kl_coex_priv * coex;
+
 };
 
 static inline struct ath6kl *ath6kl_priv(struct net_device *dev)

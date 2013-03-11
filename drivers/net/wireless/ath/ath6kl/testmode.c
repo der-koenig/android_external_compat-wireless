@@ -18,6 +18,8 @@
 #include "testmode.h"
 #include "debug.h"
 #include "wmiconfig.h"
+#include "wmiconfig.h"
+#include "wmi.h"
 
 #include <net/netlink.h>
 
@@ -35,6 +37,13 @@ enum ath6kl_tm_cmd {
 	ATH6KL_TM_CMD_TCMD		= 0,
 	ATH6KL_TM_CMD_RX_REPORT		= 1,	/* not used anymore */
 	ATH6KL_TM_CMD_WMI_CMD           = 0xF000,
+	ATH6KL_TM_CMD_CFG           = 0xF001,
+};
+
+enum ATH6KL_TM_CMD_CFGS{
+	ATH6KL_TM_CMD_DRV_CFG_ACS,
+	ATH6KL_TM_CMD_DRV_CFG_LTE,
+	ATH6KL_TM_CMD_DRV_CFG_LAST
 };
 
 #define ATH6KL_TM_DATA_MAX_LEN		5000
@@ -45,9 +54,10 @@ static const struct nla_policy ath6kl_tm_policy[ATH6KL_TM_ATTR_MAX + 1] = {
 					    .len = ATH6KL_TM_DATA_MAX_LEN },
 };
 
-void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len)
+void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len, int evt_id)
 {
 	struct sk_buff *skb;
+	uint8_t *tbuf;
 
 	if (!buf || buf_len == 0)
 		return;
@@ -57,13 +67,22 @@ void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len)
 		ath6kl_warn("failed to allocate testmode rx skb!\n");
 		return;
 	}
+	tbuf = (uint8_t*)kmalloc(buf_len+4,GFP_KERNEL);
+	if(!tbuf)
+		return;
+
+	memcpy(tbuf,(char *)&evt_id,4);
+	memcpy(tbuf+4,buf, buf_len);
+
 	if (nla_put_u32(skb, ATH6KL_TM_ATTR_CMD, ATH6KL_TM_CMD_TCMD) ||
-	    nla_put(skb, ATH6KL_TM_ATTR_DATA, buf_len, buf))
+		nla_put(skb, ATH6KL_TM_ATTR_DATA, buf_len+4, tbuf))
 		goto nla_put_failure;
 	cfg80211_testmode_event(skb, GFP_KERNEL);
+	kfree(tbuf);
 	return;
 
 nla_put_failure:
+	kfree(tbuf);
 	kfree_skb(skb);
 	ath6kl_warn("nla_put failed on testmode rx skb!\n");
 }
@@ -75,6 +94,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 	int err, buf_len;
 	void *buf;
 	u32 wmi_cmd;
+	u32 *cfg_cmd;
         struct sk_buff *skb;
 
 	err = nla_parse(tb, ATH6KL_TM_ATTR_MAX, data, len,
@@ -103,6 +123,36 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
                 ath6kl_wmi_cmd_send(ar->wmi, 0, skb, wmi_cmd, NO_SYNC_WMIFLAG);
 
                 return 0;
+	case ATH6KL_TM_CMD_CFG:
+		buf = nla_data(tb[ATH6KL_TM_ATTR_DATA]);
+
+		cfg_cmd =(u32*)buf;
+
+		if(*cfg_cmd == ATH6KL_TM_CMD_DRV_CFG_ACS){
+			struct acs_cfg{
+				u32 cfg_cmd;
+				u32 acs_config;
+			};
+			struct acs_cfg *acs = (struct acs_cfg*) buf;
+			struct ath6kl_vif *vif;
+
+			spin_lock_bh(&ar->list_lock);
+	    	list_for_each_entry(vif, &ar->vif_list, list) {
+    	    	if(vif->nw_type == AP_NETWORK){
+					ath6kl_warn("Setup ACS for AP = %d",acs->acs_config);
+        			vif->profile.ch = cpu_to_le16(acs->acs_config);
+        			ath6kl_wmi_ap_profile_commit(ar->wmi, vif->fw_vif_idx,
+                    	        &vif->profile);
+				}
+			}
+	    	spin_unlock_bh(&ar->list_lock);
+			return 0;
+
+		}else if(*cfg_cmd == ATH6KL_TM_CMD_DRV_CFG_LTE){
+			ath6kl_coex_update_wwan_data(buf);
+			return 0;
+		}
+		break;
 
 	case ATH6KL_TM_CMD_TCMD:
 		if (!tb[ATH6KL_TM_ATTR_DATA])
@@ -120,4 +170,5 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 	default:
 		return -EOPNOTSUPP;
 	}
+	return 0;
 }

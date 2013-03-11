@@ -22,4 +22,23 @@ struct sk_buff *ath6kl_wmi_get_buf(u32 size);
 void ath6kl_tm_rx_wmi_event(struct ath6kl *ar, void *buf, size_t buf_len);
 void ath6kl_wmicfg_send_stats(struct ath6kl_vif *vif,
 			      struct target_stats *stats);
+
+typedef struct ath6kl_coex_priv{
+	WMI_SET_LTE_COEX_STATE_CMD wmi_lte_data;
+
+	uint8_t prev_ap_acs_ch;
+	uint8_t ap_acs_ch;
+	uint8_t ap_evt_acs;
+	uint8_t wwan_band;
+    uint32_t sta_freq;
+    uint32_t ap_freq;
+    uint32_t wwan_freq;
+    struct ath6kl *ar;
+}coex_priv;
+
+void ath6kl_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan);
+void ath6kl_coex_update_wwan_data(void * wmi_buf);
+void ath6kl_coex_init(struct ath6kl *ar);
+void ath6kl_coex_deinit(struct ath6kl *ar);
+
 #endif

@@ -677,6 +677,8 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_BEGIN_SCAN_CMDID,
     WMI_SET_IE_CMDID,
     WMI_SET_RSSI_FILTER_CMDID,
+	WMI_AP_SET_IDLE_CLOSE_TIME_CMDID,
+	WMI_SET_LTE_COEX_STATE_CMDID,
 };
 
 
@@ -1098,6 +1100,121 @@ struct wmi_power_mode_cmd {
 	u8 pwr_mode;
 } __packed;
 
+typedef enum _eCOEX_MODE{
+    WLAN_COEX_MODE_DISABLED          = 0x0,
+    WLAN_COEX_MODE_CHANNEL_AVOIDANCE = 0x1,
+    WLAN_COEX_MODE_3WIRE             = 0x2,
+    WLAN_COEX_MODE_PWR_BACKOFF       = 0x3,
+    WLAN_COEX_MODE_NUM
+}eCOEX_MODE;
+
+typedef enum _eWWAN_STATE{
+    WWAN_STATE_DEACTIVATED   = 0x0,
+    WWAN_STATE_CONNECTED     = 0x1,
+    WWAN_STATE_IDLE          = 0x2,
+    WWAN_STATE_NUM
+}eWWAN_STATE;
+
+typedef enum _eWWAN_MODE{
+    WWAN_MODE_INVALID    = 0x0,
+    WWAN_MODE_TDD_CONFIG = 0x1,
+    WWAN_MODE_FDD_CONFIG = 0x2,
+    WWAN_MODE_NUM        = 0x2
+}eWWAN_MODE;
+
+typedef enum _eTDD_CONFIG{
+    WWAN_TDD_CONFIG_INVALID = 0x0,
+    WWAN_TDD_CONFIG_0       = 0x1,
+    WWAN_TDD_CONFIG_1       = 0x2,
+    WWAN_TDD_CONFIG_2       = 0x3,
+    WWAN_TDD_CONFIG_3       = 0x4,
+    WWAN_TDD_CONFIG_4       = 0x5,
+    WWAN_TDD_CONFIG_5       = 0x6,
+    WWAN_TDD_CONFIG_6       = 0x7,
+    WWAN_TDD_CONFIG_NUM     = 0x7,
+}eTDD_CONFIG;
+
+typedef struct _WMI_SET_LTE_COEX_STATE_CMD{
+    u8    wwan_state;          // One of enum eWWAN_STATE
+    u8    wwan_mode;           // One of enum eWWAN_MODE
+    u8    wwan_tdd_cfg;        // One of enum eTDD_CONFIG
+
+    u8    sta_lte_coex_mode;   // One of enum eCOEX_MODE
+    s8    sta_max_tx_pwr;      // Derived Value based on the LTE Freq & WLAN Freq for WLAN Power BackOff
+
+    u8    ap_lte_coex_mode;    // One of enum eCOEX_MODE
+    s8    ap_max_tx_pwr;       // Derived Value based on the LTE Freq & WLAN Freq for WLAN Power BackOff
+    u8    reserved[1];         // Reserved for Byte Alignment
+    __le32   wwan_off_period;  // Valid when wwan_state is WWAN_STATE_IDLE else '0'
+}__packed WMI_SET_LTE_COEX_STATE_CMD;
+
+typedef enum _LTE_COEX_WLAN_EVENT_NOTIFY{
+    WLAN_SCAN_OPERATION       = 0x0,
+    WLAN_CONNECTION_OPERATION = 0x1,
+    WLAN_NUM_LTECOEX_EVENT
+}LTE_COEX_WLAN_EVENT_NOTIFY;
+
+typedef enum {
+    COEX_WLAN_CONN_DISABLED = 0,
+    COEX_WLAN_CONN_SETUP    = 1,
+    COEX_WLAN_CONN_STEADY   = 2
+}LTE_COEX_WLAN_CONN_STATE;
+
+typedef struct _LTE_COEX_SCAN_EVENT_INFO{
+    __le32    center_freq;    /* Frequency in MHz */
+
+    u8     bandwidth;      /* bandwidth
+                                 * 0  -- 11B/G
+                                 * 1  -- 11NHT20
+                                 * 2  -- 11NHT40
+                                 */
+
+    u8     scan_state;     /* scan_state
+                                 * 0x00 -- LTE_COEX_WLAN_SCAN_STOP
+                                 * 0x01 -- LTE_COEX_WLAN_SCAN_START
+                                 */
+}WMI_WLAN_SCAN_INFO_LTE;
+
+typedef struct _LTE_COEX_CONN_EVENT_INFO{
+    __le32   center_freq;    /* Frequency in MHz */
+
+    u8     bandwidth;      /* bandwidth
+                                 * 0  -- 11B/G
+                                 * 1  -- 11NHT20
+                                 * 2  -- 11NHT40
+                                 */
+
+    u8 conn_state;         /* conn_state
+                                 * 0x00 -- LTE_COEX_WLAN_CONN_DISABLED
+                                 * 0x01 -- LTE_COEX_WLAN_CONN_SETUP
+                                 * 0x02 -- LTE_COEX_WLAN_CONN_STEADY
+                                 */
+
+    u8 conn_mode;          /* conn_mode
+                                 * 0x00 -- LTE_COEX_WLAN_CONN_MODE_NONE
+                                 * 0x01 -- LTE_COEX_WLAN_CONN_MODE_STATION
+                                 * 0x02 -- LTE_COEX_WLAN_CONN_MODE_SOFTAP
+                                 */
+}WMI_WLAN_CONN_INFO_LTE;
+
+typedef struct{
+    u8 wlan_info_id;
+    union {
+       WMI_WLAN_SCAN_INFO_LTE wlan_scan_info_lte;
+       WMI_WLAN_CONN_INFO_LTE wlan_conn_info_lte;
+    }__packed;
+}__packed WMI_WLAN_INFO_LTE_EVENT;
+
+/* ACS scan policy */
+typedef enum {
+    AP_ACS_NORMAL = 0,      /* 1, 6, 11 */
+    AP_ACS_DISABLE_CH11,    /* 1, 6 */
+    AP_ACS_INCLUDE_CH13,    /* 1, 5, 9, 13 */
+    AP_ACS_DISABLE_CH1,     /* dont use 1 */
+    AP_ACS_DISABLE_CH1_6,   /* dont use 1 & 6 */
+    AP_ACS_POLICY_MAX
+}WMI_AP_ACS_POLICY_LIST;
+
 /*
  * Policy to determnine whether power save failure event should be sent to
  * host during scanning
@@ -1418,111 +1535,146 @@ struct wmi_channel_list_reply {
 
 /* List of Events (target to host) */
 enum wmi_event_id {
-	WMI_READY_EVENTID = 0x1001,
-	WMI_CONNECT_EVENTID,
-	WMI_DISCONNECT_EVENTID,
-	WMI_BSSINFO_EVENTID,
-	WMI_CMDERROR_EVENTID,
-	WMI_REGDOMAIN_EVENTID,
-	WMI_PSTREAM_TIMEOUT_EVENTID,
-	WMI_NEIGHBOR_REPORT_EVENTID,
-	WMI_TKIP_MICERR_EVENTID,
-	WMI_SCAN_COMPLETE_EVENTID,	/* 0x100a */
-	WMI_REPORT_STATISTICS_EVENTID,
-	WMI_RSSI_THRESHOLD_EVENTID,
-	WMI_ERROR_REPORT_EVENTID,
-	WMI_OPT_RX_FRAME_EVENTID,
-	WMI_REPORT_ROAM_TBL_EVENTID,
-	WMI_EXTENSION_EVENTID,
-	WMI_CAC_EVENTID,
-	WMI_SNR_THRESHOLD_EVENTID,
-	WMI_LQ_THRESHOLD_EVENTID,
-	WMI_TX_RETRY_ERR_EVENTID,	/* 0x1014 */
-	WMI_REPORT_ROAM_DATA_EVENTID,
-	WMI_TEST_EVENTID,
-	WMI_APLIST_EVENTID,
-	WMI_GET_WOW_LIST_EVENTID,
-	WMI_GET_PMKID_LIST_EVENTID,
-	WMI_CHANNEL_CHANGE_EVENTID,
-	WMI_PEER_NODE_EVENTID,
-	WMI_PSPOLL_EVENTID,
-	WMI_DTIMEXPIRY_EVENTID,
-	WMI_WLAN_VERSION_EVENTID,
-	WMI_SET_PARAMS_REPLY_EVENTID,
-	WMI_ADDBA_REQ_EVENTID,		/*0x1020 */
-	WMI_ADDBA_RESP_EVENTID,
-	WMI_DELBA_REQ_EVENTID,
-	WMI_TX_COMPLETE_EVENTID,
-	WMI_HCI_EVENT_EVENTID,
-	WMI_ACL_DATA_EVENTID,
-	WMI_REPORT_SLEEP_STATE_EVENTID,
-	WMI_REPORT_BTCOEX_STATS_EVENTID,
-	WMI_REPORT_BTCOEX_CONFIG_EVENTID,
-	WMI_GET_PMK_EVENTID,
+    WMI_READY_EVENTID                    = 0x1001,
+    WMI_CONNECT_EVENTID,
+    WMI_DISCONNECT_EVENTID,
+    WMI_BSSINFO_EVENTID,
+    WMI_CMDERROR_EVENTID,
+    WMI_REGDOMAIN_EVENTID,
+    WMI_PSTREAM_TIMEOUT_EVENTID,
+    WMI_NEIGHBOR_REPORT_EVENTID,
+    WMI_TKIP_MICERR_EVENTID,
+    WMI_SCAN_COMPLETE_EVENTID,           /* 0x100a */
+    WMI_REPORT_STATISTICS_EVENTID,
+    WMI_RSSI_THRESHOLD_EVENTID,
+    WMI_ERROR_REPORT_EVENTID,
+    WMI_OPT_RX_FRAME_EVENTID,
+    WMI_REPORT_ROAM_TBL_EVENTID,
+    WMI_EXTENSION_EVENTID,               /* 0x1010 */
+    WMI_CAC_EVENTID,
+    WMI_SNR_THRESHOLD_EVENTID,
+    WMI_LQ_THRESHOLD_EVENTID,
+    WMI_TX_RETRY_ERR_EVENTID,            /* 0x1014 */
+    WMI_REPORT_ROAM_DATA_EVENTID,
+    WMI_TEST_EVENTID,
+    WMI_APLIST_EVENTID,
+    WMI_GET_WOW_LIST_EVENTID,
+    WMI_GET_PMKID_LIST_EVENTID,
+    WMI_CHANNEL_CHANGE_EVENTID,          /* 0x101a */
+    WMI_PEER_NODE_EVENTID,
+    WMI_PSPOLL_EVENTID,
+    WMI_DTIMEXPIRY_EVENTID,
+    WMI_WLAN_VERSION_EVENTID,
+    WMI_SET_PARAMS_REPLY_EVENTID,
+    WMI_ADDBA_REQ_EVENTID,               /*0x1020 */
+    WMI_ADDBA_RESP_EVENTID,
+    WMI_DELBA_REQ_EVENTID,
+    WMI_TX_COMPLETE_EVENTID,
+    WMI_HCI_EVENT_EVENTID,
+    WMI_ACL_DATA_EVENTID,
+    WMI_REPORT_SLEEP_STATE_EVENTID,
+    WMI_WAPI_REKEY_EVENTID,
+    WMI_REPORT_BTCOEX_STATS_EVENTID,
+    WMI_REPORT_BTCOEX_CONFIG_EVENTID,
+    WMI_GET_PMK_EVENTID,                 /* 0x102a */
 
-	/* DFS Events */
-	WMI_DFS_HOST_ATTACH_EVENTID,
-	WMI_DFS_HOST_INIT_EVENTID,
-	WMI_DFS_RESET_DELAYLINES_EVENTID,
-	WMI_DFS_RESET_RADARQ_EVENTID,
-	WMI_DFS_RESET_AR_EVENTID,
-	WMI_DFS_RESET_ARQ_EVENTID,
-	WMI_DFS_SET_DUR_MULTIPLIER_EVENTID,
-	WMI_DFS_SET_BANGRADAR_EVENTID,
-	WMI_DFS_SET_DEBUGLEVEL_EVENTID,
-	WMI_DFS_PHYERR_EVENTID,
+    /* DFS Events */
+    WMI_DFS_HOST_ATTACH_EVENTID,         /* 0x102B */
+    WMI_DFS_HOST_INIT_EVENTID,
+    WMI_DFS_RESET_DELAYLINES_EVENTID,
+    WMI_DFS_RESET_RADARQ_EVENTID,
+    WMI_DFS_RESET_AR_EVENTID,
+    WMI_DFS_RESET_ARQ_EVENTID,           /* 0x1030 */
+    WMI_DFS_SET_DUR_MULTIPLIER_EVENTID,
+    WMI_DFS_SET_BANGRADAR_EVENTID,
+    WMI_DFS_SET_DEBUGLEVEL_EVENTID,
+    WMI_DFS_PHYERR_EVENTID,
+    /* CCX Evants */
+    WMI_CCX_RM_STATUS_EVENTID,           /* 0x1035 */
 
-	/* CCX Evants */
-	WMI_CCX_RM_STATUS_EVENTID,
+    /* P2P Events */
+    WMI_P2P_GO_NEG_RESULT_EVENTID,       /* 0x1036 */
 
-	/* P2P Events */
-	WMI_P2P_GO_NEG_RESULT_EVENTID,
+    WMI_WAC_SCAN_DONE_EVENTID,
+    WMI_WAC_REPORT_BSS_EVENTID,
+    WMI_WAC_START_WPS_EVENTID,
+    WMI_WAC_CTRL_REQ_REPLY_EVENTID,      /* 0x103a */
+    WMI_REPORT_WMM_PARAMS_EVENTID,
+    WMI_WAC_REJECT_WPS_EVENTID,
 
-	WMI_WAC_SCAN_DONE_EVENTID,
-	WMI_WAC_REPORT_BSS_EVENTID,
-	WMI_WAC_START_WPS_EVENTID,
-	WMI_WAC_CTRL_REQ_REPLY_EVENTID,
+    /* More P2P Events */
+    WMI_P2P_GO_NEG_REQ_EVENTID,
+    WMI_P2P_INVITE_REQ_EVENTID,
+    WMI_P2P_INVITE_RCVD_RESULT_EVENTID,
+    WMI_P2P_INVITE_SENT_RESULT_EVENTID,  /* 0x1040 */
+    WMI_P2P_PROV_DISC_RESP_EVENTID,
+    WMI_P2P_PROV_DISC_REQ_EVENTID,
 
-	WMI_REPORT_WMM_PARAMS_EVENTID,
-	WMI_WAC_REJECT_WPS_EVENTID,
+    /*RFKILL Events*/
+    WMI_RFKILL_STATE_CHANGE_EVENTID,
+    WMI_RFKILL_GET_MODE_CMD_EVENTID,
 
-	/* More P2P Events */
-	WMI_P2P_GO_NEG_REQ_EVENTID,
-	WMI_P2P_INVITE_REQ_EVENTID,
-	WMI_P2P_INVITE_RCVD_RESULT_EVENTID,
-	WMI_P2P_INVITE_SENT_RESULT_EVENTID,
-	WMI_P2P_PROV_DISC_RESP_EVENTID,
-	WMI_P2P_PROV_DISC_REQ_EVENTID,
+    WMI_P2P_START_SDPD_EVENTID,
+    WMI_P2P_SDPD_RX_EVENTID,
 
-	/* RFKILL Events */
-	WMI_RFKILL_STATE_CHANGE_EVENTID,
-	WMI_RFKILL_GET_MODE_CMD_EVENTID,
+    /* Special event used to notify host that AR6003
+     * has processed sleep command (needed to prevent
+     * a late incoming credit report from crashing
+     * the system)
+     */
+    WMI_SET_HOST_SLEEP_MODE_CMD_PROCESSED_EVENTID,   /* 0x1047 */
 
-	WMI_P2P_START_SDPD_EVENTID,
-	WMI_P2P_SDPD_RX_EVENTID,
+    WMI_THIN_RESERVED_START_EVENTID                   = 0x8000,
+    /* Events in this range are reserved for thinmode
+     * See wmi_thin.h for actual definitions */
+    WMI_THIN_RESERVED_END_EVENTID                     = 0x8fff,
 
-	WMI_SET_HOST_SLEEP_MODE_CMD_PROCESSED_EVENTID = 0x1047,
+    WMI_SET_CHANNEL_EVENTID,                         /* 0x9000 */
+    WMI_ASSOC_REQ_EVENTID,
 
-	WMI_THIN_RESERVED_START_EVENTID = 0x8000,
-	/* Events in this range are reserved for thinmode */
-	WMI_THIN_RESERVED_END_EVENTID = 0x8fff,
+    /* generic ACS event */
+    WMI_ACS_EVENTID,                                 /* 0x9002 */
+    WMI_STORERECALL_STORE_EVENTID,
+    WMI_WOW_EXT_WAKE_EVENTID,
+    WMI_GTK_OFFLOAD_STATUS_EVENTID,
+    WMI_NETWORK_LIST_OFFLOAD_EVENTID,
+    WMI_REMAIN_ON_CHNL_EVENTID,                      /* 0x9007 */
+    WMI_CANCEL_REMAIN_ON_CHNL_EVENTID,               /* 0x9008 */
+    WMI_TX_STATUS_EVENTID,
+    WMI_RX_PROBE_REQ_EVENTID,                        /* 0x900a */
+    WMI_P2P_CAPABILITIES_EVENTID,                    /* 0x900b */
+    WMI_RX_ACTION_EVENTID,
+    WMI_P2P_INFO_EVENTID,
+    /* WPS Events */
+    WMI_WPS_GET_STATUS_EVENTID,
+    WMI_WPS_PROFILE_EVENTID,
 
-	WMI_SET_CHANNEL_EVENTID,
-	WMI_ASSOC_REQ_EVENTID,
+    /* more P2P events */
+    WMI_NOA_INFO_EVENTID,                            /* 0x9010 */
+    WMI_OPPPS_INFO_EVENTID,
+    WMI_PORT_STATUS_EVENTID,
 
-	/* Generic ACS event */
-	WMI_ACS_EVENTID,
-	WMI_STORERECALL_STORE_EVENTID,
-	WMI_WOW_EXT_WAKE_EVENTID,
-	WMI_GTK_OFFLOAD_STATUS_EVENTID,
-	WMI_NETWORK_LIST_OFFLOAD_EVENTID,
-	WMI_REMAIN_ON_CHNL_EVENTID,
-	WMI_CANCEL_REMAIN_ON_CHNL_EVENTID,
-	WMI_TX_STATUS_EVENTID,
-	WMI_RX_PROBE_REQ_EVENTID,
-	WMI_P2P_CAPABILITIES_EVENTID,
-	WMI_RX_ACTION_EVENTID,
-	WMI_P2P_INFO_EVENTID,
+    /* 802.11w */
+    WMI_GET_RSN_CAP_EVENTID,
+
+    WMI_FLOWCTRL_IND_EVENTID,
+    WMI_FLOWCTRL_UAPSD_FRAME_DILIVERED_EVENTID,
+
+    /*Socket Translation Events*/
+    WMI_SOCKET_RESPONSE_EVENTID,
+
+	WMI_LOG_FRAME_EVENTID,
+    WMI_QUERY_PHY_INFO_EVENTID,
+    WMI_CCX_ROAMING_EVENTID,
+
+    WMI_P2P_NODE_LIST_EVENTID,                       /* 0x901A */
+    WMI_P2P_REQ_TO_AUTH_EVENTID,
+    WMI_DIAGNOSTIC_EVENTID, /* diagnostic */
+    WMI_DISC_PEER_EVENTID,  /* wifi discovery */
+    WMI_BSS_RSSI_INFO_EVENTID,
+	WMI_ARGOS_EVENTID,
+	WMI_AP_IDLE_CLOSE_TIMEOUT_EVENTID = 0x9020,
+    WMI_WLAN_INFO_LTE_EVENTID,
 };
 
 struct wmi_ready_event_2 {
