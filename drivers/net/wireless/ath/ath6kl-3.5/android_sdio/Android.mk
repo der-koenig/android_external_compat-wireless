@@ -25,6 +25,7 @@ include $(DLKM_DIR)/AndroidKernelModule.mk
 endif
 endif
 
+$(shell ln -s ../../../../../../ $(LOCAL_PATH)/src)
 include $(CLEAR_VARS)
 LOCAL_MODULE             := ath6kl_sdio.ko
 LOCAL_MODULE_TAGS        := debug
