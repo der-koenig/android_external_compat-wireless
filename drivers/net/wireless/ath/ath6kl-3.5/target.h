@@ -345,13 +345,19 @@ struct host_interest {
 #define HI_OPTION_FW_CRASH_COLD_RESET          0x100000
 
 /*Enable watchdog*/
-#define HI_OPTION_FW_WATCHDOG_ENABLE          0x200000
+#define HI_OPTION_FW_WATCHDOG_ENABLE		0x200000
 
 /* Enable one shot noa */
-#define HI_OPTION_ONE_SHOT_NOA_ENABLE         0x2000000 
+#define HI_OPTION_ONE_SHOT_NOA_ENABLE		0x2000000
+
+/* Enable SB specific function */
+#define HI_OPTION_ENABLE_SB_SPECIFIC      0x4000000
 
 /*Enable/Disable Wifi Heart Beat Feature*/
 #define HI_OPTION_ENABLE_WLAN_HB              0x10000000
+
+/* Enable Multichannel Concurrency (MCC) - last bit to sync with mainline */
+#define HI_OPTION_MCC_ENABLE                  0x80000000
 
 /* Fw Mode/SubMode Mask
 |------------------------------------------------------------------------------|

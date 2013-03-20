@@ -168,7 +168,11 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_RTT          = BIT(27),
 	ATH6KL_DBG_FLOWCTRL     = BIT(28),    /* P2P flowctrl */
 	ATH6KL_DBG_KEEPALIVE    = BIT(29),    /* AP keep-alive */
+#ifdef ACS_SUPPORT
+	ATH6KL_DBG_ACS       = BIT(30),              /* ACS */
+#else
 	/* hole */
+#endif
 	ATH6KL_DBG_INFO		= BIT(31),    /* keep last */
 	ATH6KL_DBG_ANY		= 0xffffffff  /* enable all logs */
 };

@@ -65,6 +65,10 @@ ath6kl_usb-$(CONFIG_QC_INTERNAL) += intra_reg.o
 ath6kl_usb-y += pm.o
 ath6kl_usb-y += p2p.o
 ath6kl_usb-y += ap.o
+ath6kl_usb-$(CONFIG_ATHTST_SUPPORT) += ce_athtst.o
+ath6kl_usb-$(CONFIG_ACS_SUPPORT) += acs.o
+ath6kl_usb-$(CONFIG_ACL_SUPPORT) += acl_ioctl.o
+ath6kl_usb-$(CONFIG_TX99_SUPPORT) += tx99_ioctl.o
 
 ccflags-$(CONFIG_QC_INTERNAL) += -DCONFIG_QC_INTERNAL
 ccflags-$(CONFIG_FPGA) += -DCONFIG_FPGA

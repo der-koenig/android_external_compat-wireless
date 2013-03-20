@@ -20,6 +20,10 @@
 #include "cfg80211.h"
 #include "target.h"
 #include "debug.h"
+#ifdef ATHTST_SUPPORT
+#include "ieee80211_ioctl.h"
+#include "ce_athtst.h"
+#endif
 
 int _string_to_mac(char *string, int len, u8 *macaddr)
 {
@@ -1189,7 +1193,10 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 
 	if (status != WMI_SCAN_STATUS_SUCCESS)
 		aborted = true;
-
+#ifdef ACS_SUPPORT
+	/* FIXME : bad, may use call-back instead. */
+	ath6kl_acs_scan_complete_event(vif, aborted);
+#endif
 	if (ath6kl_htcoex_scan_complete_event(vif, aborted) ==
 		HTCOEX_PASS_SCAN_DONE)
 		ath6kl_cfg80211_scan_complete_event(vif, aborted);
@@ -1697,6 +1704,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	spin_lock_bh(&vif->if_lock);
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	clear_bit(PS_STICK, &vif->flags);
 	del_timer(&vif->shprotect_timer);
 	netif_carrier_off(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
@@ -1792,6 +1800,7 @@ static int ath6kl_close(struct net_device *dev)
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	clear_bit(PS_STICK, &vif->flags);
 	del_timer(&vif->shprotect_timer);
 
 	if (test_bit(WMI_READY, &ar->flag)) {
@@ -2108,8 +2117,12 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 		break;
 	}
 	default:
+#if defined(ATHTST_SUPPORT) || defined(ACL_SUPPORT)
+		return ath6kl_ce_ioctl(dev, rq, cmd);
+#else
 		ret = -EOPNOTSUPP;
 		break;
+#endif
 	}
 
 	return ret;
@@ -2231,8 +2244,27 @@ int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 					   support WiFi-Direct Cert. */
 	case ATH6KL_IOCTL_STANDARD03:	/* BTC command */
 	case ATH6KL_IOCTL_STANDARD12:	/* hole, please reserved */
-	case ATH6KL_IOCTL_STANDARD13:	/* TX99 */
+#ifdef ATHTST_SUPPORT
+	case ATHCFG_WCMD_IOCTL:	/* athtst */
+#else
 	case ATH6KL_IOCTL_STANDARD15:	/* hole, please reserved */
+#endif
+#ifdef CE_SUPPORT
+case IEEE80211_IOCTL_KICKMAC:
+#endif
+#ifdef ACL_SUPPORT
+	case IEEE80211_IOCTL_SETPARAM:
+	case IEEE80211_IOCTL_GETPARAM:
+	case IEEE80211_IOCTL_SETMLME:
+	case IEEE80211_IOCTL_ADDMAC:
+	case IEEE80211_IOCTL_DELMAC:
+	case IEEE80211_IOCTL_GET_MACADDR:
+#endif
+#ifdef TX99_SUPPORT
+	case SIOCIOCTLTX99:/* TX99 */
+#else
+	case ATH6KL_IOCTL_STANDARD13:	/* TX99 */
+#endif
 		ret = ath6kl_ioctl_standard(dev, rq, cmd);
 		break;
 	case ATH6KL_IOCTL_WEXT_PRIV26:	/* endpoint loopback purpose */
@@ -2284,14 +2316,28 @@ static struct net_device_ops ath6kl_netdev_ops = {
 
 void init_netdev(struct net_device *dev)
 {
+	struct ath6kl_vif *vif = netdev_priv(dev);
+
+	vif->needed_headroom = ETH_HLEN +
+					sizeof(struct ath6kl_llc_snap_hdr) +
+					sizeof(struct wmi_data_hdr) +
+					HTC_HDR_LENGTH +
+					WMI_MAX_TX_META_SZ +
+					ATH6KL_HTC_ALIGN_BYTES;
+
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	dev->open = ath6kl_open;
+	dev->stop = ath6kl_close;
+	dev->hard_start_xmit = ath6kl_start_tx;
+	dev->get_stats = ath6kl_get_stats;
+	dev->do_ioctl = ath6kl_ioctl;
+#else
 	dev->netdev_ops = &ath6kl_netdev_ops;
+	dev->needed_headroom = vif->needed_headroom;
+#endif
+
 	dev->destructor = free_netdev;
 	dev->watchdog_timeo = ATH6KL_TX_TIMEOUT;
-
-	dev->needed_headroom = ETH_HLEN;
-	dev->needed_headroom += sizeof(struct ath6kl_llc_snap_hdr) +
-				sizeof(struct wmi_data_hdr) + HTC_HDR_LENGTH
-				+ WMI_MAX_TX_META_SZ + ATH6KL_HTC_ALIGN_BYTES;
 
 	return;
 }

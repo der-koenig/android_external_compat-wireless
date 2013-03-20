@@ -69,7 +69,11 @@ void ath_netlink_reply(int pid, int seq, void *payload)
 }
 
 /* Receive messages from netlink socket. */
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+static void ath_netlink_receive(struct sk_buff *__skb, int len)
+#else
 static void ath_netlink_receive(struct sk_buff *__skb)
+#endif
 {
 	struct sk_buff *skb = NULL;
 	struct nlmsghdr *nlh = NULL;
@@ -134,10 +138,17 @@ int ath_netlink_init()
 	}
 #else
 	if (ath_nl_sock == NULL) {
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+		ath_nl_sock = (struct sock *)netlink_kernel_create(
+					NETLINK_ATH_EVENT,
+					1, &ath_netlink_receive, NULL,
+					THIS_MODULE);
+#else
 		ath_nl_sock = (struct sock *)netlink_kernel_create(
 					&init_net, NETLINK_ATH_EVENT,
 					1, &ath_netlink_receive, NULL,
 					THIS_MODULE);
+#endif
 		if (ath_nl_sock == NULL) {
 			ath6kl_err("%s NetLink Create Failed\n", __func__);
 			return -ENODEV;
@@ -151,7 +162,11 @@ int ath_netlink_init()
 int ath_netlink_free(void)
 {
 	if (ath_nl_sock) {
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+		sock_release(ath_nl_sock->sk_socket);
+#else
 		netlink_kernel_release(ath_nl_sock);
+#endif
 		ath_nl_sock = NULL;
 	}
 

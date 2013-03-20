@@ -1384,10 +1384,15 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 		     (WLAN_HT_CAP_SM_PS_DYNAMIC <<
 					IEEE80211_HT_CAP_SM_PS_SHIFT)) &&
 		    (ht_cap_ie->mcs.rx_mask[1])) {
-			ath6kl_info("Disable 2SS rates\n");
+			ath6kl_info("Enable Intel-GO compatibility.\n");
 			ath6kl_wmi_set_fix_rates(vif->ar->wmi,
 						vif->fw_vif_idx,
 						(0x00000000000fffffULL));
+
+			set_bit(PS_STICK, &vif->flags);
+			ath6kl_wmi_powermode_cmd(vif->ar->wmi,
+						vif->fw_vif_idx,
+						MAX_PERF_POWER);
 		}
 	}
 

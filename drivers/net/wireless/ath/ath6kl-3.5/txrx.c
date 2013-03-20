@@ -521,7 +521,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	if (test_bit(WMI_ENABLED, &ar->flag)) {
-		if (skb_headroom(skb) < dev->needed_headroom) {
+		if (skb_headroom(skb) < vif->needed_headroom) {
 			struct sk_buff *tmp_skb = ath6kl_buf_alloc(skb->len);
 
 			if (tmp_skb == NULL) {
@@ -2238,8 +2238,28 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 			/* nothing to deliver up the stack */
 			return;
 		}
+#ifdef ATHTST_SUPPORT
+		/* record each connected sta rssi */
+		if (conn->avg_data_rssi == 0) {
+			if ((dhdr->rssi) >= RSSI_LPF_THRESHOLD)
+				conn->avg_data_rssi = ATH_RSSI_IN(dhdr->rssi);
+		} else {
+			ATH_RSSI_LPF(conn->avg_data_rssi, dhdr->rssi);
+		}
+#endif
 	}
-
+#ifdef ATHTST_SUPPORT
+	if (vif->nw_type != AP_NETWORK) {
+		conn = &vif->sta_list[0];
+		/* record each connected sta rssi */
+		if (conn->avg_data_rssi == 0) {
+			if ((dhdr->rssi) >= RSSI_LPF_THRESHOLD)
+				conn->avg_data_rssi = ATH_RSSI_IN(dhdr->rssi);
+		} else {
+			ATH_RSSI_LPF(conn->avg_data_rssi, dhdr->rssi);
+		}
+	}
+#endif
 	if (vif->nw_type != AP_NETWORK)
 		conn = &vif->sta_list[0];
 

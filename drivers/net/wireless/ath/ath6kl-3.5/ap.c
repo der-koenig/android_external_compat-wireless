@@ -1047,8 +1047,10 @@ int ath6kl_ap_admc_start(struct ath6kl_vif *vif)
 	bool enabled = false;
 	int ret;
 
-	if ((ap_admc) &&
-	    (ap_admc->admc_mode != AP_ADMC_MODE_DISABLE))
+	if (!ap_admc)
+		return -ENOENT;
+
+	if (ap_admc->admc_mode != AP_ADMC_MODE_DISABLE)
 		enabled = true;
 
 	ret = ath6kl_wmi_set_assoc_req_relay_cmd(vif->ar->wmi,
@@ -1069,8 +1071,10 @@ int ath6kl_ap_admc_stop(struct ath6kl_vif *vif)
 	struct ap_admc_info *ap_admc = vif->ap_admc_ctx;
 	int ret;
 
-	if (ap_admc)
-		_ap_amdc_assoc_req_flush(ap_admc);
+	if (!ap_admc)
+		return -ENOENT;
+
+	_ap_amdc_assoc_req_flush(ap_admc);
 
 	ret = ath6kl_wmi_set_assoc_req_relay_cmd(vif->ar->wmi,
 					vif->fw_vif_idx,
@@ -1080,7 +1084,7 @@ int ath6kl_ap_admc_stop(struct ath6kl_vif *vif)
 			vif->fw_vif_idx,
 			ret);
 
-	return 0;
+	return ret;
 }
 
 void ath6kl_ap_admc_assoc_req(struct ath6kl_vif *vif,
@@ -1387,7 +1391,7 @@ void ath6kl_ap_ch_switch(struct ath6kl_vif *vif)
 	 * API may also useful.
 	 */
 
-#ifdef NL80211_CMD_CH_SWITCH_NOTIFY
+#ifdef NL80211_CMD_OPER_CH_SWITCH_NOTIFY
 	/*
 	 * The next_chan_type is only valid when
 	 * ATH6KL_MODULE_ENABLE_P2P_CHANMODE is on.
@@ -1397,6 +1401,10 @@ void ath6kl_ap_ch_switch(struct ath6kl_vif *vif)
 		if (ath6kl_mod_debug_quirks(vif->ar,
 				ATH6KL_MODULE_ENABLE_P2P_CHANMODE)) {
 			enum nl80211_channel_type type = NL80211_CHAN_NO_HT;
+#ifdef CFG80211_NEW_CHAN_DEFINITION
+			struct ieee80211_channel *chan;
+			struct cfg80211_chan_def chandef;
+#endif
 
 			ath6kl_info("AP Channel switch from %d/%d to %d/%d\n",
 					vif->next_chan, vif->next_chan_type,
@@ -1417,9 +1425,22 @@ void ath6kl_ap_ch_switch(struct ath6kl_vif *vif)
 			 * TODO: Better to check channel information is valid
 			 * or not for P2P-GO mode before report to the user.
 			 */
+#ifdef CFG80211_NEW_CHAN_DEFINITION
+			chan = ieee80211_get_channel(vif->ar->wiphy,
+							vif->bss_ch);
+			if (chan == NULL) {
+				WARN_ON(1);
+				return;
+			}
+
+			cfg80211_chandef_create(&chandef, chan, type);
+			cfg80211_ch_switch_notify(vif->ndev,
+						&chandef);
+#else
 			cfg80211_ch_switch_notify(vif->ndev,
 						vif->bss_ch,
 						type);
+#endif
 		}
 	}
 #endif

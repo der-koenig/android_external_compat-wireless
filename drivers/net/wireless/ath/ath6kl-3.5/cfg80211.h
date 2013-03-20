@@ -23,6 +23,7 @@ enum ath6kl_cfg_suspend_mode {
 	ATH6KL_CFG_SUSPEND_WOW
 };
 
+extern unsigned int testmode;
 extern unsigned int ath6kl_p2p;
 extern unsigned int ath6kl_vap;
 extern unsigned int ath6kl_wow_ext;
@@ -42,6 +43,8 @@ struct ath6kl_beacon_parameters {
 	int inactivity_timeout;
 	struct ieee80211_channel *channel;	/* After kernel 3.6 */
 	enum nl80211_channel_type channel_type;	/* After kernel 3.6 */
+	u8 p2p_ctwindow;			/* After kernel 3.8 */
+	bool p2p_opp_ps;			/* After kernel 3.8 */
 
 	/* IEs */
 	const u8 *head, *tail;

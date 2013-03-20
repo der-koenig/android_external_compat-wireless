@@ -21,6 +21,10 @@
 #include "core.h"
 #include "cfg80211.h"
 
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+#include <asm/unaligned.h>
+#endif
+
 /* constants */
 #define TX_URB_COUNT            32
 #define RX_URB_COUNT            32
@@ -171,6 +175,15 @@ struct ath6kl_usb_ctrl_diag_resp_read {
 #define USB_CTRL_MAX_DIAG_RESP_SIZE	\
 	(sizeof(struct ath6kl_usb_ctrl_diag_resp_read))
 
+#ifdef ATHTST_SUPPORT
+struct hif_product_info_t {
+	uint16_t	idVendor;
+	uint16_t	idProduct;
+	uint8_t	product[64];
+	uint8_t	manufacturer[64];
+	uint8_t	serial[64];
+};
+#endif
 /* function declarations */
 #ifdef CONFIG_PM
 
@@ -2184,6 +2197,15 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 #endif
 };
 
+#ifdef ATHTST_SUPPORT
+static struct hif_product_info_t g_product_info;
+void ath6kl_usb_get_usbinfo(void *product_info)
+{
+	memcpy(product_info, &g_product_info, sizeof(g_product_info));
+	return;
+}
+#endif
+
 /* ath6kl usb driver registered functions */
 static int ath6kl_usb_probe(struct usb_interface *interface,
 			    const struct usb_device_id *id)
@@ -2198,6 +2220,21 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	vendor_id = le16_to_cpu(dev->descriptor.idVendor);
 	product_id = le16_to_cpu(dev->descriptor.idProduct);
+#ifdef ATHTST_SUPPORT
+	g_product_info.idVendor = vendor_id =
+					le16_to_cpu(dev->descriptor.idVendor);
+	g_product_info.idProduct = product_id =
+					le16_to_cpu(dev->descriptor.idProduct);
+	if (dev->product)
+		memcpy(g_product_info.product, dev->product,
+				sizeof(g_product_info.product));
+	if (dev->manufacturer)
+		memcpy(g_product_info.manufacturer, dev->manufacturer,
+				sizeof(g_product_info.manufacturer));
+	if (dev->serial)
+		memcpy(g_product_info.serial, dev->serial,
+				sizeof(g_product_info.serial));
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB, "vendor_id = %04x\n", vendor_id);
 	ath6kl_dbg(ATH6KL_DBG_USB, "product_id = %04x\n", product_id);
@@ -2373,6 +2410,7 @@ static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 
 /* table of devices that work with this driver */
 static struct usb_device_id ath6kl_usb_ids[] = {
+	{USB_DEVICE(0x0cf3, 0x9375)},
 	{USB_DEVICE(0x0cf3, 0x9374)},
 	{USB_DEVICE(0x0cf3, 0x9372)},
 	{ /* Terminating entry */ },

@@ -37,6 +37,9 @@
 #include "bmi.h"
 #include "target.h"
 #include "wmi_btcoex.h"
+#ifdef ACS_SUPPORT
+#include "acs.h"
+#endif
 #include "htcoex.h"
 #include "p2p.h"
 #include "ap.h"
@@ -47,7 +50,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.288)
+#define __BUILD_VERSION_ (3.5.0.294)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -121,11 +124,43 @@
 #endif
 
 
-#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
+/*
+ * Native kernel cfg80211 support.
+ * Current ath6kl code base is kernel 3.2
+ *
+ * For ATH6KL_SUPPORT_NETLINK_KERNEL3_6 & ATH6KL_SUPPORT_NETLINK_KERNEL3_7,
+ * not really need if compat.ko used.
+ *
+ * PLEASE CHANGE THESE FLAGS TO MEET YOUR BSP IF THE BSP USE
+ * SPECIFIC CFG80211 CODE.
+ */
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_8		/* Kernel 3.8 series */
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_7
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_7
+#endif
+#endif
+
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_7		/* Kernel 3.7 series */
+#ifndef ATH6KL_SUPPORT_NETLINK_KERNEL3_7
+#define ATH6KL_SUPPORT_NETLINK_KERNEL3_7
+#endif
+
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_6
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_6
+#endif
+#endif
+
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6		/* Kernel 3.6 series */
+#ifndef ATH6KL_SUPPORT_NETLINK_KERNEL3_6
+#define ATH6KL_SUPPORT_NETLINK_KERNEL3_6
+#endif
+
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_5
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_5
 #endif
+#endif
 
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_5		/* Kernel 3.5 series */
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #endif
@@ -134,14 +169,6 @@
 /*
  * NOT to touch origional branches's Makefile and therefore turn-on
  * ATH6KL_SUPPORT_NL80211_QCA by default for all Android releases.
- *
- * For JB_2.5, Android.mk will append ATH6KL_SUPPORT_NL80211_KERNEL3_4
- * For JB_MR1, Android.mk will append ATH6KL_SUPPORT_NL80211_KERNEL3_6
- *                                    ATH6KL_SUPPORT_NETLINK_KERNEL3_6
- *                                    ATH6KL_SUPPORT_NETLINK_KERNEL3_7
- *
- * For ATH6KL_SUPPORT_NETLINK_KERNEL3_6 & ATH6KL_SUPPORT_NETLINK_KERNEL3_7,
- * not really need if compat.ko used.
  */
 #ifdef CONFIG_ANDROID
 #define ATH6KL_SUPPORT_NL80211_QCA
@@ -170,8 +197,8 @@
  */
 #ifdef ATH6KL_SUPPORT_NL80211_QCA
 /*
- * Means the cfg80211.ko is older version (as least older than built-in
- * version of kernel3.3) and had QCA's special implementations.
+ * Means the cfg80211.ko is specific version and had QCA's special
+ * implementations.
  *
  * NL80211_CMD_GET_WOWLAN_QCA: for QCA WoW command.
  * NL80211_CMD_BTCOEX_QCA: for QCA BTCoext NL80211 command and event.
@@ -183,39 +210,51 @@
 #endif
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_4
 /*
- * Means the cfg80211.ko is newer version (as least newer than built-in
- * version of kernel3.4)
- *
- * NL80211_CMD_START_AP: for new call-back and structures.
- * NL80211_ATTR_RX_SIGNAL_DBM: for new API's parameter.
+ * NL80211_CMD_START_STOP_AP: for new call-back and structures.
+ * NL80211_ATTR_WIPHY_RX_SIGNAL_DBM: for new API's parameter.
  * CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL: new flag consist w/ RoC oper.
- * NL80211_ATTR_INACTIVITY_TIMEOUT: new attribute to config AP keep-alive.
+ * NL80211_ATTR_AP_INACTIVITY_TIMEOUT: new attribute to config AP keep-alive.
  */
-#define NL80211_CMD_START_AP
-#define NL80211_ATTR_RX_SIGNAL_DBM
+#define NL80211_CMD_START_STOP_AP
+#define NL80211_ATTR_WIPHY_RX_SIGNAL_DBM
 #define CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL
-#define NL80211_ATTR_INACTIVITY_TIMEOUT
+#define NL80211_ATTR_AP_INACTIVITY_TIMEOUT
 #endif
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_5
 /*
- * Means the cfg80211.ko is newer version (as least newer than built-in
- * version of kernel3.5)
- *
- * NL80211_CMD_CH_SWITCH_NOTIFY: report working freq/chan-type back to user.
+ * NL80211_CMD_OPER_CH_SWITCH_NOTIFY: report working frequency back to user.
  */
-#define NL80211_CMD_CH_SWITCH_NOTIFY
+#define NL80211_CMD_OPER_CH_SWITCH_NOTIFY
 #endif
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
 /*
- * Means the cfg80211.ko is newer version (as least newer than built-in
- * version of kernel3.6)
- *
  * CFG80211_NETDEV_REPLACED_BY_WDEV: using wireless_dev pointer instead
  *                                   of net_device.
  * CFG80211_NO_SET_CHAN_OPERATION: no support set_channel call-back.
  */
 #define CFG80211_NETDEV_REPLACED_BY_WDEV
 #define CFG80211_NO_SET_CHAN_OPERATION
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_8
+/*
+ * NL80211_WIPHY_FEATURE_SCAN_FLUSH: flush scan cache before scan if need.
+ * CFG80211_TX_POWER_PER_WDEV: support set/get TX power per wdev context.
+ * CFG80211_REMOVE_ROC_CHAN_TYPE: remove channel type of RoC & MgmtTx related
+ *                                call-back and APIs.
+ * CFG80211_NEW_CHAN_DEFINITION: summary origional channel definition and
+ *                               channel type into new channel definitaion.
+ * CFG80211_SAFE_BSS_INFO_ACCESS: to fix BSS IE race access problem.
+ * NL80211_CMD_TDLS_OPER_REQ: new cfg80211_tdls_oper_request() API for driver's
+ *                            automatic TDLS link.
+ * NL80211_ATTR_P2P_CTWINDOW_OPPPS: P2P-GO support CTWindow/OppPS setting.
+ */
+#define NL80211_WIPHY_FEATURE_SCAN_FLUSH
+#define CFG80211_TX_POWER_PER_WDEV
+#define CFG80211_REMOVE_ROC_CHAN_TYPE
+#define CFG80211_NEW_CHAN_DEFINITION
+#define CFG80211_SAFE_BSS_INFO_ACCESS
+#define NL80211_CMD_TDLS_OPER_REQ	/* TODO */
+#define NL80211_ATTR_P2P_CTWINDOW_OPPPS	/* TODO */
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -538,7 +577,7 @@ enum ath6kl_recovery_mode {
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
 
 /* AR6006 1.1 definitions */
-#define AR6006_HW_1_1_VERSION                 0x31c80a54
+#define AR6006_HW_1_1_VERSION                 0x31c80002
 #define AR6006_HW_1_1_FW_DIR			"ath6k/AR6006/hw1.1"
 #define AR6006_HW_1_1_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_1_FIRMWARE_FILE           "fw.ram.bin"
@@ -868,6 +907,29 @@ struct ath6kl_ps_buf_head {
 	u32 aged;
 };
 
+#ifdef ATHTST_SUPPORT
+#define ATH_RSSI_LPF_LEN                     10
+#define ATH_RSSI_DUMMY_MARKER                0x127
+#define RSSI_LPF_THRESHOLD                   -20
+#define ATH_RSSI_EP_MULTIPLIER               (1<<7)  /* pow2 to optimize out */
+#define HAL_RSSI_EP_MULTIPLIER  (1<<7)  /* pow2 to optimize out */
+#define ATH_EP_RND(x, mul)                   \
+	((((x)%(mul)) >= ((mul)/2)) ? ((x) + ((mul) - 1)) / (mul) : (x)/(mul))
+
+#define ATH_EP_MUL(x, mul)                   ((x) * (mul))
+
+#define ATH_RSSI_IN(x)                       \
+	(ATH_EP_MUL((x), ATH_RSSI_EP_MULTIPLIER))
+
+#define ATH_LPF_RSSI(x, y, len) \
+((x != ATH_RSSI_DUMMY_MARKER) ? (((x) * ((len) - 1) + (y)) / (len)) : (y))
+
+#define ATH_RSSI_LPF(x, y) do {                     \
+	if ((y) >= RSSI_LPF_THRESHOLD)                         \
+		x = ATH_LPF_RSSI((x), ATH_RSSI_IN((y)), ATH_RSSI_LPF_LEN);  \
+} while (0)
+#endif
+
 enum ath6kl_phy_mode {
 	ATH6KL_PHY_MODE_11A = 0,	/* 11a Mode */
 	ATH6KL_PHY_MODE_11G = 1,		/* 11b/g Mode */
@@ -907,6 +969,9 @@ struct ath6kl_sta {
 	/* AP-Keepalive */
 	u16 last_txrx_time_tgt;		/* target time. */
 	unsigned long last_txrx_time;	/* in jiffies., host time. */
+#ifdef ATHTST_SUPPORT
+	int avg_data_rssi;
+#endif
 };
 
 struct ath6kl_version {
@@ -1008,10 +1073,11 @@ struct ath6kl_mbox_info {
 };
 
 enum ath6kl_hw_flags {
-	ATH6KL_HW_TGT_ALIGN_PADDING = BIT(0),
-	ATH6KL_HW_SINGLE_PIPE_SCHED = BIT(1),
-	ATH6KL_HW_FIRMWARE_EXT_SUPPORT = BIT(2),
-	ATH6KL_HW_USB_FLOWCTRL = BIT(3)
+	ATH6KL_HW_TGT_ALIGN_PADDING		= BIT(0),
+	ATH6KL_HW_SINGLE_PIPE_SCHED			= BIT(1),
+	ATH6KL_HW_FIRMWARE_EXT_SUPPORT	= BIT(2),
+	ATH6KL_HW_USB_FLOWCTRL				= BIT(3),
+	ATH6KL_HW_XTAL_40MHZ				= BIT(4),
 };
 
 /*
@@ -1092,7 +1158,41 @@ enum ath6kl_vif_state {
 	WLAN_WOW_ENABLE,
 	SCANNING,
 	DORMANT,
+	PS_STICK,
+#ifdef ATHTST_SUPPORT
+	CE_WMI_UPDATE,
+	CE_WMI_SCAN,
+	CE_WMI_TESTMODE_RX,
+	CE_WMI_TESTMODE_GET,
+#endif
 };
+#ifdef ATHTST_SUPPORT
+/* IOCTL structure to configure the wireless interface. */
+struct athr_cmd {
+	int     cmd;        /* CMD Type */
+	int     data[4];    /* CMD Data */
+};
+
+#define ATHR_WLAN_SCAN_BAND             1
+#define ATHR_WLAN_FIND_BEST_CHANNEL     2
+
+#define ATHR_CMD_SCANBAND_ALL           0   /* Scan all supported channel */
+#define ATHR_CMD_SCANBAND_2G            1   /* Scan 2GHz channel only */
+#define ATHR_CMD_SCANBAND_5G            2   /* Scan 5GHz channel only */
+#define ATHR_CMD_SCANBAND_CHAN_ONLY     3   /* Scan single channel only */
+#endif
+
+#ifdef ACL_SUPPORT
+#define AP_ACL_SIZE 10
+#define ATH_MAC_LEN 6
+
+struct WMI_AP_ACL {
+	u16	index;
+	u8	acl_mac[AP_ACL_SIZE][ATH_MAC_LEN];
+	u8	wildcard[AP_ACL_SIZE];
+	u8	policy;
+};
+#endif
 
 struct ath6kl_vif {
 	struct list_head list;
@@ -1147,6 +1247,9 @@ struct ath6kl_vif {
 	u32 last_cancel_roc_id;
 	u32 send_action_id;
 	bool probe_req_report;
+#ifdef CE_SUPPORT
+	bool probe_resp_report;
+#endif
 	u16 next_chan;				/* Setting Channel */
 	enum ath6kl_chan_type next_chan_type;	/* Setting Channel-Type */
 	u16 assoc_bss_beacon_int;
@@ -1175,6 +1278,21 @@ struct ath6kl_vif {
 	struct delayed_work work_eapol_send;
 	struct sk_buff *pend_skb;
 	spinlock_t pend_skb_lock;
+
+	int needed_headroom;
+#ifdef CE_SUPPORT
+	u8	scan_band;
+	u32	scan_chan;
+#endif
+
+#ifdef ACL_SUPPORT
+	struct WMI_AP_ACL	acl_db;
+#endif
+
+#ifdef ACS_SUPPORT
+	struct acs *acs_ctx;
+	int best_chan[4];
+#endif
 };
 
 #define WOW_LIST_ID		0
