@@ -1515,37 +1515,60 @@ struct wmi_ready_event_2 {
 	u8 phy_cap;
 } __packed;
 
+/* WMI_PHY_CAPABILITY */
+enum wmi_phy_cap {
+	WMI_11A_CAP = 0x01,
+	WMI_11G_CAP = 0x02,
+	WMI_11AG_CAP = 0x03,
+	WMI_11AN_CAP = 0x04,
+	WMI_11GN_CAP = 0x05,
+	WMI_11AGN_CAP = 0x06,
+};
+
+
+union wmi_connect_common_info {
+	struct {
+		__le16 ch;
+		u8 bssid[ETH_ALEN];
+		__le16 listen_intvl;
+		__le16 beacon_intvl;
+		__le32 nw_type;
+	} sta;
+	struct {
+		u8 phymode;
+		u8 aid;
+		u8 mac_addr[ETH_ALEN];
+		u8 auth;
+		u8 keymgmt;
+		__le16 cipher;
+		u8 apsd_info;
+		u8 unused[3];
+	} ap_sta;
+	struct {
+		__le16 ch;
+		u8 bssid[ETH_ALEN];
+		u8 unused[8];
+	} ap_bss;
+} __packed;
+
 /* Connect Event */
 struct wmi_connect_event {
-	union {
-		struct {
-			__le16 ch;
-			u8 bssid[ETH_ALEN];
-			__le16 listen_intvl;
-			__le16 beacon_intvl;
-			__le32 nw_type;
-		} sta;
-		struct {
-			u8 phymode;
-			u8 aid;
-			u8 mac_addr[ETH_ALEN];
-			u8 auth;
-			u8 keymgmt;
-			__le16 cipher;
-			u8 apsd_info;
-			u8 unused[3];
-		} ap_sta;
-		struct {
-			__le16 ch;
-			u8 bssid[ETH_ALEN];
-			u8 unused[8];
-		} ap_bss;
-	} u;
+	union wmi_connect_common_info u;
 	u8 beacon_ie_len;
 	u8 assoc_req_len;
 	u8 assoc_resp_len;
 	u8 assoc_info[1];
 } __packed;
+
+/* Connect Event for large IE*/
+struct wmi_connect_event_advanced {
+	union wmi_connect_common_info u;
+	u16 beacon_ie_len;
+	u16 assoc_req_len;
+	u16 assoc_resp_len;
+	u8 assoc_info[1];
+} __packed;
+
 
 /* Disconnect Event */
 enum wmi_disconnect_reason {
@@ -2435,6 +2458,22 @@ struct wmi_set_appie_extended_cmd {
 	u8 ie_info[0];
 } __packed;
 
+enum wmi_btcoex_debug_cmd_type {
+	WMI_BTCOEX_DBG_CMD_BT_ON      = 0xFEFE,
+	WMI_BTCOEX_DBG_CMD_BT_OFF     = 0xEFEF,
+	WMI_BTCOEX_DBG_CMD_DHCP_TX    = 0xFDFD,
+	WMI_BTCOEX_DBG_CMD_DHCP_RX    = 0xDFDF,
+	WMI_BTCOEX_DBG_CMD_UNKNOWN    = 0xFFFF,
+};
+
+struct wmi_set_btcoex_debug_cmd {
+	__le32 dbg_param1;
+	__le32 dbg_param2;
+	__le32 dbg_param3;
+	__le32 dbg_param4;
+	__le32 dbg_param5;  /* enum wmi_btcoex_debug_cmd_type */
+} __packed;
+
 struct wmi_remain_on_chnl_event {
 	__le32 freq;
 	__le32 duration;
@@ -2778,6 +2817,8 @@ int ath6kl_wmi_info_req_cmd(struct wmi *wmi, u8 if_idx, u32 info_req_flags);
 
 int ath6kl_wmi_cancel_remain_on_chnl_cmd(struct wmi *wmi, u8 if_idx);
 
+void ath6kl_wmi_send_rdy_evt_to_app(struct net_device *ndev, struct ath6kl *ar);
+
 int ath6kl_wmi_set_appie_cmd(struct wmi *wmi, u8 if_idx, u8 mgmt_frm_type,
 			     const u8 *ie, u8 ie_len);
 int ath6kl_wmi_set_ch_params(struct wmi *wmi, u8 if_idx,
@@ -2790,5 +2831,8 @@ struct ath6kl_vif *ath6kl_get_vif_by_index(struct ath6kl *ar, u8 if_idx);
 void *ath6kl_wmi_init(struct ath6kl *devt);
 void ath6kl_wmi_shutdown(struct wmi *wmi);
 void ath6kl_wmi_reset(struct wmi *wmi);
+int ath6kl_wmi_set_btcoex_debug_cmd(struct wmi *wmi, u8 if_idx, u32 param1,
+				    u32 param2, u32 param3, u32 param4,
+				    u32 param5);
 
 #endif /* WMI_H */

@@ -713,8 +713,8 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 				   u8 *bssid, u16 listen_intvl,
 				   u16 beacon_intvl,
 				   enum network_type nw_type,
-				   u8 beacon_ie_len, u8 assoc_req_len,
-				   u8 assoc_resp_len, u8 *assoc_info)
+				   u16 beacon_ie_len, u16 assoc_req_len,
+				   u16 assoc_resp_len, u8 *assoc_info)
 {
 	struct ieee80211_channel *chan;
 	struct ath6kl *ar = vif->ar;
@@ -3921,6 +3921,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 {
 	struct wiphy *wiphy = ar->wiphy;
+	bool band_2gig = false, band_5gig = false, ht = false;
 	int ret;
 
 	wiphy->mgmt_stypes = ath6kl_mgmt_stypes;
@@ -3962,8 +3963,39 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 		ath6kl_band_5ghz.ht_cap.mcs.rx_mask[0] = 0xff;
 	}
 
-	wiphy->bands[IEEE80211_BAND_2GHZ] = &ath6kl_band_2ghz;
-	wiphy->bands[IEEE80211_BAND_5GHZ] = &ath6kl_band_5ghz;
+	switch (ar->hw.cap) {
+	case WMI_11AN_CAP:
+		ht = true;
+	case WMI_11A_CAP:
+		band_5gig = true;
+		break;
+	case WMI_11GN_CAP:
+		ht = true;
+	case WMI_11G_CAP:
+		band_2gig = true;
+		break;
+	case WMI_11AGN_CAP:
+		ht = true;
+	case WMI_11AG_CAP:
+		band_2gig = true;
+		band_5gig = true;
+		break;
+	default:
+		ath6kl_err("invalid phy capability!\n");
+		return -EINVAL;
+	}
+
+	if (!ht) {
+		ath6kl_band_2ghz.ht_cap.cap = 0;
+		ath6kl_band_2ghz.ht_cap.ht_supported = false;
+		ath6kl_band_5ghz.ht_cap.cap = 0;
+		ath6kl_band_5ghz.ht_cap.ht_supported = false;
+	}
+	if (band_2gig)
+		wiphy->bands[IEEE80211_BAND_2GHZ] = &ath6kl_band_2ghz;
+	if (band_5gig)
+		wiphy->bands[IEEE80211_BAND_5GHZ] = &ath6kl_band_5ghz;
+
 	wiphy->signal_type = CFG80211_SIGNAL_TYPE_MBM;
 
 	wiphy->cipher_suites = cipher_suites;
@@ -3980,6 +4012,20 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 	wiphy->wowlan.pattern_max_len = WOW_PATTERN_SIZE;
 
 	wiphy->max_sched_scan_ssids = MAX_PROBED_SSIDS;
+
+	wiphy->flags |= WIPHY_FLAG_SUPPORTS_FW_ROAM |
+			WIPHY_FLAG_HAVE_AP_SME |
+			WIPHY_FLAG_AP_PROBE_RESP_OFFLOAD |
+			WIPHY_FLAG_SUPPORTS_ACS;
+
+	if (test_bit(ATH6KL_FW_CAPABILITY_SCHED_SCAN_V2, ar->fw_capabilities))
+		wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+
+	wiphy->probe_resp_offload =
+		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS |
+		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS2 |
+		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
+		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
 	ath6kl_setup_android_resource(ar);
 

@@ -597,10 +597,7 @@ static void ath6kl_sdio_irq_disable(struct ath6kl *ar)
 	if (atomic_read(&ar_sdio->irq_handling)) {
 		sdio_release_host(ar_sdio->func);
 
-		ret = wait_event_interruptible(ar_sdio->irq_wq,
-				ath6kl_sdio_is_on_irq(ar));
-		if (ret)
-			return;
+		wait_event(ar_sdio->irq_wq, ath6kl_sdio_is_on_irq(ar));
 
 		sdio_claim_host(ar_sdio->func);
 	}
@@ -1418,6 +1415,7 @@ static int __init ath6kl_sdio_init(void)
 	ret = sdio_register_driver(&ath6kl_sdio_driver);
 	if (ret) {
 		ath6kl_err("sdio driver registration failed: %d\n", ret);
+		ath6kl_sdio_exit_platform();
 		return ret;
 	}
 

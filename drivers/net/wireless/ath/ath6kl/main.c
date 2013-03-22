@@ -534,7 +534,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u16 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
-				u8 assoc_req_len, u8 *assoc_info, u8 apsd_info)
+				u16 assoc_req_len, u8 *assoc_info, u8 apsd_info)
 {
 	u8 *ies = NULL, *wpa_ie = NULL, *pos;
 	size_t ies_len = 0;
@@ -632,7 +632,8 @@ void ath6kl_disconnect(struct ath6kl_vif *vif)
 
 /* WMI Event handlers */
 
-void ath6kl_ready_event(void *devt, u8 *datap, u32 sw_ver, u32 abi_ver)
+void ath6kl_ready_event(void *devt, u8 *datap, u32 sw_ver, u32 abi_ver,
+			enum wmi_phy_cap cap)
 {
 	struct ath6kl *ar = devt;
 
@@ -644,6 +645,7 @@ void ath6kl_ready_event(void *devt, u8 *datap, u32 sw_ver, u32 abi_ver)
 
 	ar->version.wlan_ver = sw_ver;
 	ar->version.abi_ver = abi_ver;
+	ar->hw.cap = cap;
 
 	if (strlen(ar->wiphy->fw_version) == 0) {
 		snprintf(ar->wiphy->fw_version,
@@ -742,8 +744,8 @@ static void ath6kl_check_ch_switch(struct ath6kl *ar, u16 channel)
 
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 			  u16 listen_int, u16 beacon_int,
-			  enum network_type net_type, u8 beacon_ie_len,
-			  u8 assoc_req_len, u8 assoc_resp_len,
+			  enum network_type net_type, u16 beacon_ie_len,
+			  u16 assoc_req_len, u16 assoc_resp_len,
 			  u8 *assoc_info)
 {
 	struct ath6kl *ar = vif->ar;
@@ -1736,6 +1738,10 @@ void init_netdev(struct net_device *dev)
 	dev->needed_headroom += sizeof(struct ath6kl_llc_snap_hdr) +
 				sizeof(struct wmi_data_hdr) + HTC_HDR_LENGTH
 				+ WMI_MAX_TX_META_SZ + ATH6KL_HTC_ALIGN_BYTES;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+	dev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
+#endif
 
 	return;
 }

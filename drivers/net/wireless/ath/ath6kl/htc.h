@@ -550,6 +550,14 @@ struct htc_target {
 
 	/* counts the number of Tx without bundling continously per AC */
 	u32 ac_tx_count[WMM_NUM_AC];
+
+	/* protects rx_compq */
+	spinlock_t rx_comp_lock;
+
+	struct workqueue_struct *rx_wq;
+	struct work_struct rx_work;
+	struct list_head rx_bufq;
+
 };
 
 void *ath6kl_htc_create(struct ath6kl *ar);

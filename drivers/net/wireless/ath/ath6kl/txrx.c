@@ -25,6 +25,53 @@
 #define ATH6KL_TID_MASK 0xf
 #define ATH6KL_AID_SHIFT 4
 
+static bool ath6kl_is_dhcp_pkt(struct sk_buff *skb, u8 *msg)
+{
+	struct dhcp_packet *dhcp = (struct dhcp_packet *) skb->data;
+
+	if ((ntohs(dhcp->eth_hdr.h_proto) != ETH_P_IP) ||
+	    (dhcp->bootp_hdr.iph.protocol != IPPROTO_UDP))
+		return false;
+
+	if ((ntohs(dhcp->bootp_hdr.udph.dest) != 67) && /* port 67 */
+	    (ntohs(dhcp->bootp_hdr.udph.dest) != 68))   /* port 68 */
+		return false;
+
+	if ((dhcp->bootp_hdr.exten[4] != ATH6KL_DHCP_OPCODE_MSG_TYPE) ||
+	    (dhcp->bootp_hdr.exten[5] != ATH6KL_DHCP_MSG_TYPE_LEN))
+		return false;
+
+	*msg = dhcp->bootp_hdr.exten[6];
+
+	ath6kl_dbg(ATH6KL_DBG_ANY, "dhcp pkt - type: %d\n", *msg);
+
+	return true;
+}
+
+static int ath6kl_sniff_dhcp_pkt(struct ath6kl *ar, struct ath6kl_vif *vif,
+				struct sk_buff *skb, u16 type)
+{
+	u8 dhcp_msg;
+	int ret = 0;
+
+	if (vif->nw_type != INFRA_NETWORK)
+		return ret;
+
+	if (type != WMI_BTCOEX_DBG_CMD_DHCP_TX &&
+	    type != WMI_BTCOEX_DBG_CMD_DHCP_RX)
+		return ret;
+
+	if (!ath6kl_is_dhcp_pkt(skb, &dhcp_msg))
+		return ret;
+
+	ret = ath6kl_wmi_set_btcoex_debug_cmd(ar->wmi, vif->fw_vif_idx, 0, 0,
+					      0, dhcp_msg, type);
+	if (ret)
+		ath6kl_err("Failed to send dhcp pkt status: %d\n", ret);
+
+	return ret;
+}
+
 static inline u8 ath6kl_get_tid(u8 tid_mux)
 {
 	return tid_mux & ATH6KL_TID_MASK;
@@ -428,6 +475,11 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 			csum_dest = skb->csum_offset + csum_start;
 		}
 
+		ret = ath6kl_sniff_dhcp_pkt(ar, vif, skb,
+					    WMI_BTCOEX_DBG_CMD_DHCP_TX);
+		if (ret)
+			goto fail_tx;
+
 		if (skb_headroom(skb) < dev->needed_headroom) {
 			struct sk_buff *tmp_skb = skb;
 
@@ -643,7 +695,9 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 */
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
-		/* TODO: Handle FW error recovery here for ctrl ep full cases */
+
+		ath6kl_recovery_err_notify(ar, ATH6KL_FW_EP_FULL);
+
 		return action;
 	}
 
@@ -1392,10 +1446,11 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	struct ath6kl_sta *conn = NULL;
 	struct sk_buff *skb1 = NULL;
 	struct ethhdr *datap = NULL;
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif = NULL;
 	struct aggr_info_conn *aggr_conn;
 	u16 seq_no, offset;
 	u8 tid, if_idx;
+	int ret;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_RX,
 		   "%s: ar=0x%p eid=%d, skb=0x%p, data=0x%p, len=0x%x status:%d",
@@ -1409,6 +1464,15 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 	skb_put(skb, packet->act_len + HTC_HDR_LENGTH);
 	skb_pull(skb, HTC_HDR_LENGTH);
+
+	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "rx ",
+			skb->data, skb->len);
+
+	if (list_empty(&ar->vif_list) &&
+	    ept == ar->ctrl_ep) {
+		skb->dev = NULL;
+		goto skip_vif;
+	}
 
 	if (ept == ar->ctrl_ep) {
 		if_idx =
@@ -1435,10 +1499,6 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 	spin_unlock_bh(&vif->if_lock);
 
-
-	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "rx ",
-			skb->data, skb->len);
-
 	skb->dev = vif->ndev;
 
 	if (!test_bit(WMI_ENABLED, &ar->flag)) {
@@ -1448,6 +1508,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		return;
 	}
 
+skip_vif:
 	if (ept == ar->ctrl_ep) {
 		ath6kl_check_wow_status(ar, skb, true);
 		ath6kl_wmi_control_rx(ar->wmi, skb);
@@ -1674,6 +1735,13 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	}
 
 	datap = (struct ethhdr *) skb->data;
+
+	ret = ath6kl_sniff_dhcp_pkt(ar, vif, skb,
+				    WMI_BTCOEX_DBG_CMD_DHCP_RX);
+	if (ret) {
+		dev_kfree_skb(skb);
+		return;
+	}
 
 	if (is_unicast_ether_addr(datap->h_dest)) {
 		if (vif->nw_type == AP_NETWORK) {

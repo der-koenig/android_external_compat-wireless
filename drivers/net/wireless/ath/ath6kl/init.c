@@ -1697,9 +1697,15 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 						    test_bit(WMI_READY,
 							     &ar->flag),
 						    WMI_TIMEOUT);
+	if (timeleft <= 0) {
+		clear_bit(WMI_READY, &ar->flag);
+		ath6kl_err("wmi is not ready or wait was interrupted: %ld\n",
+			   timeleft);
+		ret = -EIO;
+		goto err_htc_stop;
+	}
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT, "firmware booted\n");
-
 
 	if (test_and_clear_bit(FIRST_BOOT, &ar->flag)) {
 		ath6kl_info("%s %s fw %s api %d%s\n",
@@ -1713,13 +1719,6 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 	if (ar->version.abi_ver != ATH6KL_ABI_VERSION) {
 		ath6kl_err("abi version mismatch: host(0x%x), target(0x%x)\n",
 			   ATH6KL_ABI_VERSION, ar->version.abi_ver);
-		ret = -EIO;
-		goto err_htc_stop;
-	}
-
-	if (!timeleft || signal_pending(current)) {
-		clear_bit(WMI_READY, &ar->flag);
-		ath6kl_err("wmi is not ready or wait was interrupted\n");
 		ret = -EIO;
 		goto err_htc_stop;
 	}
@@ -1852,38 +1851,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: got wmi @ 0x%p.\n", __func__, ar->wmi);
 
-	ret = ath6kl_register_ieee80211_hw(ar);
-	if (ret)
-		goto err_node_cleanup;
-
-	ret = ath6kl_debug_init(ar);
-	if (ret) {
-		wiphy_unregister(ar->wiphy);
-		goto err_node_cleanup;
-	}
-
-	for (i = 0; i < ar->vif_max; i++)
-		ar->avail_idx_map |= BIT(i);
-
-	rtnl_lock();
-
-	/* Add an initial station interface */
-	ndev = ath6kl_interface_add(ar, "wlan%d", NL80211_IFTYPE_STATION, 0,
-				    INFRA_NETWORK);
-
-	rtnl_unlock();
-
-	if (!ndev) {
-		ath6kl_err("Failed to instantiate a network device\n");
-		ret = -ENOMEM;
-		wiphy_unregister(ar->wiphy);
-		goto err_debug_init;
-	}
-
-
-	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
-			__func__, ndev->name, ndev, ar);
-
 	/* setup access class priority mappings */
 	ar->ac_stream_pri_map[WMM_AC_BK] = 0; /* lowest  */
 	ar->ac_stream_pri_map[WMM_AC_BE] = 1;
@@ -1912,25 +1879,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 	else
 		ar->wow_suspend_mode = 0;
 
-	ar->wiphy->flags |= WIPHY_FLAG_SUPPORTS_FW_ROAM |
-			    WIPHY_FLAG_HAVE_AP_SME |
-			    WIPHY_FLAG_AP_PROBE_RESP_OFFLOAD |
-			    WIPHY_FLAG_SUPPORTS_ACS;
-
-	if (test_bit(ATH6KL_FW_CAPABILITY_SCHED_SCAN_V2, ar->fw_capabilities))
-		ar->wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
-
-	ar->wiphy->probe_resp_offload =
-		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS |
-		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS2 |
-		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
-		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
-
 	set_bit(FIRST_BOOT, &ar->flag);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
-	ndev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
-#endif
+	ath6kl_debug_init(ar);
 
 	ret = ath6kl_init_hw_start(ar);
 	if (ret) {
@@ -1942,11 +1893,38 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ath6kl_rx_refill(ar->htc_target, ar->ctrl_ep);
 	ath6kl_rx_refill(ar->htc_target, ar->ac2ep_map[WMM_AC_BE]);
 
-	/*
-	 * Set mac address which is received in ready event
-	 * FIXME: Move to ath6kl_interface_add()
-	 */
-	memcpy(ndev->dev_addr, ar->mac_addr, ETH_ALEN);
+	ret = ath6kl_register_ieee80211_hw(ar);
+	if (ret)
+		goto err_rxbuf_cleanup;
+
+	ret = ath6kl_debug_init_fs(ar);
+	if (ret)
+		goto err_rxbuf_cleanup;
+
+	for (i = 0; i < ar->vif_max; i++)
+		ar->avail_idx_map |= BIT(i);
+
+	rtnl_lock();
+
+	/* Add an initial station interface */
+	ndev = ath6kl_interface_add(ar, "wlan%d", NL80211_IFTYPE_STATION, 0,
+				    INFRA_NETWORK);
+
+	rtnl_unlock();
+
+	if (!ndev) {
+		ath6kl_err("Failed to instantiate a network device\n");
+		ret = -ENOMEM;
+		goto err_rxbuf_cleanup;
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
+		   __func__, ndev->name, ndev, ar);
+
+	ath6kl_wmi_send_rdy_evt_to_app(ndev, ar);
+
+	if (test_and_clear_bit(REG_DOMAIN_HINT_PEND, &ar->flag))
+		regulatory_hint(ar->wiphy, ar->alpha2);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
 	rtnl_lock();
@@ -1956,7 +1934,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 	if (!ndev_p2p0) {
 		ath6kl_err("Failed to create p2p0 iface\n");
 		ret = -ENOMEM;
-		goto err_rxbuf_cleanup;
+		goto err_ndev_cleanup;
 	}
 #endif
 	ar->tp_ctl.tp_monitor_timer.function = ath6kl_tp_monitor_timer;
@@ -1986,16 +1964,15 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	return ret;
 
-err_rxbuf_cleanup:
-	ath6kl_htc_flush_rx_buf(ar->htc_target);
-	ath6kl_cleanup_amsdu_rxbufs(ar);
+err_ndev_cleanup:
 	rtnl_lock();
 	ath6kl_deinit_if_data(netdev_priv(ndev));
 	rtnl_unlock();
-	wiphy_unregister(ar->wiphy);
-err_debug_init:
+err_rxbuf_cleanup:
 	ath6kl_debug_cleanup(ar);
-err_node_cleanup:
+	ath6kl_htc_flush_rx_buf(ar->htc_target);
+	ath6kl_cleanup_amsdu_rxbufs(ar);
+	wiphy_unregister(ar->wiphy);
 	ath6kl_cleanup_android_resource(ar);
 	ath6kl_wmi_shutdown(ar->wmi);
 	clear_bit(WMI_ENABLED, &ar->flag);
@@ -2008,6 +1985,7 @@ err_bmi_cleanup:
 	ath6kl_bmi_cleanup(ar);
 err_wq:
 	destroy_workqueue(ar->ath6kl_wq);
+	kfree(ar->ready_data);
 
 	return ret;
 }

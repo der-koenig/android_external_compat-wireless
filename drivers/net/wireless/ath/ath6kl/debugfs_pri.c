@@ -14,14 +14,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifdef CONFIG_ATH6KL_DEBUG
-
 #include <linux/skbuff.h>
 #include <linux/export.h>
 #include "core.h"
 #include "wmi.h"
 #include "debug.h"
 #include "debugfs_pri.h"
+
+#ifdef CONFIG_ATH6KL_DEBUG
 
 struct wmi_set_inact_period_cmd {
 	__le32 inact_period;
@@ -426,6 +426,13 @@ int ath6kl_init_debugfs_pri(struct ath6kl *ar)
 	debugfs_create_file("hw_info", S_IRUSR, ar->debugfs_phy, ar,
 			    &fops_hw_info);
 
+	return 0;
+}
+
+#else
+
+int ath6kl_wmi_error_report_event(struct wmi *wmi, u8 *data, int len)
+{
 	return 0;
 }
 
