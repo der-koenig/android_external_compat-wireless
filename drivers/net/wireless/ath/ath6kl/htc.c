@@ -1886,14 +1886,21 @@ static void ath6kl_htc_rx_work(struct work_struct *work)
 	struct htc_target *target;
 	struct htc_packet *packet, *tmp_pkt;
 	struct htc_endpoint *endpoint;
+	struct list_head temp_rx_bufq;
 
 	target = container_of(work, struct htc_target, rx_work);
 
-	spin_lock_bh(&target->rx_comp_lock);
+	INIT_LIST_HEAD(&temp_rx_bufq);
+
+	spin_lock_bh(&target->rx_bufq_lock);
 	list_for_each_entry_safe(packet, tmp_pkt, &target->rx_bufq, list) {
 		list_del(&packet->list);
+		list_add_tail(&packet->list, &temp_rx_bufq);
+	}
+	spin_unlock_bh(&target->rx_bufq_lock);
 
-		spin_unlock_bh(&target->rx_comp_lock);
+	list_for_each_entry_safe(packet, tmp_pkt, &temp_rx_bufq, list) {
+		list_del(&packet->list);
 		endpoint = &target->endpoint[packet->endpoint];
 
 		ath6kl_dbg(ATH6KL_DBG_HTC,
@@ -1901,9 +1908,7 @@ static void ath6kl_htc_rx_work(struct work_struct *work)
 			   endpoint->eid, packet);
 
 		endpoint->ep_cb.rx(endpoint->target, packet);
-		spin_lock_bh(&target->rx_comp_lock);
 	}
-	spin_unlock_bh(&target->rx_comp_lock);
 }
 
 static void ath6kl_htc_rx_complete(struct htc_endpoint *endpoint,
@@ -1911,7 +1916,7 @@ static void ath6kl_htc_rx_complete(struct htc_endpoint *endpoint,
 {
 	struct htc_target *target;
 
-	if(endpoint->eid == ENDPOINT_0) {
+	if (endpoint->eid == ENDPOINT_0) {
 		ath6kl_dbg(ATH6KL_DBG_HTC,
 			   "htc rx complete ep %d packet 0x%p\n",
 			   endpoint->eid, packet);
@@ -1919,9 +1924,9 @@ static void ath6kl_htc_rx_complete(struct htc_endpoint *endpoint,
 	} else {
 		target = endpoint->target;
 
-		spin_lock_bh(&target->rx_comp_lock);
+		spin_lock_bh(&target->rx_bufq_lock);
 		list_add_tail(&packet->list, &target->rx_bufq);
-		spin_unlock_bh(&target->rx_comp_lock);
+		spin_unlock_bh(&target->rx_bufq_lock);
 
 		queue_work(target->rx_wq, &target->rx_work);
 	}
@@ -2890,7 +2895,7 @@ void *ath6kl_htc_create(struct ath6kl *ar)
 	spin_lock_init(&target->htc_lock);
 	spin_lock_init(&target->rx_lock);
 	spin_lock_init(&target->tx_lock);
-	spin_lock_init(&target->rx_comp_lock);
+	spin_lock_init(&target->rx_bufq_lock);
 
 	INIT_LIST_HEAD(&target->free_ctrl_txbuf);
 	INIT_LIST_HEAD(&target->free_ctrl_rxbuf);
@@ -2925,6 +2930,16 @@ void ath6kl_htc_cleanup(struct htc_target *target)
 	struct htc_packet *packet, *tmp_packet;
 
 	destroy_workqueue(target->rx_wq);
+
+	if (!list_empty(&target->rx_bufq)) {
+		spin_lock_bh(&target->rx_bufq_lock);
+		list_for_each_entry_safe(packet, tmp_packet,
+					 &target->rx_bufq, list) {
+			list_del(&packet->list);
+			dev_kfree_skb(packet->pkt_cntxt);
+		}
+		spin_unlock_bh(&target->rx_bufq_lock);
+	}
 
 	/* FIXME: remove check once USB support is implemented */
 	if (target->dev->ar->hif_type != ATH6KL_HIF_TYPE_USB)
