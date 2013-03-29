@@ -158,6 +158,30 @@ struct ath6kl_p2p_flowctrl {
 	u32 p2p_flowctrl_event_cnt;
 };
 
+struct p2p_oper_chan {
+	u16 oper_class;
+	u32 min_chan_freq;
+	u32 max_chan_freq;
+	u32 inc_freq;
+
+#define P2P_OPER_CHAN_BW_NULL		0
+#define P2P_OPER_CHAN_BW_HT20		1
+#define P2P_OPER_CHAN_BW_HT40_PLUS	2
+#define P2P_OPER_CHAN_BW_HT40_MINUS	3
+	u8 bw;
+};
+
+struct p2p_pending_connect_info {
+#define ATH6KL_P2P_MAX_PENDING_INFO_IELEN	512
+	u8 bssid[ETH_ALEN];
+	u8 req_ie[ATH6KL_P2P_MAX_PENDING_INFO_IELEN];
+	size_t req_ie_len;
+	u8 resp_ie[ATH6KL_P2P_MAX_PENDING_INFO_IELEN];
+	size_t resp_ie_len;
+	u16 status;
+	gfp_t gfp;
+};
+
 struct p2p_ps_info *ath6kl_p2p_ps_init(struct ath6kl_vif *vif);
 void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif);
 
@@ -218,6 +242,20 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 				u8 assoc_req_len,
 				u8 assoc_resp_len,
 				u8 *assoc_info);
+bool ath6kl_p2p_pending_connect_event(struct ath6kl_vif *vif,
+					const u8 *bssid,
+					const u8 *req_ie,
+					size_t req_ie_len,
+					const u8 *resp_ie,
+					size_t resp_ie_len,
+					u16 status,
+					gfp_t gfp);
+void ath6kl_p2p_pending_disconnect_event(struct ath6kl_vif *vif,
+					u16 reason,
+					u8 *ie,
+					size_t ie_len,
+					gfp_t gfp);
 bool ath6kl_p2p_ie_append(struct ath6kl_vif *vif, u8 mgmt_frame_type);
+bool ath6kl_p2p_is_p2p_channel(u32 freq);
 #endif
 

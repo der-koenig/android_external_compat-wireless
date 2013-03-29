@@ -541,6 +541,8 @@ struct htc_endpoint {
 	u8 call_by_timer;
 	u8 timer_init;
 	u8 pass_th;
+	u8 starving;
+	unsigned long last_sent;
 };
 
 struct htc_control_buffer {

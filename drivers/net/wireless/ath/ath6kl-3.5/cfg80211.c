@@ -800,6 +800,26 @@ void ath6kl_switch_parameter_based_on_connection(
 		}
 	}
 
+	/*
+	 * Switch scan parameter
+	 * Currently, when there are more than one vif connected,
+	 * revise the passive dwell time as the default
+	 * ATH6KL_SCAN_PAS_DEWELL_TIME
+	 */
+
+	if (connected_count) {
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			vif_temp->sc_params.pas_chdwell_time =
+				ATH6KL_SCAN_PAS_DEWELL_TIME;
+		}
+	} else {
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			memcpy(&vif->sc_params,
+				&vif->sc_params_default,
+				sizeof(struct wmi_scan_params_cmd));
+		}
+	}
+
 	if (mcc)
 		set_bit(MCC_ENABLED, &ar->flag);
 	else
@@ -845,7 +865,6 @@ void ath6kl_switch_parameter_based_on_connection(
 			}
 		}
 	}
-
 }
 
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
@@ -906,6 +925,9 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				vif->sc_params.maxact_scan_per_ssid);
 
 	ath6kl_judge_roam_parameter(vif, false);
+
+	if (vif->wdev.iftype == NL80211_IFTYPE_STATION)
+		ath6kl_wmi_set_green_tx_params(ar->wmi, &ar->green_tx_params);
 
 	if (ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi,
 				vif->fw_vif_idx, RATECTRL_MODE_PERONLY))
@@ -1168,6 +1190,54 @@ static bool ath6kl_handshake_protect(struct ath6kl_vif *vif, u8 *bssid)
 	return reset_handshake_pro;
 }
 
+void ath6kl_cfg80211_connect_result(struct ath6kl_vif *vif,
+				const u8 *bssid,
+				const u8 *req_ie,
+				size_t req_ie_len,
+				const u8 *resp_ie,
+				size_t resp_ie_len,
+				u16 status,
+				gfp_t gfp)
+{
+	bool need_pending;
+
+	need_pending = ath6kl_p2p_pending_connect_event(vif,
+							bssid,
+							req_ie,
+							req_ie_len,
+							resp_ie,
+							resp_ie_len,
+							status,
+							gfp);
+	if (!need_pending)
+		cfg80211_connect_result(vif->ndev,
+					bssid,
+					req_ie,
+					req_ie_len,
+					resp_ie,
+					resp_ie_len,
+					status,
+					gfp);
+
+	return;
+}
+
+void ath6kl_cfg80211_disconnected(struct ath6kl_vif *vif,
+				u16 reason,
+				u8 *ie,
+				size_t ie_len,
+				gfp_t gfp)
+{
+	ath6kl_p2p_pending_disconnect_event(vif, reason, ie, ie_len, gfp);
+	cfg80211_disconnected(vif->ndev,
+				reason,
+				ie,
+				ie_len,
+				gfp);
+
+	return;
+}
+
 void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 				   u8 *bssid, u16 listen_intvl,
 				   u16 beacon_intvl,
@@ -1265,11 +1335,11 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 		(enum wifi_diag_mac_fsm_t)WIFI_DIAG_MAC_FSM_CONNECTED,
 		vif->diag.connect_seq_num);
 #endif
-		cfg80211_connect_result(vif->ndev, bssid,
+		cfg80211_put_bss(bss);
+		ath6kl_cfg80211_connect_result(vif, bssid,
 					assoc_req_ie, assoc_req_len,
 					assoc_resp_ie, assoc_resp_len,
 					WLAN_STATUS_SUCCESS, GFP_KERNEL);
-		cfg80211_put_bss(bss);
 	} else if (ath6kl_roamed_indicate(vif, bssid, reset_hk_prot) == true) {
 		cfg80211_roamed_bss(vif->ndev, bss, assoc_req_ie, assoc_req_len,
 				assoc_resp_ie, assoc_resp_len, GFP_KERNEL);
@@ -1408,13 +1478,13 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	clear_bit(CONNECT_PEND, &vif->flags);
 
 	if (vif->sme_state == SME_CONNECTING) {
-		cfg80211_connect_result(vif->ndev,
+		ath6kl_cfg80211_connect_result(vif,
 				bssid, NULL, 0,
 				NULL, 0,
 				WLAN_STATUS_UNSPECIFIED_FAILURE,
 				GFP_KERNEL);
 	} else if (vif->sme_state == SME_CONNECTED) {
-		cfg80211_disconnected(vif->ndev, proto_reason,
+		ath6kl_cfg80211_disconnected(vif, proto_reason,
 				NULL, 0, GFP_KERNEL);
 	}
 #ifdef ATH6KL_DIAGNOSTIC
@@ -3352,11 +3422,22 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 		}
 	}
 
+#ifdef USB_AUTO_SUSPEND
+	/* in mck3.0, we won't have credit full problem as before,
+	   so we could move ATH6KL_STATE_DEEPSLEEP after stop_all()
+	*/
+	ath6kl_cfg80211_stop_all(ar);
+
+	spin_lock_bh(&ar->state_lock);
+	ar->state = ATH6KL_STATE_DEEPSLEEP;
+	spin_unlock_bh(&ar->state_lock);
+#else
 	spin_lock_bh(&ar->state_lock);
 	ar->state = ATH6KL_STATE_DEEPSLEEP;
 	spin_unlock_bh(&ar->state_lock);
 
 	ath6kl_cfg80211_stop_all(ar);
+#endif
 
 	/*
 	 * Flush data packets and wait for all control packets
@@ -5290,7 +5371,7 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 
 	switch (vif->sme_state) {
 	case SME_CONNECTING:
-		cfg80211_connect_result(vif->ndev, vif->bssid, NULL, 0,
+		ath6kl_cfg80211_connect_result(vif, vif->bssid, NULL, 0,
 					NULL, 0,
 					WLAN_STATUS_UNSPECIFIED_FAILURE,
 					GFP_KERNEL);
@@ -5302,7 +5383,7 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 		 * suspend, why? Need to send disconnected event in that
 		 * state.
 		 */
-		cfg80211_disconnected(vif->ndev, 0, NULL, 0, GFP_KERNEL);
+		ath6kl_cfg80211_disconnected(vif, 0, NULL, 0, GFP_KERNEL);
 		break;
 	}
 
@@ -5426,10 +5507,13 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 	else
 		ar->p2p_frame_not_report = false;
 
-	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_WAR_BAD_INTEL_GO))
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_WAR_BAD_P2P_GO)) {
 		ar->p2p_war_bad_intel_go = true;
-	else
+		ar->p2p_war_bad_broadcom_go = true;
+	} else {
 		ar->p2p_war_bad_intel_go = false;
+		ar->p2p_war_bad_broadcom_go = false;
+	}
 
 	ar->p2p_ie_not_append = 0;
 
@@ -5776,6 +5860,13 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 	ath6kl_setup_android_resource(ar);
 #endif
 
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB)) {
+		wiphy->reg_notifier = ath6kl_reg_notifier;
+		wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
+		wiphy->flags |= WIPHY_FLAG_STRICT_REGULATORY;
+		wiphy->flags |= WIPHY_FLAG_DISABLE_BEACON_HINTS;
+	}
+
 	ret = wiphy_register(wiphy);
 	if (ret < 0) {
 		ath6kl_err("couldn't register wiphy device\n");
@@ -6117,7 +6208,7 @@ void ath6kl_core_init_defer(struct work_struct *wk)
 
 	/* Wait target report WMI_REGDOMAIN_EVENTID done */
 	for (i = 0; i < MAX_RD_WAIT_CNT; i++) {
-		if (ar->current_reg_domain) {
+		if (ath6kl_reg_is_init_done(ar)) {
 			/* wait more 2 jiffies for regdb updated */
 			schedule_timeout_interruptible(2);
 			break;

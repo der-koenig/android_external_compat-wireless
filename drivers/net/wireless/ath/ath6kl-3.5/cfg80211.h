@@ -68,6 +68,21 @@ void ath6kl_deinit_ieee80211_hw(struct ath6kl *ar);
 
 void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted);
 
+void ath6kl_cfg80211_connect_result(struct ath6kl_vif *vif,
+				const u8 *bssid,
+				const u8 *req_ie,
+				size_t req_ie_len,
+				const u8 *resp_ie,
+				size_t resp_ie_len,
+				u16 status,
+				gfp_t gfp);
+
+void ath6kl_cfg80211_disconnected(struct ath6kl_vif *vif,
+				u16 reason,
+				u8 *ie,
+				size_t ie_len,
+				gfp_t gfp);
+
 void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 				   u8 *bssid, u16 listen_intvl,
 				   u16 beacon_intvl,

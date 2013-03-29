@@ -742,7 +742,13 @@ enum wmi_cmd_id {
 	WMI_SET_CUSTOM_PROBE_RESP_REPORT_CMDID,
 	WMI_SET_CUSTOM_WIDI,
 	WMI_GET_CUSTOM_WIDI,
-	/* merge from olca mainline for align command id - end */
+
+	/*Diversity control*/
+	WMI_SET_ANTDIVCFG_CMDID, /* F0CC */
+	WMI_GET_ANTDIVSTAT_CMDID,
+
+	WMI_SET_SEAMLESS_MCC_SCC_SWITCH_FREQ_CMDID,
+/* merge from olca mainline for align command id - end */
 
 	WMI_SET_CREDIT_BYPASS_CMDID,
 };
@@ -2190,6 +2196,37 @@ struct wmi_pmkid_list_reply {
 	struct wmi_pmkid pmkid_list[1];
 } __packed;
 
+/* WMI_ANT_DIV_CMD */
+struct wmi_ant_div_cmd {
+	u8	diversity_control;
+	u8	main_lna_conf;
+	u8	alt_lna_conf;
+	u8	fast_div_bias;
+	u8	main_gaintb;
+	u8	alt_gaintb;
+} __packed;
+
+/* WMI_ANT_DIV_STAT */
+struct wmi_ant_div_stat {
+	u32	scan_start_time;
+	u16	total_pkt_count;
+	u16	count;
+	int	alt_recv_cnt;
+	int	main_recv_cnt;
+	int	alt_ratio;
+	int	main_rssi_avg;
+	int	alt_rssi_avg;
+	int	curr_main_set;
+	int	curr_alt_set;
+	int	end_st;
+	int	scan;
+	int	scan_not_start;
+	int	curr_bias;
+	u8	main_lna_conf;
+	u8	alt_lna_conf;
+	u8	fast_div_bias;
+} __packed;
+
 #define WMI_MAX_PMKID_CACHE   8
 #define MAX_PMKID_LIST_SIZE   (sizeof(__le32) + WMI_MAX_PMKID_CACHE * \
 				(sizeof(struct wmi_pmkid) + ETH_ALEN))
@@ -2663,10 +2700,10 @@ enum wmi_sync_flag {
 /* Green TX parameters */
 struct wmi_green_tx_params {
 	u32    enable;
-	u8     nextProbeCount;
-	u8     maxBackOff;
-	u8     minGtxRssi;
-	u8     forceBackOff;
+	u8     next_probe_count;
+	u8     max_back_off;
+	u8     min_gtx_rssi;
+	u8     force_back_off;
 } __packed;
 
 /* flow control indication parameters */
@@ -3386,6 +3423,7 @@ int ath6kl_wmi_set_credit_bypass(struct wmi *wmi, u8 if_idx, u8 eid,
 	u8 restore, u16 threshold);
 int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs);
 int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile);
+int ath6kl_wmi_set_seamless_mcc_scc_switch_freq_cmd(struct wmi *wmi, u32 freq);
 
 int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2);
 int ath6kl_wmi_set_inact_cmd(struct wmi *wmi, u32 inacperiod);
@@ -3395,4 +3433,11 @@ int ath6kl_wmi_set_assoc_req_relay_cmd(struct wmi *wmi, u8 if_idx,
 	bool enabled);
 
 int ath6kl_wmi_set_ap_num_sta_cmd(struct wmi *wmi, u8 if_idx, u8 sta_nums);
+int ath6kl_wmi_set_antdivcfg(struct wmi *wmi, u8 if_idx, u8 diversity_control);
+int ath6kl_wmi_antdivstate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len);
+
+int ath6kl_wmi_antdivstate_debug_event_rx(struct ath6kl_vif *vif,
+	u8 *datap, int len);
+int ath6kl_antdiv_stat_debug(struct ath6kl *ar, u8 *buf, int buf_len);
+
 #endif /* WMI_H */

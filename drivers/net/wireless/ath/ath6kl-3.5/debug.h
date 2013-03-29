@@ -90,11 +90,14 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* disable wmi sync mechanism */
 	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
 
-	/* workaround for EV119712 */
-	ATH6KL_MODULE_WAR_BAD_INTEL_GO = BIT(24),
+	/* workaround for EV119712/CR468120 */
+	ATH6KL_MODULE_WAR_BAD_P2P_GO = BIT(24),
 
 	/* Config AP keep-alive from supplicant */
 	ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP	= BIT(25),
+
+	/* Follow the driver's regdb */
+	ATH6KL_MODULE_DRIVER_REGDB = BIT(26),
 };
 
 enum ATH6KL_MODULE_P2P {
@@ -138,7 +141,7 @@ enum ATH6KL_MODULE_ROAM {
 
 enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_CREDIT	= BIT(0),
-	/* hole */
+	ATH6KL_DBG_REGDB	= BIT(1),
 	ATH6KL_DBG_WLAN_TX      = BIT(2),     /* wlan tx */
 	ATH6KL_DBG_WLAN_RX      = BIT(3),     /* wlan rx */
 	ATH6KL_DBG_BMI		= BIT(4),     /* bmi tracing */

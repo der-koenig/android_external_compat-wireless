@@ -1772,13 +1772,13 @@ static int ath6kl_close(struct net_device *dev)
 
 	switch (vif->sme_state) {
 	case SME_CONNECTING:
-		cfg80211_connect_result(vif->ndev, vif->bssid, NULL, 0,
+		ath6kl_cfg80211_connect_result(vif, vif->bssid, NULL, 0,
 					NULL, 0,
 					WLAN_STATUS_UNSPECIFIED_FAILURE,
 					GFP_KERNEL);
 		break;
 	case SME_CONNECTED:
-		cfg80211_disconnected(vif->ndev, 0, NULL, 0, GFP_KERNEL);
+		ath6kl_cfg80211_disconnected(vif, 0, NULL, 0, GFP_KERNEL);
 		break;
 	case SME_DISCONNECTED:
 	default:

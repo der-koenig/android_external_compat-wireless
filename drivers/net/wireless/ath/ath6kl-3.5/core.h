@@ -43,6 +43,7 @@
 #include "htcoex.h"
 #include "p2p.h"
 #include "ap.h"
+#include "reg.h"
 #include <linux/wireless.h>
 #include <linux/interrupt.h>
 
@@ -50,7 +51,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.294)
+#define __BUILD_VERSION_ (3.5.0.301)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -332,6 +333,12 @@
 #define ATH6KL_5GHZ_HT40_DEF_WIDTH		(1)	/* HT40 enabled */
 #define ATH6KL_5GHZ_HT40_DEF_SGI		(1)	/* SGI enabled */
 #define ATH6KL_5GHZ_HT40_DEF_INTOLR40		(0)	/* disabled */
+
+/* default parameters for GeenTX */
+#define ATH6KL_GTX_NEXT_PROBE_COUNT 20
+#define ATH6KL_GTX_MAX_BACK_OFF 6
+#define ATH6KL_GTX_MIN_RSSI 35
+#define ATH6KL_GTX_FORCE_BACKOFF 0
 
 /* delay around 29ms on 1/4 msg in wpa/wpa2 to avoid racing with roam
 * event in certain platform
@@ -1258,6 +1265,7 @@ struct ath6kl_vif {
 	struct target_stats target_stats;
 	struct htcoex *htcoex_ctx;
 	struct wmi_scan_params_cmd sc_params;
+	struct wmi_scan_params_cmd sc_params_default;
 	u8 pmkid_list_buf[MAX_PMKID_LIST_SIZE];
 	u16 last_rsn_cap;
 #ifdef ATH6KL_DIAGNOSTIC
@@ -1293,6 +1301,11 @@ struct ath6kl_vif {
 	struct acs *acs_ctx;
 	int best_chan[4];
 #endif
+	struct wmi_ant_div_stat ant_div_stat;
+
+	struct delayed_work work_pending_connect;
+	struct p2p_pending_connect_info *pending_connect_info;
+
 };
 
 #define WOW_LIST_ID		0
@@ -1361,6 +1374,8 @@ struct ath6kl {
 	spinlock_t state_lock;
 	enum ath6kl_state state;
 	unsigned int testmode;
+
+	unsigned int starving_prevention;
 
 	struct ath6kl_bmi bmi;
 	const struct ath6kl_hif_ops *hif_ops;
@@ -1514,6 +1529,9 @@ struct ath6kl {
 	/* WAR EV119712 */
 	bool p2p_war_bad_intel_go;
 
+	/* WAR CR468120 */
+	bool p2p_war_bad_broadcom_go;
+
 	/* IOT : Not to append P2P IE in concurrent STA interface */
 #define P2P_IE_IN_PROBE_REQ	(1 << 0)
 #define P2P_IE_IN_ASSOC_REQ	(1 << 1)
@@ -1561,14 +1579,6 @@ struct ath6kl {
 		u8 force_passive;
 		u16 bgscan_int;
 		enum wmi_roam_mode roam_mode;
-
-		struct green_tx_param {
-			u32 green_tx_enable;
-			u8 next_probe_count;
-			u8 max_backoff;
-			u8 min_gtx_rssi;
-			u8 force_backoff;
-		} green_tx_params;
 
 		struct smps_param {
 			u8 flags;
@@ -1623,7 +1633,7 @@ struct ath6kl {
 
 	u32 tx_on_vif;
 
-	struct country_code_to_enum_rd *current_reg_domain;
+	struct reg_info *reg_ctx;
 
 	void (*fw_crash_notify)(struct ath6kl *ar);
 
@@ -1636,6 +1646,7 @@ struct ath6kl {
 	int auto_pm_cnt;
 
 #endif
+	struct wmi_green_tx_params green_tx_params;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1839,4 +1850,7 @@ int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar);
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
 extern unsigned int htc_bundle_send_timer;
+#ifdef CE_SUPPORT
+extern unsigned int ath6kl_ce_flags;
+#endif
 #endif /* CORE_H */

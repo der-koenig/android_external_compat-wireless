@@ -46,6 +46,7 @@ unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
 unsigned int ath6kl_scan_timeout;
 unsigned int ath6kl_roam_mode = ATH6KL_MODULEROAM_DEFAULT;
 static unsigned int recovery_enable_mode = ATH6KL_RECOVERY_MODE_NONE;
+unsigned int starving_prevention;
 unsigned int ath6kl_ath0_name;
 #ifdef CE_SUPPORT
 unsigned int ath6kl_ce_flags = 1;
@@ -87,6 +88,7 @@ module_param(ath6kl_ath0_name, uint, 0644);
 #ifdef CE_SUPPORT
 module_param(ath6kl_ce_flags, uint, 0644);
 #endif
+module_param(starving_prevention, uint, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -675,12 +677,24 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
 		vif->sc_params.scan_ctrl_flags |= ROAM_SCAN_CTRL_FLAGS;
 
+#ifdef CE_SUPPORT
+	/* avoid association reject by AP not found */
+	vif->sc_params.maxact_chdwell_time = 60;
+	vif->sc_params.maxact_scan_per_ssid = 2;
+#else
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
+#endif
 
 	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 		vif->sc_params.pas_chdwell_time =
 			ATH6KL_SCAN_PAS_DEWELL_TIME_WITHOUT_ROAM;
 
+	/*
+	 * restore the initial scan parameters for usage
+	 * Note that debugfs may revise sc_params_default as well
+	 */
+	memcpy(&vif->sc_params_default, &vif->sc_params,
+			sizeof(struct wmi_scan_params_cmd));
 }
 
 /*
@@ -1090,6 +1104,8 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	ath6kl_debug_cleanup(ar);
 
 	ath6kl_p2p_flowctrl_conn_list_deinit(ar);
+
+	ath6kl_reg_deinit(ar);
 
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
@@ -2755,6 +2771,8 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	ar->testmode = testmode;
 
+	ar->starving_prevention = starving_prevention;
+
 	ret = ath6kl_fetch_firmwares(ar);
 	if (ret)
 		goto err_htc_cleanup;
@@ -2883,6 +2901,12 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
+	/* Fine P2P channels by default. */
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB))
+		ar->reg_ctx = ath6kl_reg_init(ar, true, true);
+	else
+		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
+
 	set_bit(FIRST_BOOT, &ar->flag);
 
 	ret = ath6kl_init_hw_start(ar);
@@ -2940,6 +2964,15 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
+	ar->green_tx_params.enable = true;
+	ar->green_tx_params.next_probe_count =
+		ATH6KL_GTX_NEXT_PROBE_COUNT;
+	ar->green_tx_params.max_back_off =
+		ATH6KL_GTX_MAX_BACK_OFF;
+	ar->green_tx_params.min_gtx_rssi =
+		ATH6KL_GTX_MIN_RSSI;
+	ar->green_tx_params.force_back_off =
+		ATH6KL_GTX_FORCE_BACKOFF;
 
 	return ret;
 

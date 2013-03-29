@@ -43,6 +43,8 @@ ath6kl_sdio-$(CONFIG_QC_INTERNAL) += intra_reg.o
 ath6kl_sdio-y += pm.o
 ath6kl_sdio-y += p2p.o
 ath6kl_sdio-y += ap.o
+ath6kl_sdio-y += reg.o
+ath6kl_sdio-y += regdb.o
 
 obj-$(CONFIG_ATH6KL_USB) += ath6kl_usb.o
 ath6kl_usb-y += debug.o
@@ -65,6 +67,8 @@ ath6kl_usb-$(CONFIG_QC_INTERNAL) += intra_reg.o
 ath6kl_usb-y += pm.o
 ath6kl_usb-y += p2p.o
 ath6kl_usb-y += ap.o
+ath6kl_usb-y += reg.o
+ath6kl_usb-y += regdb.o
 ath6kl_usb-$(CONFIG_ATHTST_SUPPORT) += ce_athtst.o
 ath6kl_usb-$(CONFIG_ACS_SUPPORT) += acs.o
 ath6kl_usb-$(CONFIG_ACL_SUPPORT) += acl_ioctl.o

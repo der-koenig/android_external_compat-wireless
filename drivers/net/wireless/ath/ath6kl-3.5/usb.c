@@ -723,6 +723,9 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 	struct sk_buff *buf = NULL;
 	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
 	struct ath6kl_usb_pipe_stat *pipe_st = &pipe->usb_pipe_stat;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	struct ath6kl *ar = pipe->ar_usb->ar;
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 		   "%s: recv pipe: %d, stat:%d, len:%d urb:0x%p\n", __func__,
@@ -765,7 +768,11 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->io_comp_queue, buf);
 	pipe_st->num_rx_comp++;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	queue_work(ar->ath6kl_wq, &pipe->io_complete_work);
+#else
 	schedule_work(&pipe->io_complete_work);
+#endif
 
 cleanup_recv_urb:
 	ath6kl_usb_cleanup_recv_urb(urb_context);
@@ -924,7 +931,11 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 		} while (netlen);
 
 		pipe_st->num_rx_bundle_comp++;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+		queue_work(ar->ath6kl_wq, &pipe->io_complete_work);
+#else
 		schedule_work(&pipe->io_complete_work);
+#endif
 
 	} while (0);
 
@@ -951,6 +962,9 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 	struct sk_buff *buf;
 	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
 	struct ath6kl_usb_pipe_stat *pipe_st = &pipe->usb_pipe_stat;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	struct ath6kl *ar = pipe->ar_usb->ar;
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 			"%s: pipe: %d, stat:%d, len:%d\n",
@@ -971,7 +985,11 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->io_comp_queue, buf);
 	pipe_st->num_tx_comp++;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	queue_work(ar->ath6kl_wq, &pipe->io_complete_work);
+#else
 	schedule_work(&pipe->io_complete_work);
+#endif
 }
 
 static void ath6kl_usb_io_comp_work(struct work_struct *work)
@@ -982,6 +1000,9 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 	struct ath6kl_usb *device;
 	struct ath6kl_usb_pipe_stat *pipe_st = &pipe->usb_pipe_stat;
 	u32 tx = 0, rx = 0;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	struct ath6kl *ar = pipe->ar_usb->ar;
+#endif
 
 	pipe_st->num_io_comp++;
 	device = pipe->ar_usb;
@@ -1040,7 +1061,11 @@ reschedule:
 	/* Re-schedule it to avoid one direction to starve another direction. */
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 				   "ath6kl usb re-schedule work.\n");
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	queue_work(ar->ath6kl_wq, &pipe->io_complete_work);
+#else
 	schedule_work(&pipe->io_complete_work);
+#endif
 
 	return;
 }
@@ -1051,9 +1076,9 @@ reschedule:
 static void ath6kl_usb_destroy(struct ath6kl_usb *ar_usb)
 {
 	unregister_reboot_notifier(&ar_usb->reboot_notifier);
-
+#ifndef CE_OLD_KERNEL_SUPPORT_2_6_23
 	ath6kl_usb_flush_all(ar_usb);
-
+#endif
 	ath6kl_usb_cleanup_pipe_resources(ar_usb);
 
 	usb_set_intfdata(ar_usb->interface, NULL);
@@ -1186,6 +1211,9 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	}
 #endif
 
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	ath6kl_usb_flush_all(ar_usb);
+#endif
 	ath6kl_core_cleanup(ar_usb->ar);
 	ath6kl_usb_destroy(ar_usb);
 }
@@ -1213,6 +1241,9 @@ static void ath6kl_usb_transmit_bundle_complete(struct urb *urb)
 	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
 	struct ath6kl_usb_pipe_stat *pipe_st = &pipe->usb_pipe_stat;
 	struct sk_buff *tmp_buf;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	struct ath6kl *ar = pipe->ar_usb->ar;
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK, "+%s: pipe: %d, stat:%d, len:%d " "\n",
 		__func__, pipe->logical_pipe_num, urb->status,
@@ -1230,7 +1261,11 @@ static void ath6kl_usb_transmit_bundle_complete(struct urb *urb)
 	while ((tmp_buf = skb_dequeue(&urb_context->comp_queue)))
 		skb_queue_tail(&pipe->io_comp_queue, tmp_buf);
 	pipe_st->num_tx_bundle_comp++;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	queue_work(ar->ath6kl_wq, &pipe->io_complete_work);
+#else
 	schedule_work(&pipe->io_complete_work);
+#endif
 }
 
 static int ath6kl_usb_send_bundle(struct ath6kl *ar, u8 pid,
