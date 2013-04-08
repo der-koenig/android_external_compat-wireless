@@ -112,9 +112,14 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 	int starving = ep->starving;
 	int msgs_upper_limit =
 		(htc_bundle_send) ? HTC_HOST_MAX_MSG_PER_BUNDLE : 1;
+	int tx_resources;
+	struct ath6kl *ar = target->dev->ar;
 
 	if (target->tgt_cred_sz == 0)
 		return;
+
+	tx_resources = ath6kl_hif_pipe_get_free_queue_number(ar,
+					      ep->pipeid_ul);
 
 	/* NOTE : the TX lock is held when this function is called */
 	/* loop until we can grab as many packets out of the queue as we can */
@@ -160,13 +165,15 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 
 		} else if (ep->eid >= ENDPOINT_2 && ep->eid <= ENDPOINT_5) {
 
-			if (target->avail_tx_credits < credits_required)
+			if (target->avail_tx_credits < credits_required ||
+				tx_resources < credits_required)
 				break;
 
 			if (htc_bundle_send && !msgs_upper_limit)
 				break;
 
 			target->avail_tx_credits -= credits_required;
+			tx_resources -= credits_required;
 			ep->ep_st.cred_cosumd += credits_required;
 
 			ep->starving = 0;
@@ -181,14 +188,15 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 			}
 
 		} else {
-
-			if (ep->cred_dist.credits < credits_required)
+			if (ep->cred_dist.credits < credits_required ||
+				tx_resources < credits_required)
 				break;
 
 			if (htc_bundle_send && !msgs_upper_limit)
 				break;
 
 			ep->cred_dist.credits -= credits_required;
+			tx_resources -= credits_required;
 			ep->ep_st.cred_cosumd += credits_required;
 
 			/* check if we need credits back from the target */
@@ -339,6 +347,9 @@ static int htc_issue_packets(struct htc_target *target,
 				target->avail_tx_credits += bundle_credit_used;
 			else
 				ep->cred_dist.credits += bundle_credit_used;
+
+			ep->ep_st.cred_retnd += bundle_credit_used;
+			ep->ep_st.tx_dropped += bundle_credit_used;
 			spin_unlock_bh(&target->tx_lock);
 		}
 	} else {
@@ -405,6 +416,11 @@ static int htc_issue_packets(struct htc_target *target,
 				else
 					ep->cred_dist.credits +=
 						packet->info.tx.cred_used;
+
+				ep->ep_st.tx_dropped +=
+					packet->info.tx.cred_used;
+				ep->ep_st.cred_retnd +=
+					packet->info.tx.cred_used;
 				spin_unlock_bh(&target->tx_lock);
 				/* put it back into the callers queue */
 				list_add(&packet->list, pkt_queue);
@@ -576,12 +592,8 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 		}
 	}
 
-	if (!ep->tx_credit_flow_enabled) {
-		tx_resources =
+	tx_resources =
 		    ath6kl_hif_pipe_get_free_queue_number(ar, ep->pipeid_ul);
-	} else {
-		tx_resources = 0;
-	}
 
 	spin_lock_bh(&target->tx_lock);
 	if (!list_empty(&send_queue)) {
@@ -627,7 +639,9 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 			 * the HIF layer will always have bus resources greater
 			 * than target transmit resources
 			 */
-			get_htc_packet_credit_based(target, ep, &send_queue);
+			if (tx_resources)
+				get_htc_packet_credit_based(target,
+					ep, &send_queue);
 		} else {
 			/* get all packets for this endpoint that we can for
 			 * this pass
@@ -647,11 +661,9 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 		/* send what we can */
 		htc_issue_packets(target, ep, &send_queue);
 
-		if (!ep->tx_credit_flow_enabled) {
-			tx_resources =
-			    ath6kl_hif_pipe_get_free_queue_number(ar,
-						      ep->pipeid_ul);
-		}
+		tx_resources =
+		    ath6kl_hif_pipe_get_free_queue_number(ar,
+					      ep->pipeid_ul);
 
 		spin_lock_bh(&target->tx_lock);
 		/* if it is a starving EP, consumes only one credit */
@@ -918,6 +930,8 @@ static void htc_process_credit_report(struct htc_target *target,
 			int epid_idx;
 
 			target->avail_tx_credits += rpt->credits;
+			ep->ep_st.cred_retnd += rpt->credits;
+			ep->ep_st.tx_cred_rpt++;
 
 			for (epid_idx = 0; epid_idx < DATA_EP_SIZE;
 			     epid_idx++) {
@@ -941,6 +955,8 @@ static void htc_process_credit_report(struct htc_target *target,
 			spin_lock_bh(&target->tx_lock);
 		} else {
 			ep->cred_dist.credits += rpt->credits;
+			ep->ep_st.cred_retnd += rpt->credits;
+			ep->ep_st.tx_cred_rpt++;
 
 			if (ep->cred_dist.credits &&
 			    get_queue_depth(&ep->txq)) {
@@ -1647,6 +1663,7 @@ static int htc_rx_completion(struct htc_target *context,
 	/* TODO: for backwards compatibility */
 	packet->buf = skb_push(netbuf, 0) + HTC_HDR_LENGTH;
 	packet->act_len = netlen - HTC_HDR_LENGTH - trailerlen;
+	ep->ep_st.rx_pkts++;
 
 	/*
 	 * TODO: this is a hack because the driver layer will set the
@@ -2198,6 +2215,7 @@ static int ath6kl_htc_pipe_wait_target(struct htc_target *handle)
 	struct htc_ready_ext_msg *ready_msg;
 	struct htc_service_connect_req connect;
 	struct htc_service_connect_resp resp;
+	struct ath6kl *ar = target->dev->ar;
 
 	status = htc_wait_recv_ctrl_message(target);
 
@@ -2249,6 +2267,12 @@ static int ath6kl_htc_pipe_wait_target(struct htc_target *handle)
 
 	/* connect fake service */
 	status = ath6kl_htc_pipe_conn_service((void *)target, &connect, &resp);
+
+	/* add 0.2 credit counts to compensate the credit report scheme */
+	if (!(ar->hw.flags & ATH6KL_HW_USB_FLOWCTRL)) {
+		target->tgt_creds += target->tgt_creds/5;
+	}
+
 	return status;
 }
 
@@ -2382,7 +2406,7 @@ int ath6kl_htc_pipe_stat(struct htc_target *target,
 			target->avail_tx_credits,
 			target->tgt_creds);
 
-	for (i = ENDPOINT_2; i <= ENDPOINT_5; i++) {
+	for (i = ENDPOINT_1; i <= ENDPOINT_5; i++) {
 		len += snprintf(buf + len, buf_len - len, "EP-%d\n", i);
 
 		ep = &target->endpoint[i];

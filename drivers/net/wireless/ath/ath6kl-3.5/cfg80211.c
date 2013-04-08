@@ -202,7 +202,7 @@ static struct ieee80211_iface_combination
 /* Max. 2 devices = 1STA&P2P-DEVICE + 1P2P-GO|P2P-CLIENT */
 static const struct ieee80211_iface_limit ath6kl_limits_p2p_concurrent2[] = {
 	{
-		.max = 1,
+		.max = 2,
 		.types = BIT(NL80211_IFTYPE_STATION),
 	},
 	{
@@ -225,10 +225,10 @@ static struct ieee80211_iface_combination
 /* Max. 3 devices = 1STA + 1P2P-DEVICE + 1P2P-GO|P2P-CLIENT */
 static const struct ieee80211_iface_limit ath6kl_limits_p2p_concurrent3[] = {
 	{
-		.max = 2,
+		.max = 3,
 		.types = BIT(NL80211_IFTYPE_STATION),
 	},
-	{	/* Treat P2P-DEVICE as P2P-CLIENT */
+	{
 		.max = 1,
 		.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				BIT(NL80211_IFTYPE_P2P_GO),
@@ -248,10 +248,10 @@ static struct ieee80211_iface_combination
 /* Max. 4 devices = 1STA + 1P2P-DEVICE + 2P2P-GO|P2P-CLIENT */
 static const struct ieee80211_iface_limit ath6kl_limits_p2p_concurrent4[] = {
 	{
-		.max = 2,
+		.max = 4,
 		.types = BIT(NL80211_IFTYPE_STATION),
 	},
-	{	/* Treat P2P-DEVICE as P2P-CLIENT */
+	{
 		.max = 2,
 		.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				BIT(NL80211_IFTYPE_P2P_GO),
@@ -271,14 +271,14 @@ static struct ieee80211_iface_combination
 /* Max. 4 devices = 1STA + 1P2P-DEVICE + 1P2P-GO|P2P-CLIENT + 1SOFTAP */
 static const struct ieee80211_iface_limit ath6kl_limits_p2p_concurrent4_1[] = {
 	{
-		.max = 2,
+		.max = 3,
 		.types = BIT(NL80211_IFTYPE_STATION),
 	},
 	{
 		.max = 1,
 		.types = BIT(NL80211_IFTYPE_AP),
 	},
-	{	/* Treat P2P-DEVICE as P2P-CLIENT */
+	{
 		.max = 1,
 		.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				BIT(NL80211_IFTYPE_P2P_GO),
@@ -3691,6 +3691,9 @@ static int __ath6kl_cfg80211_resume(struct wiphy *wiphy)
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
 
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
+		return 0;
+
 	return ath6kl_hif_resume(ar);
 }
 
@@ -5132,6 +5135,10 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 	 * usb now
 	 */
 	if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
+		host_req_delay = 2000;
+
+	/* for hsic mode, reduce the wakeup time to 2 secs */
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
 		host_req_delay = 2000;
 
 	/* Clear existing WOW patterns */

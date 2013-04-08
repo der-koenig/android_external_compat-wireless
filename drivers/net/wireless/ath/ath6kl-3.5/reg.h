@@ -345,7 +345,7 @@ struct reg_code_to_isoname {
 
 struct reg_info {
 #define ATH6KL_REG_FALGS_INTERNAL_REGDB		(1 << 0)
-#define ATH6KL_REG_FALGS_FINE_P2PCHAN		(1 << 1)
+#define ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN	(1 << 1)
 	u32 flags;
 	struct ath6kl *ar;
 	struct wiphy *wiphy;
@@ -362,6 +362,6 @@ int ath6kl_reg_target_notify(struct ath6kl *ar, u32 reg_code);
 bool ath6kl_reg_is_init_done(struct ath6kl *ar);
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
-				bool fineP2pchan);
+				bool p2pInPasvCh);
 void ath6kl_reg_deinit(struct ath6kl *ar);
 #endif /* REG_H */

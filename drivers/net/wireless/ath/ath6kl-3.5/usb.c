@@ -26,7 +26,7 @@
 #endif
 
 /* constants */
-#define TX_URB_COUNT            32
+#define TX_URB_COUNT            40
 #define RX_URB_COUNT            32
 
 #define ATH6KL_USB_RX_BUFFER_SIZE  2048
@@ -2437,8 +2437,23 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 
 static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 {
-	if (usb_get_intfdata(intf))
-		ath6kl_usb_remove(intf);
+	struct ath6kl_usb *device;
+	struct ath6kl *ar;
+
+	device = (struct ath6kl_usb *)usb_get_intfdata(intf);
+	ar = device->ar;
+	/*
+	instead of call remove directly, In HSIC mode,
+	we call pm_resume to make usb continue to work
+	*/
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+		ath6kl_dbg(ATH6KL_DBG_USB,
+		"ath6kl_usb_pm_reset_resume\n");
+		ath6kl_usb_pm_resume(intf);
+	} else {
+		if (usb_get_intfdata(intf))
+			ath6kl_usb_remove(intf);
+	}
 	return 0;
 }
 #endif

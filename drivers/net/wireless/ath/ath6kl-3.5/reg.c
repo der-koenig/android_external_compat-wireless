@@ -556,7 +556,7 @@ static void ath6kl_reg_apply_regulatory(struct reg_info *reg,
 			 * If this channel is P2P allowed and not marked
 			 * as PASSIVE/IBSS to let wpa_supplicant use it.
 			 */
-			if ((reg->flags & ATH6KL_REG_FALGS_FINE_P2PCHAN) &&
+			if ((reg->flags & ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN) &&
 			    (!(chan->flags & IEEE80211_CHAN_RADAR)) &&
 			    ath6kl_p2p_is_p2p_channel(chan->center_freq)) {
 				chan->flags &= ~IEEE80211_CHAN_PASSIVE_SCAN;
@@ -696,7 +696,7 @@ bool ath6kl_reg_is_init_done(struct ath6kl *ar)
 
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
-				bool fineP2pchan)
+				bool p2pInPasvCh)
 {
 	struct reg_info *reg;
 
@@ -710,11 +710,11 @@ struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 	reg->wiphy = ar->wiphy;
 	if (intRegdb) {
 		reg->flags |= ATH6KL_REG_FALGS_INTERNAL_REGDB;
-		if (fineP2pchan)
-			reg->flags |= ATH6KL_REG_FALGS_FINE_P2PCHAN;
+		if (p2pInPasvCh)
+			reg->flags |= ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN;
 
 		ath6kl_info("Using driver's regdb%s.\n",
-				(fineP2pchan ? " & fine p2p-chan" : ""));
+				(p2pInPasvCh ? " & p2p-in-passive-chan" : ""));
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,

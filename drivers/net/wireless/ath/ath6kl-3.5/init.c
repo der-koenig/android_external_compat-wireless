@@ -307,8 +307,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0,
-		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED	|
-						ATH6KL_HW_USB_FLOWCTRL,
+		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_3_0_FW_DIR,
@@ -938,7 +937,8 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-	if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
+	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
+		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
 		param = 0;
 	else
 		param = 3;
@@ -2901,9 +2901,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
-	/* Fine P2P channels by default. */
+	/* Disable P2P-in-passive-chan channels by default. */
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB))
-		ar->reg_ctx = ath6kl_reg_init(ar, true, true);
+		ar->reg_ctx = ath6kl_reg_init(ar, true, false);
 	else
 		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
 

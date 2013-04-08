@@ -19,6 +19,7 @@
 #include "htc-ops.h"
 #include "epping.h"
 #include <linux/version.h>
+#include <net/arp.h>
 
 /* 802.1d to AC mapping. Refer pg 57 of WMM-test-plan-v1.2 */
 static const u8 up_to_ac[] = {
@@ -416,6 +417,52 @@ bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif,
 	return ps_queued;
 }
 
+static inline  void __ath6kl_arp_parse_offload(struct ath6kl_vif *vif,
+					       struct sk_buff *skb)
+{
+	struct ath6kl *ar = vif->ar;
+	struct ethhdr *eth_hdr = (struct ethhdr *) skb->data;
+	struct ath6kl_llc_snap_hdr *llc_hdr;
+	struct arphdr *arp_hdr;
+	unsigned char *ar_sip;
+	unsigned char src_ip[4];
+	u16 ether_type;
+	int hdr_size;
+
+	if (is_ethertype(be16_to_cpu(eth_hdr->h_proto))) {
+		/* packet is in DIX format */
+		ether_type = eth_hdr->h_proto;
+		hdr_size = sizeof(struct ethhdr);
+	} else {
+		/* packet is in 802.3 format */
+		llc_hdr = (struct ath6kl_llc_snap_hdr *)(skb->data
+			+ sizeof(struct ethhdr));
+		ether_type = llc_hdr->eth_type;
+		hdr_size = sizeof(struct ethhdr)
+			+ sizeof(struct ath6kl_llc_snap_hdr);
+	}
+
+	if (ether_type == htons(ETH_P_ARP)) {
+		arp_hdr = (struct arphdr *)(skb->data + hdr_size);
+		ar_sip = skb->data + hdr_size
+			+ sizeof(struct arphdr) + ETH_ALEN;
+
+		if (arp_hdr->ar_op == htons(ARPOP_REPLY)) {
+			memcpy(src_ip, ar_sip, 4);
+
+			vif->arp_offload_ip_set = 0;
+			if (!ath6kl_wmi_set_arp_offload_ip_cmd(ar->wmi,
+				src_ip)) {
+				vif->arp_offload_ip_set = 1;
+				ath6kl_dbg(ATH6KL_DBG_WOWLAN,
+				"%s: enable arp offload %d.%d.%d.%d\n",
+				__func__, src_ip[0], src_ip[1]
+				, src_ip[2], src_ip[3]);
+			}
+		}
+	}
+}
+
 /* Tx functions */
 
 int ath6kl_control_tx(void *devt, struct sk_buff *skb,
@@ -534,6 +581,11 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 			kfree_skb(skb);
 			skb = tmp_skb;
 		}
+
+		/* sniffer ARP reply, enable ARP offload by default */
+		if ((vif == ath6kl_vif_first(ar))
+			&& (vif->nw_type == INFRA_NETWORK))
+			__ath6kl_arp_parse_offload(vif, skb);
 
 		if (ath6kl_wmi_dix_2_dot3(ar->wmi, skb)) {
 			ath6kl_err("ath6kl_wmi_dix_2_dot3 failed\n");
@@ -3122,7 +3174,11 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 
 	aggr->tx_amsdu_enable = true;
 	aggr->tx_amsdu_seq_pkt = true;
+#ifdef CONFIG_ANDROID
 	aggr->tx_amsdu_progressive = false;
+#else
+	aggr->tx_amsdu_progressive = true;
+#endif
 	aggr->tx_amsdu_max_aggr_num = AGGR_TX_MAX_NUM;
 	aggr->tx_amsdu_max_aggr_len = AGGR_TX_MAX_AGGR_SIZE - 100;
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;
