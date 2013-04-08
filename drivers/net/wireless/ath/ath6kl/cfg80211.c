@@ -4027,8 +4027,6 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
-	ath6kl_setup_android_resource(ar);
-
 	if (test_bit(ATH6KL_FW_CAPABILITY_MAC_ACL, ar->fw_capabilities)) {
 		ar->wiphy->features |= NL80211_FEATURE_MAC_ACL;
 		ar->wiphy->max_acl_mac_addrs = MAX_ACL_MAC_ADDRS;
@@ -4039,6 +4037,8 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 		ath6kl_err("couldn't register wiphy device\n");
 		return ret;
 	}
+
+	ath6kl_setup_android_resource(ar);
 
 	return 0;
 }
