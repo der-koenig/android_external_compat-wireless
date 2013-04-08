@@ -367,6 +367,11 @@ ath6kl_debug_fwlog_event_send(struct ath6kl *ar, const u8 *buffer, u32 length)
 	struct net_device *dev;
 
 	vif = ath6kl_vif_first(ar);
+
+	/* should always get value by ath6kl_vif_first */
+	if (!vif)
+		return;
+
 	dev = vif->ndev;
 
 	sent = 0;
@@ -2479,6 +2484,10 @@ static int ath6kl_parse_ht_cap_params(const char __user *user_buf, size_t count,
 	SKIP_SPACE;
 
 	sscanf(p, "%d", &value);
+
+	if (value >= IEEE80211_NUM_BANDS)
+		return -EFAULT;
+
 	htCapParam->band = (u8) value;
 
 	SEEK_SPACE;
@@ -3512,6 +3521,11 @@ static ssize_t ath6kl_antdivstat_read(struct file *file,
 	ssize_t ret_cnt;
 	struct ath6kl_vif *vif;
 	vif = ath6kl_vif_first(ar);
+
+	/* should always get value by ath6kl_vif_first */
+	if (!vif)
+		return -EIO;
+
 	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
 	if (!buf)
 		return -ENOMEM;
@@ -4049,28 +4063,28 @@ static void __chan_flag_to_string(u32 flags, u8 *string)
 {
 	string[0] = '\0';
 	if (flags & IEEE80211_CHAN_DISABLED)
-		strcpy(string + strlen(string), "[DISABLE]");
+		strlcpy(string + strlen(string), "[DISABLE]", 9);
 
 	if (flags & IEEE80211_CHAN_PASSIVE_SCAN)
-		strcpy(string + strlen(string), "[PASSIVE_SCAN]");
+		strlcpy(string + strlen(string), "[PASSIVE_SCAN]", 14);
 
 	if (flags & IEEE80211_CHAN_NO_IBSS)
-		strcpy(string + strlen(string), "[NO_IBSS]");
+		strlcpy(string + strlen(string), "[NO_IBSS]", 9);
 
 	if (flags & IEEE80211_CHAN_RADAR)
-		strcpy(string + strlen(string), "[RADER]");
+		strlcpy(string + strlen(string), "[RADER]", 7);
 
-	strcpy(string + strlen(string), "[HT20]");
+	strlcpy(string + strlen(string), "[HT20]", 6);
 	if ((flags & IEEE80211_CHAN_NO_HT40PLUS) &&
 	    (flags & IEEE80211_CHAN_NO_HT40MINUS)) {
 		;
 	} else {
 		if (flags & IEEE80211_CHAN_NO_HT40PLUS)
-			strcpy(string + strlen(string), "[HT40-]");
+			strlcpy(string + strlen(string), "[HT40-]", 7);
 		else if (flags & IEEE80211_CHAN_NO_HT40MINUS)
-			strcpy(string + strlen(string), "[HT40+]");
+			strlcpy(string + strlen(string), "[HT40+]", 7);
 		else
-			strcpy(string + strlen(string), "[HT40+][HT40-]");
+			strlcpy(string + strlen(string), "[HT40+][HT40-]", 14);
 	}
 
 	return;
@@ -4083,7 +4097,9 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 #define _BUF_SIZE	(2048)
 	struct ath6kl *ar = file->private_data;
 	struct wiphy *wiphy = ar->wiphy;
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	struct reg_info *reg = ar->reg_ctx;
+#endif
 	u8 *buf, *p;
 	u8 flag_string[96];
 	unsigned int len = 0;
@@ -4091,8 +4107,10 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 	enum ieee80211_band band;
 	ssize_t ret_cnt;
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	if (!reg)
 		return 0;
+#endif
 
 	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
 	if (!buf)
@@ -4101,6 +4119,7 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 	p = buf;
 	buf_len = _BUF_SIZE;
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	if (reg->current_regd) {
 		len += scnprintf(p + len, buf_len - len,
 				"\nCurrent Regulatory - %08x %c%c %d rules\n",
@@ -4120,6 +4139,7 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 				regRule->freq_range.max_bandwidth_khz / 1000);
 		}
 	}
+#endif
 
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 		if (!wiphy->bands[band])

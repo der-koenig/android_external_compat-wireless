@@ -1946,7 +1946,8 @@ static int ath6kl_htc_pipe_conn_service(struct htc_target *handle,
 	/* the rest are parameter checks so set the error status */
 	status = -EINVAL;
 
-	if (assigned_epid >= ENDPOINT_MAX) {
+	if (assigned_epid >= ENDPOINT_MAX
+		|| assigned_epid <= ENDPOINT_UNUSED) {
 		WARN_ON(1);
 		goto free_packet;
 	}
@@ -2269,9 +2270,8 @@ static int ath6kl_htc_pipe_wait_target(struct htc_target *handle)
 	status = ath6kl_htc_pipe_conn_service((void *)target, &connect, &resp);
 
 	/* add 0.2 credit counts to compensate the credit report scheme */
-	if (!(ar->hw.flags & ATH6KL_HW_USB_FLOWCTRL)) {
+	if (!(ar->hw.flags & ATH6KL_HW_USB_FLOWCTRL))
 		target->tgt_creds += target->tgt_creds/5;
-	}
 
 	return status;
 }

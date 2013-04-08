@@ -37,6 +37,9 @@ void DumpRttResp(void *data)
 				"RespType : %x NoResp : %x Result : %x\n",
 				presphdr->request_id, presphdr->response_type,
 				presphdr->no_of_responses, presphdr->result);
+	else
+		return;
+
 	pcirresp->no_of_chains = 2;
 	for (i = 0; i < presphdr->no_of_responses; i++)	{
 		ath6kl_dbg(ATH6KL_DBG_RTT, "TOD : %x\n", pcirresp->tod);

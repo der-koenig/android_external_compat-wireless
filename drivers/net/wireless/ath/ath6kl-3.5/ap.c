@@ -1181,12 +1181,13 @@ void ath6kl_ap_admc_assoc_req_release(struct ath6kl_vif *vif,
 	admc_assoc_req = container_of(assocReq,
 					struct ap_admc_assoc_req,
 					raw_frame[0]);
-	_ap_amdc_assoc_req_free(ap_admc, admc_assoc_req);
 
 	ath6kl_dbg(ATH6KL_DBG_ADMC,
 			"ap_admc assoResp release %p %p\n",
 			assocReq,
 			admc_assoc_req);
+
+	_ap_amdc_assoc_req_free(ap_admc, admc_assoc_req);
 
 	return;
 }

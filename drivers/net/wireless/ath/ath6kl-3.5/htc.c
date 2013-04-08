@@ -2482,7 +2482,8 @@ static int ath6kl_htc_mbox_conn_service(struct htc_target *target,
 		max_msg_sz = le16_to_cpu(resp_msg->max_msg_sz);
 	}
 
-	if (assigned_ep >= ENDPOINT_MAX || !max_msg_sz) {
+	if (assigned_ep >= ENDPOINT_MAX || assigned_ep <= ENDPOINT_UNUSED
+		|| !max_msg_sz) {
 		status = -ENOMEM;
 		goto fail_tx;
 	}
