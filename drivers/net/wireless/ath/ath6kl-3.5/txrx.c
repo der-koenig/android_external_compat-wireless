@@ -1058,6 +1058,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 		if (!skb || !skb->data)
 			goto fatal;
 
+		if (eid == ENDPOINT_UNUSED || eid == ENDPOINT_MAX)
+			goto fatal;
+
 		__skb_queue_tail(&skb_queue, skb);
 
 		if (!status && (packet->act_len != skb->len))
@@ -1139,7 +1142,8 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 	if (test_bit(MCC_ENABLED, &ar->flag)) {
 		endpoint = &ar->htc_target->endpoint[eid];
-		if (ar && endpoint && packet && ar->htc_target) {
+		/*if (ar && endpoint && packet && ar->htc_target) {*/
+		if (endpoint && packet && ar->htc_target) {
 			struct list_head *tx_queue;
 
 			tx_queue = &endpoint->txq;

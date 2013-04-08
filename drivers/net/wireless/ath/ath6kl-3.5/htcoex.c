@@ -100,7 +100,8 @@ static void htcoex_get_coexinfo(struct htcoex_bss_info *coex_bss,
 		}
 
 		if (i == coex_info->num_chans) {
-			BUG_ON(coex_info->num_chans > 14);
+			/* chans only get size 14 */
+			BUG_ON(coex_info->num_chans >= 14);
 			coex_info->chans[coex_info->num_chans++] = chan_id;
 		}
 	}

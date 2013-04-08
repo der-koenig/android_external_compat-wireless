@@ -498,6 +498,12 @@ static int ath6kl_connectservice(struct ath6kl *ar,
 		return status;
 	}
 
+	if (response.endpoint >= ENDPOINT_MAX
+		|| response.endpoint <= ENDPOINT_UNUSED) {
+		ath6kl_err("Invalid endpoint: %d\n", response.endpoint);
+		return -EINVAL;
+	}
+
 	switch (con_req->svc_id) {
 	case WMI_CONTROL_SVC:
 		if (test_bit(WMI_ENABLED, &ar->flag))
@@ -1105,7 +1111,9 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	ath6kl_p2p_flowctrl_conn_list_deinit(ar);
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	ath6kl_reg_deinit(ar);
+#endif
 
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
@@ -1187,7 +1195,7 @@ static bool check_device_tree(struct ath6kl *ar)
 
 static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 {
-	int i;
+	int i, ret;
 	u16 *p;
 	u32 sum = 0;
 	u32 param;
@@ -1213,10 +1221,15 @@ static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
 
-	ath6kl_bmi_read(ar,
+	ret = ath6kl_bmi_read(ar,
 				ath6kl_get_hi_item_addr(ar,
 				HI_ITEM(hi_option_flag2)),
 				(u8 *) &param, 4);
+
+	if (ret) {
+		ath6kl_err("failed to do bmi read %d\n", ret);
+		return;
+	}
 
 	param |= HI_OPTION_DISABLE_MAC_OTP;
 	ath6kl_bmi_write(ar,
@@ -1228,7 +1241,7 @@ static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 
 static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 {
-	int i;
+	int i, ret;
 	u16 *p;
 	u32 sum = 0;
 	u32 param;
@@ -1259,10 +1272,15 @@ static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
 
-	ath6kl_bmi_read(ar,
+	ret = ath6kl_bmi_read(ar,
 				ath6kl_get_hi_item_addr(ar,
 				HI_ITEM(hi_option_flag2)),
 				(u8 *) &param, 4);
+
+	if (ret) {
+		ath6kl_err("failed to do bmi read %d\n", ret);
+		return ret;
+	}
 
 	param |= HI_OPTION_DISABLE_MAC_OTP;
 	ath6kl_bmi_write(ar,
@@ -2901,11 +2919,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	/* Disable P2P-in-passive-chan channels by default. */
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB))
 		ar->reg_ctx = ath6kl_reg_init(ar, true, false);
 	else
 		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
+#endif
 
 	set_bit(FIRST_BOOT, &ar->flag);
 

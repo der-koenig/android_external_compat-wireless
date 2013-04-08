@@ -1970,6 +1970,9 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
+	if (!params)
+		return -EINVAL;
+
 	if (down_interruptible(&ar->sem)) {
 		ath6kl_err("busy, couldn't get access\n");
 		return -ERESTARTSYS;
@@ -5867,12 +5870,14 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 	ath6kl_setup_android_resource(ar);
 #endif
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB)) {
 		wiphy->reg_notifier = ath6kl_reg_notifier;
 		wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_STRICT_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_DISABLE_BEACON_HINTS;
 	}
+#endif
 
 	ret = wiphy_register(wiphy);
 	if (ret < 0) {
@@ -6136,6 +6141,16 @@ void ath6kl_deinit_ieee80211_hw(struct ath6kl *ar)
 
 	ath6kl_reset_cfg80211_ops(&ath6kl_cfg80211_ops);
 }
+
+#ifndef CONFIG_ATH6KL_INTERNAL_REGDB
+static bool ath6kl_reg_is_init_done(struct ath6kl *ar)
+{
+	if (ar->current_reg_domain)
+		return true;
+	else
+		return false;
+}
+#endif
 
 void ath6kl_core_init_defer(struct work_struct *wk)
 {

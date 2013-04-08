@@ -43,7 +43,11 @@
 #include "htcoex.h"
 #include "p2p.h"
 #include "ap.h"
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 #include "reg.h"
+#else
+#include "../regd.h"
+#endif
 #include <linux/wireless.h>
 #include <linux/interrupt.h>
 
@@ -51,7 +55,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.304)
+#define __BUILD_VERSION_ (3.5.0.307)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1637,7 +1641,11 @@ struct ath6kl {
 
 	u32 tx_on_vif;
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	struct reg_info *reg_ctx;
+#else
+	struct country_code_to_enum_rd *current_reg_domain;
+#endif
 
 	void (*fw_crash_notify)(struct ath6kl *ar);
 
