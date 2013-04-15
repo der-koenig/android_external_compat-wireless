@@ -1582,6 +1582,13 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 			__func__, PipeID, buf, ar->state);
 
 #ifdef USB_AUTO_SUSPEND
+	if (ar->state == ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP) {
+		ath6kl_dbg(ATH6KL_DBG_USB, "%s: deep sleep state=%d\n",
+		__func__, ar->state);
+		status = -EIO;
+		pipe_st->num_tx++;
+		return status;
+	}
 
 	if (ar->state != ATH6KL_STATE_PRE_SUSPEND)
 		usb_auto_pm_disable(ar);

@@ -163,7 +163,8 @@ struct ath6kl_p2p_flowctrl {
 #define ATH6KL_RC_FLAGS_DONE			(1 << 1)
 #define ATH6KL_RC_FLAGS_HIGH_CHAN		(1 << 2)
 #define ATH6KL_RC_FLAGS_ALWAYS_FRESH		(1 << 3)
-#define ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN		(1 << 5)
+#define ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN		(1 << 4)
+#define ATH6KL_RC_FLAGS_CHAN_RECORD_FETCHED	(1 << 5)
 
 #define ATH6KL_RC_MAX_2G_CHAN_RECORD	(14)
 #define ATH6KL_RC_MAX_5G_CHAN_RECORD	(66)
@@ -299,6 +300,7 @@ int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 
 struct ath6kl_p2p_rc_info *ath6kl_p2p_rc_init(struct ath6kl *ar);
 void ath6kl_p2p_rc_deinit(struct ath6kl *ar);
+void ath6kl_p2p_rc_fetch_chan(struct ath6kl *ar);
 void ath6kl_p2p_rc_bss_info(struct ath6kl_vif *vif,
 			    u8 snr,
 			    struct ieee80211_channel *channel);

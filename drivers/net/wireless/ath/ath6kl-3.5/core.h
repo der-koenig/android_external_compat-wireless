@@ -55,7 +55,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.320)
+#define __BUILD_VERSION_ (3.5.0.322)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1346,6 +1346,7 @@ enum ath6kl_state {
 	ATH6KL_STATE_CUTPOWER,
 	ATH6KL_STATE_WOW,
 	ATH6KL_STATE_PRE_SUSPEND,
+	ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP,
 };
 
 #define ATH6KL_VAPMODE_MASK	(0xf)	/* each VAP use 4 bits */
@@ -1364,6 +1365,7 @@ enum ath6kl_vap_mode {
 
 	ATH6KL_VAPMODE_LAST = 0xf,
 };
+
 
 #ifdef USB_AUTO_SUSPEND
 
@@ -1656,6 +1658,7 @@ struct ath6kl {
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
+	unsigned long  usb_autopm_scan;
 	struct work_struct auto_pm_wakeup_resume_wk;
 	int auto_pm_cnt;
 

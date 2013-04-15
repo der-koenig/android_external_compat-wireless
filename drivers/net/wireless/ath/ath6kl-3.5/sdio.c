@@ -904,6 +904,9 @@ static int ath6kl_sdio_resume(struct ath6kl *ar)
 
 	case ATH6KL_STATE_PRE_SUSPEND:
 		break;
+
+	case ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP:
+		break;
 	}
 
 	ath6kl_cfg80211_resume(ar);

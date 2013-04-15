@@ -1336,15 +1336,16 @@ static inline int __p2p_rc_get_chan_slot(struct ieee80211_channel *channel)
 #undef _MIN_5G_CHAN_ID
 }
 
-static void _p2p_rc_reset_chan_record(struct ath6kl_p2p_rc_info *p2p_rc)
+void ath6kl_p2p_rc_fetch_chan(struct ath6kl *ar)
 {
+	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
 	enum ieee80211_band band;
 	struct wiphy *wiphy = p2p_rc->ar->wiphy;
 	int i, slot;
 
-	/* TODO : not always reset it, just need when regdb updated. */
+	if (!p2p_rc)
+		return;
 
-	/* Clear all channel record */
 	spin_lock_bh(&p2p_rc->p2p_rc_lock);
 	p2p_rc->chan_record_cnt = 0;
 	for (i = 0; i < ATH6KL_RC_MAX_CHAN_RECORD; i++) {
@@ -1353,7 +1354,7 @@ static void _p2p_rc_reset_chan_record(struct ath6kl_p2p_rc_info *p2p_rc)
 		p2p_rc->chan_record[i].aver_snr = P2P_RC_NULL_SNR;
 	}
 
-	/* Fetch channel record from cfg80211 */
+	/* Fetch channel record from wiphy */
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 		struct ieee80211_supported_band *sband = wiphy->bands[band];
 
@@ -1371,12 +1372,45 @@ static void _p2p_rc_reset_chan_record(struct ath6kl_p2p_rc_info *p2p_rc)
 				p2p_rc->chan_record[slot].channel = chan;
 				p2p_rc->chan_record_cnt++;
 			} else
-				ath6kl_err("p2p_rc reset fail, f %d s %d!\n",
+				ath6kl_err("p2p_rc fetch fail, f %d s %d!\n",
 					chan->center_freq,
 					slot);
 		}
 	}
+
+	p2p_rc->flags |= ATH6KL_RC_FLAGS_CHAN_RECORD_FETCHED;
 	spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc fetch chan, chan_record_cnt %d\n",
+			p2p_rc->chan_record_cnt);
+
+	return;
+}
+
+static void _p2p_rc_reset_chan_record(struct ath6kl_p2p_rc_info *p2p_rc)
+{
+	int i;
+
+	/* Clear all channel record */
+	spin_lock_bh(&p2p_rc->p2p_rc_lock);
+	for (i = 0; i < ATH6KL_RC_MAX_CHAN_RECORD; i++) {
+		p2p_rc->chan_record[i].best_snr = P2P_RC_NULL_SNR;
+		p2p_rc->chan_record[i].aver_snr = P2P_RC_NULL_SNR;
+	}
+
+	if (p2p_rc->flags & ATH6KL_RC_FLAGS_CHAN_RECORD_FETCHED) {
+		spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+
+		ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc chan already fetched, chan_record_cnt %d\n",
+			p2p_rc->chan_record_cnt);
+
+		return;
+	}
+	spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+
+	ath6kl_p2p_rc_fetch_chan(p2p_rc->ar);
 
 	return;
 }
@@ -1451,9 +1485,9 @@ static inline void _p2p_rc_bss_update(struct ath6kl_p2p_rc_info *p2p_rc,
 	if ((slot >= 0) && (slot < ATH6KL_RC_MAX_CHAN_RECORD)) {
 		struct p2p_rc_chan_record *p2p_rc_chan;
 
+		spin_lock_bh(&p2p_rc->p2p_rc_lock);
 		p2p_rc_chan = &(p2p_rc->chan_record[slot]);
 
-		spin_lock_bh(&p2p_rc->p2p_rc_lock);
 		if (channel != p2p_rc_chan->channel) {
 			spin_unlock_bh(&p2p_rc->p2p_rc_lock);
 			ath6kl_dbg(ATH6KL_DBG_RC,
