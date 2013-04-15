@@ -4477,6 +4477,8 @@ static const struct file_operations fops_arp_offload_ip_addrs = {
 	.llseek = default_llseek,
 };
 
+#define TBTT_MCC_STA_LOWER_BOUND      20
+#define TBTT_MCC_STA_UPPER_BOUND      80
 /* File operation for mcc profile */
 static ssize_t ath6kl_mcc_profile(struct file *file,
 				const char __user *user_buf,
@@ -4486,7 +4488,7 @@ static ssize_t ath6kl_mcc_profile(struct file *file,
 	char buf[10];
 	ssize_t len;
 	u32 mcc_profile;
-
+	u32 sta_time;
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
@@ -4494,10 +4496,12 @@ static ssize_t ath6kl_mcc_profile(struct file *file,
 	buf[len] = '\0';
 	if (kstrtou32(buf, 0, &mcc_profile))
 		return -EINVAL;
-
+	sta_time = (mcc_profile & 0x0F)*10;
+	if( sta_time > TBTT_MCC_STA_UPPER_BOUND || sta_time < TBTT_MCC_STA_LOWER_BOUND){
+		return -EINVAL;
+	}
 	if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi, mcc_profile))
 		return -EIO;
-
 	return count;
 }
 

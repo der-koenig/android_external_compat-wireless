@@ -55,7 +55,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.318)
+#define __BUILD_VERSION_ (3.5.0.320)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -181,6 +181,7 @@
  */
 #ifdef CONFIG_ANDROID
 #define ATH6KL_SUPPORT_NL80211_QCA
+#define ATH6KL_BUS_VOTE 1
 
 #if defined(ATH6KL_SUPPORT_NL80211_KERNEL3_4) ||	\
 	defined(ATH6KL_SUPPORT_NL80211_KERNEL3_6)

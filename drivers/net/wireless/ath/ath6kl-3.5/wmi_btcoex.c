@@ -180,7 +180,7 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 
 		/* disable green tx if it's enabled & BT is on */
 		ar->green_tx_params.enable = false;
-		ath6kl_wmi_set_green_tx_params(ar->wmi, 
+		ath6kl_wmi_set_green_tx_params(ar->wmi,
 			&ar->green_tx_params);
 	}
 	break;

@@ -25,6 +25,12 @@
 #include <asm/unaligned.h>
 #endif
 
+#if ATH6KL_BUS_VOTE
+#include <linux/platform_device.h>
+#include <linux/wlan_plat.h>
+#include <mach/msm_bus.h>
+#endif
+
 /* constants */
 #define TX_URB_COUNT            10
 #define RX_URB_COUNT            32
@@ -2530,6 +2536,58 @@ static struct notifier_block ath6kl_usb_dev_nb = {
 	.notifier_call = ath6kl_usb_dev_notify,
 };
 
+
+#if ATH6KL_BUS_VOTE
+static u32 bus_perf_client;
+static struct msm_bus_scale_pdata *ath6kl_bus_scale_pdata;
+
+static int ath6kl_hsic_probe(struct platform_device *pdev)
+{
+	ath6kl_bus_scale_pdata = msm_bus_cl_get_pdata(pdev);
+	bus_perf_client = msm_bus_scale_register_client(ath6kl_bus_scale_pdata);
+	msm_bus_scale_client_update_request(bus_perf_client, 4);
+	return 0;
+}
+
+static int ath6kl_hsic_remove(struct platform_device *pdev)
+{
+	msm_bus_scale_client_update_request(bus_perf_client, 1);
+	if (bus_perf_client)
+		msm_bus_scale_unregister_client(bus_perf_client);
+	return 0;
+}
+
+static const struct of_device_id ath6kl_hsic_dt_match[] = {
+	{ .compatible = "qca,ar6004-hsic",},
+	{}
+};
+
+MODULE_DEVICE_TABLE(of, ath6kl_hsic_dt_match);
+
+static struct platform_driver ath6kl_hsic_device = {
+	.probe  = ath6kl_hsic_probe,
+	.remove = ath6kl_hsic_remove,
+	.driver = {
+		.name   = "ath6kl_hsic",
+		.of_match_table = ath6kl_hsic_dt_match,
+	}
+};
+
+int ath6kl_hsic_init_msm(void)
+{
+	int ret;
+
+	ret = platform_driver_register(&ath6kl_hsic_device);
+
+	return ret;
+}
+
+void ath6kl_hsic_exit_msm(void)
+{
+	platform_driver_unregister(&ath6kl_hsic_device);
+}
+#endif
+
 static int ath6kl_usb_init(void)
 {
 	init_waitqueue_head(&ath6kl_usb_unload_event_wq);
@@ -2537,6 +2595,13 @@ static int ath6kl_usb_init(void)
 	usb_register_notify(&ath6kl_usb_dev_nb);
 
 	usb_register(&ath6kl_usb_driver);
+
+#if ATH6KL_BUS_VOTE
+	if (ath6kl_hsic_init_msm() != 0) {
+		ath6kl_err("%s ath6kl_hsic_init_msm failed\n", __func__);
+	}
+#endif
+
 	return 0;
 }
 
@@ -2557,6 +2622,9 @@ static void ath6kl_usb_exit(void)
 
 finish:
 	usb_unregister_notify(&ath6kl_usb_dev_nb);
+#if ATH6KL_BUS_VOTE
+	ath6kl_hsic_exit_msm();
+#endif
 }
 #else
 static int ath6kl_usb_init(void)
