@@ -898,7 +898,6 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		} else {
 			spin_lock_bh(&ar->list_lock);
 			list_for_each_entry(vif, &ar->vif_list, list) {
-				spin_unlock_bh(&ar->list_lock);
 
 				/* keep but stop the netqueues */
 				spin_lock_bh(&vif->if_lock);
@@ -906,6 +905,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 				spin_unlock_bh(&vif->if_lock);
 				netif_stop_queue(vif->ndev);
 			}
+			spin_unlock_bh(&ar->list_lock);
 			return HTC_SEND_FULL_KEEP;
 		}
 	}
@@ -2145,13 +2145,8 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	 * Take lock to protect buffer counts and adaptive power throughput
 	 * state.
 	 */
-	spin_lock_bh(&vif->if_lock);
-
 	vif->net_stats.rx_packets++;
 	vif->net_stats.rx_bytes += packet->act_len;
-
-	spin_unlock_bh(&vif->if_lock);
-
 
 	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "rx ",
 			skb->data, skb->len);
@@ -2322,7 +2317,8 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 rx_aggr_process:
 	datap = (struct ethhdr *) skb->data;
 
-	if (is_unicast_ether_addr(datap->h_dest) &&
+	if ((is_unicast_ether_addr(datap->h_dest) ||
+		(vif->nw_type == AP_NETWORK)) &&
 		aggr_process_recv_frm(ar, conn->aggr_conn_cntxt, tid,
 			seq_no, is_amsdu, skb))
 		/* aggregation code will handle the skb */

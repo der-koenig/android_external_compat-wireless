@@ -26,7 +26,7 @@
 #endif
 
 /* constants */
-#define TX_URB_COUNT            40
+#define TX_URB_COUNT            10
 #define RX_URB_COUNT            32
 
 #define ATH6KL_USB_RX_BUFFER_SIZE  2048
@@ -1415,6 +1415,18 @@ void usb_auto_pm_enable(struct ath6kl *ar)
 	/*usb_debugfs_get_pm_usage_cnt(ar);*/
 }
 
+void usb_auto_pm_turnoff(struct ath6kl *ar)
+{
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+	usb_disable_autosuspend(device->udev);
+}
+
+void usb_auto_pm_turnon(struct ath6kl *ar)
+{
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+	usb_enable_autosuspend(device->udev);
+}
+
 
 void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
 {
@@ -2113,8 +2125,13 @@ static void ath6kl_usb_early_suspend(struct ath6kl *ar)
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 
 	if (!ath6kl_mod_debug_quirks(ar,
-				     ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND))
+			ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND)) {
+		if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+			struct usb_device *udev = device->udev;
+			pm_runtime_set_autosuspend_delay(&udev->dev, 2000);
+		}
 		usb_enable_autosuspend(device->udev);
+	}
 }
 
 static void ath6kl_usb_late_resume(struct ath6kl *ar)
@@ -2122,7 +2139,7 @@ static void ath6kl_usb_late_resume(struct ath6kl *ar)
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 
 	if (!ath6kl_mod_debug_quirks(ar,
-				     ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND))
+			ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND))
 		usb_disable_autosuspend(device->udev);
 }
 #endif
@@ -2228,6 +2245,8 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 #ifdef USB_AUTO_SUSPEND
 	.auto_pm_disable = usb_auto_pm_disable,
 	.auto_pm_enable = usb_auto_pm_enable,
+	.auto_pm_turnon = usb_auto_pm_turnon,
+	.auto_pm_turnoff = usb_auto_pm_turnoff,
 	.auto_pm_get_usage_cnt = usb_debugfs_get_pm_usage_cnt,
 #endif
 };
@@ -2314,6 +2333,7 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	spin_lock_init(&ar->usb_pm_lock);
 	INIT_LIST_HEAD(&ar->usb_pm_skb_queue.list);
 	INIT_WORK(&ar->auto_pm_wakeup_resume_wk, ath6kl_auto_pm_wakeup_resume);
+	pm_runtime_set_autosuspend_delay(&dev->dev, 2000);
 	usb_enable_autosuspend(dev);
 	ar->auto_pm_cnt = 0;
 #endif

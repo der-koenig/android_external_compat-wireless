@@ -18,9 +18,7 @@
 
 #include <net/netlink.h>
 
-#ifdef ATH6KL_SUPPORT_WLAN_HB
 #include "core.h"
-#endif
 
 /*
  * netlink.h remove these macros from kernel 3.5.
@@ -235,46 +233,57 @@ enum nl80211_wlan_hb_cmd {
 	NL80211_WLAN_TCP_FILTER		= 2,
 	NL80211_WLAN_UDP_PARAMS		= 3,
 	NL80211_WLAN_UDP_FILTER		= 4,
-	NL80211_WLAN_NET_INFO		= 5,
 };
 
-#define WLAN_HB_UDP_ENABLE		0x1
-#define WLAN_HB_TCP_ENABLE		0x2
+#define WLAN_HB_UDP		0x1
+#define WLAN_HB_TCP		0x2
 
 struct wlan_hb_params {
 	u16 cmd;
-	u16 enable;
+	u16 dummy;
 
 	union {
 		struct {
+			u8 enable;
+			u8 item;
+			u8 ses;
+		} hb_p;
+
+		struct {
+			u32 srv_ip;
+			u32 dev_ip;
 			u16 src_port;
 			u16 dst_port;
 			u16 timeout;
+			u8 session;
+			u8 gateway_mac[ETH_ALEN];
 		} tcp_params;
 
 		struct {
 			u16 length;
+			u8 offset;
+			u8 session;
 			u8 filter[64];
 		} tcp_filter;
 
 		struct {
+			u32 srv_ip;
+			u32 dev_ip;
 			u16 src_port;
 			u16 dst_port;
 			u16 interval;
 			u16 timeout;
+			u8 session;
+			u8 gateway_mac[ETH_ALEN];
 		} udp_params;
 
 		struct {
 			u16 length;
+			u8 offset;
+			u8 session;
 			u8 filter[64];
 		} udp_filter;
 
-		struct {
-			u32 device_ip;
-			u32 server_ip;
-			u32 gateway_ip;
-			u8 gateway_mac[ETH_ALEN];
-		} net_info;
 	} params;
 };
 #endif
@@ -403,7 +412,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 		hb_params = (struct wlan_hb_params *)buf;
 
 		if (hb_params->cmd == NL80211_WLAN_HB_ENABLE) {
-			if (hb_params->enable != 0) {
+			if (hb_params->params.hb_p.enable != 0) {
 
 				if (ath6kl_enable_wow_hb(ar)) {
 					printk(KERN_ERR
@@ -412,27 +421,34 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 					return -EINVAL;
 				}
 
-				if (hb_params->enable & WLAN_HB_TCP_ENABLE) {
-					ar->wlan_hb_enable |=
-						WLAN_HB_TCP_ENABLE;
-
+				if (hb_params->params.hb_p.item ==
+					WLAN_HB_TCP) {
 					if (ath6kl_wmi_set_heart_beat_params(
 						ar->wmi,
 						vif->fw_vif_idx,
-						WLAN_HB_TCP_ENABLE)) {
+						1,
+						WLAN_HB_TCP,
+						hb_params->params.hb_p.ses)) {
 						printk(KERN_ERR
 						"%s: set heart beat enable fail\n",
 						__func__);
 						return -EINVAL;
 					}
-				} else
-				if (hb_params->enable & WLAN_HB_UDP_ENABLE) {
-					ar->wlan_hb_enable |=
-						WLAN_HB_UDP_ENABLE;
+				} else if (hb_params->params.hb_p.item ==
+					WLAN_HB_UDP) {
+					if (ath6kl_wmi_set_heart_beat_params(
+						ar->wmi,
+						vif->fw_vif_idx,
+						1,
+						WLAN_HB_UDP,
+						hb_params->params.hb_p.ses)) {
+						printk(KERN_ERR
+						"%s: set heart beat enable fail\n",
+						__func__);
+						return -EINVAL;
+					}
 				}
 			} else {
-				ar->wlan_hb_enable = 0;
-
 #ifdef CONFIG_ANDROID
 				if (ath6kl_android_enable_wow_default(ar)) {
 					printk(KERN_ERR
@@ -440,22 +456,44 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 					__func__);
 				}
 #endif
-
-				if (ath6kl_wmi_set_heart_beat_params(ar->wmi,
-					vif->fw_vif_idx, 0)) {
-					printk(KERN_ERR
-					"%s: set heart beat enable fail\n",
-					__func__);
-					return -EINVAL;
+				if (hb_params->params.hb_p.item ==
+					WLAN_HB_TCP) {
+					if (ath6kl_wmi_set_heart_beat_params(
+						ar->wmi,
+						vif->fw_vif_idx,
+						0,
+						WLAN_HB_TCP,
+						hb_params->params.hb_p.ses)) {
+						printk(KERN_ERR
+						"%s: set heart beat disable fail\n",
+						__func__);
+						return -EINVAL;
+					}
+				} else if (hb_params->params.hb_p.item ==
+				WLAN_HB_UDP) {
+					if (ath6kl_wmi_set_heart_beat_params(
+						ar->wmi,
+						vif->fw_vif_idx,
+						0,
+						WLAN_HB_UDP,
+						hb_params->params.hb_p.ses)) {
+						printk(KERN_ERR
+						"%s: set heart beat disable fail\n",
+						__func__);
+						return -EINVAL;
+					}
 				}
 			}
-
 		} else if (hb_params->cmd == NL80211_WLAN_TCP_PARAMS) {
 			if (ath6kl_wmi_heart_beat_set_tcp_params(ar->wmi,
 				vif->fw_vif_idx,
 				hb_params->params.tcp_params.src_port,
 				hb_params->params.tcp_params.dst_port,
-				hb_params->params.tcp_params.timeout)) {
+				hb_params->params.tcp_params.srv_ip,
+				hb_params->params.tcp_params.dev_ip,
+				hb_params->params.tcp_params.timeout,
+				hb_params->params.tcp_params.session,
+				hb_params->params.tcp_params.gateway_mac)) {
 				printk(KERN_ERR
 				"%s: set heart beat tcp params fail\n",
 				__func__);
@@ -474,7 +512,9 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 			if (ath6kl_wmi_heart_beat_set_tcp_filter(ar->wmi,
 				vif->fw_vif_idx,
 				hb_params->params.tcp_filter.filter,
-				hb_params->params.tcp_filter.length)) {
+				hb_params->params.tcp_filter.length,
+				hb_params->params.tcp_filter.offset,
+				hb_params->params.tcp_filter.session)) {
 				printk(KERN_ERR
 				"%s: set heart beat tcp filter fail\n",
 				__func__);
@@ -485,8 +525,12 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 				vif->fw_vif_idx,
 				hb_params->params.udp_params.src_port,
 				hb_params->params.udp_params.dst_port,
+				hb_params->params.udp_params.srv_ip,
+				hb_params->params.udp_params.dev_ip,
 				hb_params->params.udp_params.interval,
-				hb_params->params.udp_params.timeout)) {
+				hb_params->params.udp_params.timeout,
+				hb_params->params.udp_params.session,
+				hb_params->params.udp_params.gateway_mac)) {
 				printk(KERN_ERR
 				"%s: set heart beat udp params fail\n",
 				__func__);
@@ -505,21 +549,11 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 			if (ath6kl_wmi_heart_beat_set_udp_filter(ar->wmi,
 					vif->fw_vif_idx,
 					hb_params->params.udp_filter.filter,
-					hb_params->params.udp_filter.length)) {
+					hb_params->params.udp_filter.length,
+					hb_params->params.udp_filter.offset,
+					hb_params->params.udp_filter.session)) {
 				printk(KERN_ERR
 				"%s: set heart beat udp filter fail\n",
-				__func__);
-				return -EINVAL;
-			}
-		} else if (hb_params->cmd == NL80211_WLAN_NET_INFO) {
-			if (ath6kl_wmi_heart_beat_set_network_info(ar->wmi,
-				vif->fw_vif_idx,
-				hb_params->params.net_info.device_ip,
-				hb_params->params.net_info.server_ip,
-				hb_params->params.net_info.gateway_ip,
-				hb_params->params.net_info.gateway_mac)) {
-				printk(KERN_ERR
-				"%s: set heart beat network information fail\n",
 				__func__);
 				return -EINVAL;
 			}

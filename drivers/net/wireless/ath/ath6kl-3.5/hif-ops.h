@@ -264,6 +264,18 @@ static inline void ath6kl_hif_auto_pm_enable(struct ath6kl *ar)
 	ar->hif_ops->auto_pm_enable(ar);
 }
 
+static inline void ath6kl_hif_auto_pm_turnon(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_turnon\n");
+	ar->hif_ops->auto_pm_turnon(ar);
+}
+
+static inline void ath6kl_hif_auto_pm_turnoff(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_turnoff\n");
+	ar->hif_ops->auto_pm_turnoff(ar);
+}
+
 static inline int ath6kl_hif_auto_pm_get_usage_cnt(struct ath6kl *ar)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif auto_pm_get_usage_cnt\n");

@@ -55,7 +55,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.307)
+#define __BUILD_VERSION_ (3.5.0.318)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1534,6 +1534,9 @@ struct ath6kl {
 	/* Not to report P2P Frame to user if not in RoC period */
 	bool p2p_frame_not_report;
 
+	/* Allow P2P operate in PASSIVE/IBSS channels */
+	bool p2p_in_pasv_chan;
+
 	/* WAR EV119712 */
 	bool p2p_war_bad_intel_go;
 
@@ -1628,12 +1631,10 @@ struct ath6kl {
 #endif /* CONFIG_HAS_WAKELOCK */
 #endif
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl_ctx;
+	struct ath6kl_p2p_rc_info *p2p_rc_info_ctx;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 #endif /* CONFIG_HAS_EARLYSUSPEND */
-#ifdef ATH6KL_SUPPORT_WLAN_HB
-	int wlan_hb_enable;
-#endif
 
 #define INIT_DEFER_WAIT_TIMEOUT		(5 * HZ)
 	struct work_struct init_defer_wk;

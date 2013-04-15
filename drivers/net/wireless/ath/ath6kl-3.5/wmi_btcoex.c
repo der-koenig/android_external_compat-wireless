@@ -166,10 +166,10 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 			(struct wmi_set_btcoex_fe_antenna_cmd *)buf;
 
 		if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
-			/* use WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO
+			/* use WMI_BTCOEX_FE_ANT_DUAL_SH_BT_HIGH_ISO
 			 by default for McK2.0.4 */
 			cmd->fe_antenna_type =
-					WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO;
+					WMI_BTCOEX_FE_ANT_DUAL_SH_BT_HIGH_ISO;
 		} else {
 			/* fill in correct antenna configuration from
 			board data if valid */
@@ -177,6 +177,11 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				cmd->fe_antenna_type =
 					ar->fw_board[BDATA_ANTCONF_OFFSET];
 		}
+
+		/* disable green tx if it's enabled & BT is on */
+		ar->green_tx_params.enable = false;
+		ath6kl_wmi_set_green_tx_params(ar->wmi, 
+			&ar->green_tx_params);
 	}
 	break;
 	case WMI_SET_BTCOEX_COLOCATED_BT_DEV_CMDID:

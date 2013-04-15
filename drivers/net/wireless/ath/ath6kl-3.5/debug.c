@@ -4939,6 +4939,39 @@ static const struct file_operations fops_ap_admc = {
 	.llseek = default_llseek,
 };
 
+/* File operation for P2P RecommendChannel */
+static ssize_t ath6kl_p2p_rc_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(1500)
+	struct ath6kl *ar = file->private_data;
+	u8 *buf;
+	unsigned int len = 0;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	len = ath6kl_p2p_rc_dump(ar, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+/* debug fs for P2P RecommendChannel. */
+static const struct file_operations fops_p2p_rc = {
+	.read = ath6kl_p2p_rc_read,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -5147,6 +5180,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("antdivstat", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_antdiv_state_read);
+
+	debugfs_create_file("p2p_rc", S_IRUSR,
+				ar->debugfs_phy, ar, &fops_p2p_rc);
 
 	return 0;
 }

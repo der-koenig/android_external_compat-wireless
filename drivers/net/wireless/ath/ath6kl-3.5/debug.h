@@ -120,6 +120,9 @@ enum ATH6KL_MODULE_P2P {
 
 	/* enable p2p_concurrent with softAP */
 	ATH6KL_MODULEP2P_CONCURRENT_AP			= BIT(8),
+
+	/* enable p2p_in_pasv_chan */
+	ATH6KL_MODULEP2P_P2P_IN_PASSIVE_CHAN		= BIT(9),
 };
 
 enum ATH6KL_MODULE_ROAM {
@@ -150,7 +153,7 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_IRQ		= BIT(7),     /* interrupt processing */
 	ATH6KL_DBG_ACL		= BIT(8),     /* access control list */
 	ATH6KL_DBG_ADMC		= ATH6KL_DBG_ACL,     /* admission control */
-	/* hole */
+	ATH6KL_DBG_RC		= BIT(9),     /* P2P recommend channel */
 	ATH6KL_DBG_WMI          = BIT(10),    /* wmi tracing */
 	ATH6KL_DBG_TRC	        = BIT(11),    /* generic func tracing */
 	ATH6KL_DBG_SCATTER	= BIT(12),    /* hif scatter tracing */

@@ -307,7 +307,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0,
-		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED,
+		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED |
+						ATH6KL_HW_USB_FLOWCTRL,
 
 		.fw = {
 			.dir		= AR6004_HW_3_0_FW_DIR,
@@ -1110,6 +1111,8 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	ath6kl_debug_cleanup(ar);
 
 	ath6kl_p2p_flowctrl_conn_list_deinit(ar);
+
+	ath6kl_p2p_rc_deinit(ar);
 
 #ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	ath6kl_reg_deinit(ar);
@@ -2345,9 +2348,12 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 
 	address = MBOX_BASE_ADDRESS + LOCAL_SCRATCH_ADDRESS;
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULES_ANI_ENABLE) ||
-		(ar->version.target_ver != AR6004_HW_1_1_VERSION)) {
+		((ar->version.target_ver != AR6004_HW_1_1_VERSION) &&
+			(ar->version.target_ver != AR6004_HW_1_3_VERSION))) {
+		ath6kl_dbg(ATH6KL_DBG_BOOT, "NO ANI\n");
 		param = options | 0x20;
 	} else {
+		ath6kl_dbg(ATH6KL_DBG_BOOT, "ANI Enabled\n");
 		param = options;
 	}
 	status = ath6kl_bmi_reg_write(ar, address, param);
@@ -2921,9 +2927,12 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 #ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	/* Disable P2P-in-passive-chan channels by default. */
-	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB))
-		ar->reg_ctx = ath6kl_reg_init(ar, true, false);
-	else
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB)) {
+		ar->reg_ctx = ath6kl_reg_init(ar, true, ar->p2p_in_pasv_chan);
+
+		/* P2P recommend channel works only internal regdb turns on. */
+		ar->p2p_rc_info_ctx = ath6kl_p2p_rc_init(ar);
+	} else
 		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
 #endif
 

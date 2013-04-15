@@ -1241,6 +1241,17 @@ static void sdio_auto_pm_enable(struct ath6kl *ar)
 
 }
 
+static void sdio_auto_pm_turnon(struct ath6kl *ar)
+{
+
+}
+
+
+static void sdio_auto_pm_turnoff(struct ath6kl *ar)
+{
+
+}
+
 int sdio_debugfs_get_pm_usage_cnt(struct ath6kl *ar)
 {
 	return 0;
@@ -1276,6 +1287,8 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 #ifdef USB_AUTO_SUSPEND
 	.auto_pm_disable = sdio_auto_pm_disable,
 	.auto_pm_enable = sdio_auto_pm_enable,
+	.auto_pm_turnon = sdio_auto_pm_turnon,
+	.auto_pm_turnoff = sdio_auto_pm_turnoff,
 	.auto_pm_get_usage_cnt = sdio_debugfs_get_pm_usage_cnt,
 #endif
 };

@@ -483,10 +483,10 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 	wmi_data_hdr_set_up(data_hdr, usr_pri);
 
 	spin_lock_bh(&wmi->lock);
-	stream_exist = wmi->fat_pipe_exist;
+	stream_exist = wmi->fat_pipe_exist_check_re_entry;
 
 	if (!(stream_exist & (1 << traffic_class))) {
-		wmi->fat_pipe_exist |= (1 << traffic_class);
+		wmi->fat_pipe_exist_check_re_entry |= (1 << traffic_class);
 		spin_unlock_bh(&wmi->lock);
 
 		memset(&cmd, 0, sizeof(cmd));
@@ -1728,6 +1728,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 #ifdef ACS_SUPPORT
 	ath6kl_acs_bss_info(vif, mgmt, 24 + len, channel, bih->snr);
 #endif
+	ath6kl_p2p_rc_bss_info(vif, bih->snr, channel);
 	ath6kl_htcoex_bss_info(vif, mgmt, 24 + len, channel);
 
 	bss = cfg80211_inform_bss_frame(ar->wiphy, channel, mgmt,
@@ -1768,6 +1769,7 @@ static int ath6kl_wmi_pstream_timeout_event_rx(struct wmi *wmi, u8 *datap,
 	spin_lock_bh(&wmi->lock);
 	wmi->stream_exist_for_ac[ev->traffic_class] = 0;
 	wmi->fat_pipe_exist &= ~(1 << ev->traffic_class);
+	wmi->fat_pipe_exist_check_re_entry &= ~(1 << ev->traffic_class);
 	spin_unlock_bh(&wmi->lock);
 
 	/* Indicate inactivity to driver layer for this fatpipe (pstream) */
@@ -2208,7 +2210,10 @@ static int ath6kl_wmi_cac_event_rx(struct wmi *wmi, u8 *datap, int len,
 		if (!active_tsids) {
 			ath6kl_indicate_tx_activity(wmi->parent_dev, reply->ac,
 						    false);
+			spin_lock_bh(&wmi->lock);
 			wmi->fat_pipe_exist &= ~(1 << reply->ac);
+			wmi->fat_pipe_exist_check_re_entry &= ~(1 << reply->ac);
+			spin_unlock_bh(&wmi->lock);
 		}
 	}
 
@@ -2954,7 +2959,9 @@ static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx)
 	 * In the SYNC cmd sent on the control Ep, send a bitmap
 	 * of the data eps on which the Data Sync will be sent
 	 */
+	spin_lock_bh(&wmi->lock);
 	cmd->data_sync_map = wmi->fat_pipe_exist;
+	spin_unlock_bh(&wmi->lock);
 
 	for (index = 0; index < num_pri_streams; index++) {
 		data_sync_bufs[index].skb = ath6kl_buf_alloc(0);
@@ -3082,6 +3089,8 @@ int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 		fatpipe_exist_for_ac = (wmi->fat_pipe_exist &
 					(1 << params->traffic_class));
 		wmi->fat_pipe_exist |= (1 << params->traffic_class);
+		wmi->fat_pipe_exist_check_re_entry |=
+			(1 << params->traffic_class);
 		spin_unlock_bh(&wmi->lock);
 	} else {
 		/* explicitly created thin stream within a fat pipe */
@@ -3095,6 +3104,8 @@ int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 		 * becomes active
 		 */
 		wmi->fat_pipe_exist |= (1 << params->traffic_class);
+		wmi->fat_pipe_exist_check_re_entry |=
+			(1 << params->traffic_class);
 		spin_unlock_bh(&wmi->lock);
 	}
 
@@ -3164,7 +3175,10 @@ int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
 	if (!active_tsids) {
 		ath6kl_indicate_tx_activity(wmi->parent_dev,
 					    traffic_class, false);
+		spin_lock_bh(&wmi->lock);
 		wmi->fat_pipe_exist &= ~(1 << traffic_class);
+		wmi->fat_pipe_exist_check_re_entry &= ~(1 << traffic_class);
+		spin_unlock_bh(&wmi->lock);
 	}
 
 	return ret;
@@ -3239,6 +3253,7 @@ static void ath6kl_wmi_relinquish_implicit_pstream_credits(struct wmi *wmi)
 	/* FIXME: Can we do this assignment without locking ? */
 	spin_lock_bh(&wmi->lock);
 	wmi->fat_pipe_exist = stream_exist;
+	wmi->fat_pipe_exist_check_re_entry = stream_exist;
 	spin_unlock_bh(&wmi->lock);
 }
 
@@ -4781,6 +4796,7 @@ void ath6kl_wmi_reset(struct wmi *wmi)
 	spin_lock_bh(&wmi->lock);
 
 	wmi->fat_pipe_exist = 0;
+	wmi->fat_pipe_exist_check_re_entry = 0;
 	memset(wmi->stream_exist_for_ac, 0, sizeof(wmi->stream_exist_for_ac));
 
 	spin_unlock_bh(&wmi->lock);
@@ -5455,7 +5471,8 @@ int ath6kl_wmi_set_oppps_cmd(struct wmi *wmi, u8 if_idx,
 }
 
 #ifdef ATH6KL_SUPPORT_WLAN_HB
-int ath6kl_wmi_set_heart_beat_params(struct wmi *wmi, u8 if_idx, u32 param)
+int ath6kl_wmi_set_heart_beat_params(struct wmi *wmi, u8 if_idx,
+	u8 enable, u8 item, u8 session)
 {
 	struct sk_buff *skb;
 	struct wmi_heart_beat_params_cmd *cmd;
@@ -5465,14 +5482,17 @@ int ath6kl_wmi_set_heart_beat_params(struct wmi *wmi, u8 if_idx, u32 param)
 		return -ENOMEM;
 
 	cmd = (struct wmi_heart_beat_params_cmd *)skb->data;
-	cmd->enable = param;
+	cmd->enable = enable;
+	cmd->item = item;
+	cmd->session = session;
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_HEART_PARAMS_CMDID,
 		NO_SYNC_WMIFLAG);
 }
 
 int ath6kl_wmi_heart_beat_set_tcp_params(struct wmi *wmi, u8 if_idx,
-	u16 src_port, u16 dst_port, u16 timeout)
+	u16 src_port, u16 dst_port, u32 srv_ip, u32 dev_ip, u16 timeout,
+	u8 session,  u8 *gateway_mac)
 {
 	struct sk_buff *skb;
 	struct wmi_heart_beat_tcp_params_cmd *cmd;
@@ -5484,7 +5504,11 @@ int ath6kl_wmi_heart_beat_set_tcp_params(struct wmi *wmi, u8 if_idx,
 	cmd = (struct wmi_heart_beat_tcp_params_cmd *)skb->data;
 	cmd->src_port = cpu_to_le16(src_port);
 	cmd->dst_port = cpu_to_le16(dst_port);
+	cmd->srv_ip = cpu_to_le32(srv_ip);
+	cmd->dev_ip = cpu_to_le32(dev_ip);
 	cmd->timeout = cpu_to_le16(timeout);
+	cmd->session = session;
+	memcpy(cmd->gateway_mac, gateway_mac, ETH_ALEN);
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 		WMI_HEART_SET_TCP_PARAMS_CMDID,
@@ -5492,7 +5516,7 @@ int ath6kl_wmi_heart_beat_set_tcp_params(struct wmi *wmi, u8 if_idx,
 }
 
 int ath6kl_wmi_heart_beat_set_tcp_filter(struct wmi *wmi, u8 if_idx,
-	u8 *filter, u8 length)
+	u8 *filter, u8 length, u8 offset, u8 session)
 {
 	struct sk_buff *skb;
 	struct wmi_heart_beat_tcp_filter_cmd *cmd;
@@ -5504,6 +5528,8 @@ int ath6kl_wmi_heart_beat_set_tcp_filter(struct wmi *wmi, u8 if_idx,
 	cmd = (struct wmi_heart_beat_tcp_filter_cmd *)skb->data;
 	memcpy(cmd->filter, filter, length);
 	cmd->length = length;
+	cmd->offset = offset;
+	cmd->session = session;
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 		WMI_HEART_SET_TCP_PKT_FILTER_CMDID,
@@ -5511,7 +5537,9 @@ int ath6kl_wmi_heart_beat_set_tcp_filter(struct wmi *wmi, u8 if_idx,
 }
 
 int ath6kl_wmi_heart_beat_set_udp_params(struct wmi *wmi, u8 if_idx,
-	u16 src_port, u16 dst_port, u16 interval, u16 timeout)
+	u16 src_port, u16 dst_port, u32 srv_ip,
+	u32 dev_ip, u16 interval, u16 timeout,
+	u8 session,  u8 *gateway_mac)
 {
 	struct sk_buff *skb;
 	struct wmi_heart_beat_udp_params_cmd *cmd;
@@ -5523,8 +5551,12 @@ int ath6kl_wmi_heart_beat_set_udp_params(struct wmi *wmi, u8 if_idx,
 	cmd = (struct wmi_heart_beat_udp_params_cmd *)skb->data;
 	cmd->src_port = cpu_to_le16(src_port);
 	cmd->dst_port = cpu_to_le16(dst_port);
+	cmd->srv_ip = cpu_to_le32(srv_ip);
+	cmd->dev_ip = cpu_to_le32(dev_ip);
 	cmd->interval = cpu_to_le16(interval);
 	cmd->timeout = cpu_to_le16(timeout);
+	cmd->session = session;
+	memcpy(cmd->gateway_mac, gateway_mac, ETH_ALEN);
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 		WMI_HEART_SET_UDP_PARAMS_CMDID,
@@ -5532,7 +5564,7 @@ int ath6kl_wmi_heart_beat_set_udp_params(struct wmi *wmi, u8 if_idx,
 }
 
 int ath6kl_wmi_heart_beat_set_udp_filter(struct wmi *wmi, u8 if_idx,
-	u8 *filter, u8 length)
+	u8 *filter, u8 length, u8 offset, u8 session)
 {
 	struct sk_buff *skb;
 	struct wmi_heart_beat_udp_filter_cmd *cmd;
@@ -5544,30 +5576,11 @@ int ath6kl_wmi_heart_beat_set_udp_filter(struct wmi *wmi, u8 if_idx,
 	cmd = (struct wmi_heart_beat_udp_filter_cmd *)skb->data;
 	memcpy(cmd->filter, filter, length);
 	cmd->length = length;
+	cmd->offset = offset;
+	cmd->session = session;
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 		WMI_HEART_SET_UDP_PKT_FILTER_CMDID,
-		NO_SYNC_WMIFLAG);
-}
-
-int ath6kl_wmi_heart_beat_set_network_info(struct wmi *wmi, u8 if_idx,
-	u32 device_ip, u32 server_ip, u32 gateway_ip, u8 *gateway_mac)
-{
-	struct sk_buff *skb;
-	struct wmi_heart_beat_network_info_cmd *cmd;
-
-	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
-	if (!skb)
-		return -ENOMEM;
-
-	cmd = (struct wmi_heart_beat_network_info_cmd *)skb->data;
-	cmd->device_ip = cpu_to_le32(device_ip);
-	cmd->server_ip = cpu_to_le32(server_ip);
-	cmd->gateway_ip = cpu_to_le32(gateway_ip);
-	memcpy(cmd->gateway_mac, gateway_mac, ETH_ALEN);
-
-	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
-		WMI_HEART_SET_NETWORK_INFO_CMDID,
 		NO_SYNC_WMIFLAG);
 }
 #endif

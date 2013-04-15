@@ -133,6 +133,7 @@ struct wmi {
 	bool is_probe_ssid;
 
 	struct list_head mgmt_tx_frame_list;
+	u8 fat_pipe_exist_check_re_entry;
 };
 
 struct host_app_area {
@@ -684,6 +685,7 @@ enum wmi_cmd_id {
 	WMI_P2P_PERSISTENT_PROFILE_CMDID,
 	WMI_P2P_SET_JOIN_PROFILE_CMDID,
 
+	/* wifi heart beat */
 	WMI_HEART_PARAMS_CMDID,
 	WMI_HEART_SET_TCP_PARAMS_CMDID,
 	WMI_HEART_SET_TCP_PKT_FILTER_CMDID,
@@ -2947,28 +2949,42 @@ struct wmi_wow_event_wake_event {
 
 struct wmi_heart_beat_params_cmd {
 	u8 enable;
+	u8 item;
+	u8 session;
 } __packed;
 
 struct wmi_heart_beat_tcp_params_cmd {
-	__le16   src_port;
-	__le16   dst_port;
-	__le16   timeout;
+	__le32 srv_ip;
+	__le32 dev_ip;
+	__le16 src_port;
+	__le16 dst_port;
+	__le16 timeout;
+	u8 session;
+	u8 gateway_mac[ETH_ALEN];
 } __packed;
 
 struct wmi_heart_beat_tcp_filter_cmd {
 	u8 length;
+	u8 offset;
+	u8 session;
 	u8 filter[WMI_MAX_TCP_FILTER_SIZE];
 } __packed;
 
 struct wmi_heart_beat_udp_params_cmd {
-	__le16   src_port;
-	__le16   dst_port;
-	__le16   interval;
-	__le16   timeout;
+	__le32 srv_ip;
+	__le32 dev_ip;
+	__le16 src_port;
+	__le16 dst_port;
+	__le16 interval;
+	__le16 timeout;
+	u8 session;
+	u8 gateway_mac[ETH_ALEN];
 } __packed;
 
 struct wmi_heart_beat_udp_filter_cmd {
 	u8 length;
+	u8 offset;
+	u8 session;
 	u8 filter[WMI_MAX_UDP_FILTER_SIZE];
 } __packed;
 
@@ -3397,22 +3413,26 @@ int ath6kl_wmi_set_noa_cmd(struct wmi *wmi, u8 if_idx,
 	u8 count, u32 start, u32 duration, u32 interval);
 int ath6kl_wmi_set_oppps_cmd(struct wmi *wmi, u8 if_idx,
 				u8 enable, u8 ctwin);
-int ath6kl_wmi_set_heart_beat_params(struct wmi *wmi, u8 if_idx, u32 param);
+
+int ath6kl_wmi_set_heart_beat_params(struct wmi *wmi, u8 if_idx,
+	u8 enable, u8 item, u8 session);
 int ath6kl_wmi_heart_beat_set_tcp_params(struct wmi *wmi, u8 if_idx,
-	u16 src_port, u16 dst_port, u16 timeout);
+	u16 src_port, u16 dst_port, u32 srv_ip, u32 dev_ip, u16 timeout,
+	u8 session, u8 *gateway_mac);
 int ath6kl_wmi_heart_beat_set_tcp_filter(struct wmi *wmi, u8 if_idx,
-	u8 *filter, u8 length);
+	u8 *filter, u8 length, u8 offset, u8 session);
 int ath6kl_wmi_heart_beat_set_udp_params(struct wmi *wmi, u8 if_idx,
-	u16 src_port, u16 dst_port, u16 interval, u16 timeout);
+	u16 src_port, u16 dst_port, u32 srv_ip, u32 dev_ip, u16 interval,
+	u16 timeout, u8 session, u8 *gateway_mac);
 int ath6kl_wmi_heart_beat_set_udp_filter(struct wmi *wmi, u8 if_idx,
-	u8 *filter, u8 length);
-int ath6kl_wmi_heart_beat_set_network_info(struct wmi *wmi, u8 if_idx,
-	u32 device_ip, u32 server_ip, u32 gateway_ip, u8 *gateway_mac);
+	u8 *filter, u8 length, u8 offset, u8 session);
+
 int ath6kl_wmi_disc_ie_cmd(struct wmi *wmi, u8 if_idx, u8 enable,
 	u8 startPos, u8 *pattern, u8 length);
 int ath6kl_wmi_disc_mode_cmd(struct wmi *wmi, u8 if_idx, u16 enable,
 	u16 channel, u32 home_dwell_time, u32 sleepTime, u32 random,
 	u32 numPeers, u32 peerTimeout);
+
 int ath6kl_wmi_ap_poll_sta(struct wmi *wmi, u8 if_idx, u8 aid);
 int ath6kl_wmi_ap_acl_policy(struct wmi *wmi, u8 if_idx, u8 policy);
 int ath6kl_wmi_ap_acl_mac_list(struct wmi *wmi, u8 if_idx,

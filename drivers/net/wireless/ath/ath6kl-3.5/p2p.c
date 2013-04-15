@@ -1283,6 +1283,583 @@ int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 	return len;
 }
 
+struct ath6kl_p2p_rc_info *ath6kl_p2p_rc_init(struct ath6kl *ar)
+{
+	struct ath6kl_p2p_rc_info *p2p_rc;
+
+	p2p_rc = kzalloc(sizeof(struct ath6kl_p2p_rc_info), GFP_KERNEL);
+	if (!p2p_rc) {
+		ath6kl_err("failed to alloc memory for p2p_rc\n");
+		return NULL;
+	}
+
+	p2p_rc->ar = ar;
+	p2p_rc->flags = ATH6KL_RC_FLAGS_HIGH_CHAN |
+			ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN;
+	spin_lock_init(&p2p_rc->p2p_rc_lock);
+	p2p_rc->snr_compensation = P2P_RC_DEF_SNR_COMP;
+
+	ath6kl_dbg(ATH6KL_DBG_RC, "p2p_rc init, flags %x\n",
+				p2p_rc->flags);
+
+	return p2p_rc;
+}
+
+void ath6kl_p2p_rc_deinit(struct ath6kl *ar)
+{
+	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
+
+	kfree(p2p_rc);
+
+	ar->p2p_rc_info_ctx = NULL;
+
+	ath6kl_dbg(ATH6KL_DBG_RC, "p2p_rc deinit\n");
+
+	return;
+}
+
+static inline int __p2p_rc_get_chan_slot(struct ieee80211_channel *channel)
+{
+#define _MIN_5G_CHAN_ID		34
+	int chid = ieee80211_frequency_to_channel(channel->center_freq);
+
+	if (channel->band == (u32)NL80211_BAND_2GHZ)
+		return chid - 1;
+	else if (channel->band == (u32)NL80211_BAND_5GHZ)
+		return ATH6KL_RC_MAX_2G_CHAN_RECORD +
+			((chid - _MIN_5G_CHAN_ID) / 2);
+	else {
+		ath6kl_err("p2p_rc slot fail chid %d!\n", chid);
+		BUG_ON(1);
+		return -1;
+	}
+#undef _MIN_5G_CHAN_ID
+}
+
+static void _p2p_rc_reset_chan_record(struct ath6kl_p2p_rc_info *p2p_rc)
+{
+	enum ieee80211_band band;
+	struct wiphy *wiphy = p2p_rc->ar->wiphy;
+	int i, slot;
+
+	/* TODO : not always reset it, just need when regdb updated. */
+
+	/* Clear all channel record */
+	spin_lock_bh(&p2p_rc->p2p_rc_lock);
+	p2p_rc->chan_record_cnt = 0;
+	for (i = 0; i < ATH6KL_RC_MAX_CHAN_RECORD; i++) {
+		p2p_rc->chan_record[i].channel = NULL;
+		p2p_rc->chan_record[i].best_snr = P2P_RC_NULL_SNR;
+		p2p_rc->chan_record[i].aver_snr = P2P_RC_NULL_SNR;
+	}
+
+	/* Fetch channel record from cfg80211 */
+	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
+		struct ieee80211_supported_band *sband = wiphy->bands[band];
+
+		if (!sband)
+			continue;
+
+		for (i = 0; i < sband->n_channels; i++) {
+			struct ieee80211_channel *chan = &sband->channels[i];
+
+			if (chan->flags & IEEE80211_CHAN_DISABLED)
+				continue;
+
+			slot = __p2p_rc_get_chan_slot(chan);
+			if ((slot >= 0) && (slot < ATH6KL_RC_MAX_CHAN_RECORD)) {
+				p2p_rc->chan_record[slot].channel = chan;
+				p2p_rc->chan_record_cnt++;
+			} else
+				ath6kl_err("p2p_rc reset fail, f %d s %d!\n",
+					chan->center_freq,
+					slot);
+		}
+	}
+	spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+
+	return;
+}
+
+void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif)
+{
+	struct ath6kl_p2p_rc_info *p2p_rc = vif->ar->p2p_rc_info_ctx;
+
+	if (!p2p_rc)
+		return;
+
+	/* Assume only one scan behavior between all VIFs at the same time. */
+
+	/* Only full-scan is valid. */
+	if ((vif->scan_req) &&
+	    (vif->scanband_type == SCANBAND_TYPE_ALL)) {
+		/* Reset the channel record. */
+		_p2p_rc_reset_chan_record(p2p_rc);
+
+		if ((vif->scan_req->n_channels == 0) ||
+		    (vif->scan_req->n_channels == p2p_rc->chan_record_cnt)) {
+			p2p_rc->flags |= ATH6KL_RC_FLAGS_NEED_UPDATED;
+			p2p_rc->last_update = jiffies;
+		}
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc scan_start %s, chan %d type %d cnt %d\n",
+				(p2p_rc->flags & ATH6KL_RC_FLAGS_NEED_UPDATED ?
+					"need-update" : ""),
+				(vif->scan_req ?
+					vif->scan_req->n_channels : -1),
+				vif->scanband_type,
+				p2p_rc->chan_record_cnt);
+
+	return;
+}
+
+int ath6kl_p2p_rc_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
+{
+	struct ath6kl_p2p_rc_info *p2p_rc = vif->ar->p2p_rc_info_ctx;
+	int i;
+
+	if (!p2p_rc)
+		return 0;
+
+	p2p_rc->flags &= ~ATH6KL_RC_FLAGS_NEED_UPDATED;
+
+	/* Only flush the last_p2p_rc if it's a successful scan. */
+	spin_lock_bh(&p2p_rc->p2p_rc_lock);
+	if (!aborted) {
+		p2p_rc->flags &= ~ATH6KL_RC_FLAGS_DONE;
+		for (i = 0; i < P2P_RC_TYPE_MAX; i++)
+			p2p_rc->last_p2p_rc[i] = NULL;
+	}
+	spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc scan_comp %s\n",
+			(aborted ? "aborted" : ""));
+
+	return 0;
+}
+
+static inline void _p2p_rc_bss_update(struct ath6kl_p2p_rc_info *p2p_rc,
+					struct ieee80211_channel *channel,
+					u8 snr)
+{
+	int slot;
+
+	slot = __p2p_rc_get_chan_slot(channel);
+	if ((slot >= 0) && (slot < ATH6KL_RC_MAX_CHAN_RECORD)) {
+		struct p2p_rc_chan_record *p2p_rc_chan;
+
+		p2p_rc_chan = &(p2p_rc->chan_record[slot]);
+
+		spin_lock_bh(&p2p_rc->p2p_rc_lock);
+		if (channel != p2p_rc_chan->channel) {
+			spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+			ath6kl_dbg(ATH6KL_DBG_RC,
+				   "p2p_rc bssinfo chan unsync! rx %d rc %d\n",
+				   channel->center_freq,
+				   p2p_rc_chan->channel->center_freq);
+			return;
+		}
+
+		BUG_ON(!p2p_rc_chan->channel);
+
+		ath6kl_dbg(ATH6KL_DBG_RC,
+			   "p2p_rc bssinfo %s freq %d snr %d slot %d\n",
+			   ((p2p_rc_chan->best_snr != P2P_RC_NULL_SNR) ?
+							"update" : "found"),
+			   channel->center_freq,
+			   snr,
+			   slot);
+
+		if (snr > P2P_RC_MAX_SNR)
+			snr = P2P_RC_MAX_SNR;
+
+		/* Only keep the max. SNR for calculation. */
+		if (p2p_rc_chan->best_snr != P2P_RC_NULL_SNR) {
+			if (snr > p2p_rc_chan->best_snr)
+				p2p_rc_chan->best_snr = snr;
+		} else
+			p2p_rc_chan->best_snr = snr;
+		spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+	} else
+		ath6kl_err("p2p_rc bssinfo invalid frequency %d!\n",
+				channel->center_freq);
+
+	return;
+}
+
+void ath6kl_p2p_rc_bss_info(struct ath6kl_vif *vif,
+			    u8 snr,
+			    struct ieee80211_channel *channel)
+{
+	struct ath6kl_p2p_rc_info *p2p_rc = vif->ar->p2p_rc_info_ctx;
+
+	if (!p2p_rc)
+		return;
+
+	if (p2p_rc->flags & ATH6KL_RC_FLAGS_NEED_UPDATED)
+		_p2p_rc_bss_update(p2p_rc, channel, snr);
+
+	return;
+}
+
+static inline u8 __p2p_rc_average_snr(struct p2p_rc_chan_record *chan[],
+					int count)
+{
+	struct p2p_rc_chan_record *p2p_rc_chan;
+	int i, aver_snr = 0, compensate = 0;
+
+	for (i = 0; i < ATH6KL_RC_AVERAGE_CHAN_CNT; i++) {
+		p2p_rc_chan = chan[i];
+		if ((i < count) &&
+		    (p2p_rc_chan->channel))
+			aver_snr += p2p_rc_chan->best_snr;
+		else
+			aver_snr += P2P_RC_NULL_SNR;
+	}
+
+	/* To round off the aver_snr to get more accurate average. */
+	if ((aver_snr % ATH6KL_RC_AVERAGE_CHAN_CNT) >
+	    (ATH6KL_RC_AVERAGE_CHAN_CNT >> 1))
+		compensate++;
+
+	aver_snr = (aver_snr / ATH6KL_RC_AVERAGE_CHAN_CNT) + compensate;
+
+	ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc get_aver freq %d aver_snr %d count %d/%d\n",
+			(chan[0]->channel ? chan[0]->channel->center_freq : 0),
+			aver_snr,
+			count,
+			ATH6KL_RC_AVERAGE_CHAN_CNT);
+
+	return aver_snr;
+}
+
+static struct p2p_rc_chan_record *_p2p_rc_get_2g_chan(
+	struct ath6kl_p2p_rc_info *p2p_rc,
+	bool only_p2p_social,
+	bool only_p2p)
+{
+	struct p2p_rc_chan_record *p2p_rc_chan, *best_p2p_rc_chan = NULL;
+	struct p2p_rc_chan_record *adj_chan[ATH6KL_RC_AVERAGE_CHAN_CNT];
+	struct ieee80211_channel *chan;
+	int i, j, count;
+	u8 average_h;
+
+	BUG_ON((only_p2p_social && only_p2p));
+
+	/* Start from 2G channel */
+	p2p_rc_chan = &(p2p_rc->chan_record[0]);
+
+	for (i = 0; i < ATH6KL_RC_MAX_2G_CHAN_RECORD; i++, p2p_rc_chan++) {
+		chan = p2p_rc_chan->channel;
+		if (chan) {
+			if ((only_p2p_social) &&
+			    !ath6kl_p2p_is_social_channel(chan->center_freq))
+				continue;
+			else if ((only_p2p) &&
+				 (chan->flags & (IEEE80211_CHAN_RADAR |
+						 IEEE80211_CHAN_PASSIVE_SCAN |
+						 IEEE80211_CHAN_NO_IBSS)) &&
+				 !ath6kl_p2p_is_p2p_channel(chan->center_freq))
+				continue;
+
+			/* Get adjacence channels in 20MHz width. */
+			count = 0;
+			adj_chan[count++] = p2p_rc_chan;
+			for (j = 1; j <= ATH6KL_RC_AVERAGE_CHAN_OFFSET; j++) {
+				if (chan->center_freq - (j * 5) >=
+						ATH6KL_RC_AVERAGE_CHAN_START)
+					adj_chan[count++] = p2p_rc_chan - j;
+				if (chan->center_freq + (j * 5) <=
+						ATH6KL_RC_AVERAGE_CHAN_END)
+					adj_chan[count++] = p2p_rc_chan + j;
+			}
+
+			if ((count) &&
+			    (chan->center_freq <= ATH6KL_RC_AVERAGE_CHAN_END))
+				p2p_rc_chan->aver_snr = __p2p_rc_average_snr(
+								adj_chan,
+								count);
+			else
+				p2p_rc_chan->aver_snr = p2p_rc_chan->best_snr;
+
+			if (best_p2p_rc_chan) {
+				average_h = p2p_rc_chan->aver_snr;
+				if (p2p_rc->flags & ATH6KL_RC_FLAGS_HIGH_CHAN)
+					average_h++;
+
+				if (average_h > best_p2p_rc_chan->aver_snr)
+					best_p2p_rc_chan = p2p_rc_chan;
+			} else
+				best_p2p_rc_chan = p2p_rc_chan;
+		}
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc get_2g freq %d snr %d\n",
+			(best_p2p_rc_chan ?
+				best_p2p_rc_chan->channel->center_freq : 0),
+			(best_p2p_rc_chan ?
+				best_p2p_rc_chan->best_snr : 0));
+
+	return best_p2p_rc_chan;
+}
+
+static struct p2p_rc_chan_record *_p2p_rc_get_5g_chan(
+	struct ath6kl_p2p_rc_info *p2p_rc,
+	bool only_p2p)
+{
+	struct p2p_rc_chan_record *p2p_rc_chan, *best_p2p_rc_chan = NULL;
+	struct ieee80211_channel *chan;
+	int i, snr_h;
+
+	/* Start from 5G channel */
+	p2p_rc_chan = &(p2p_rc->chan_record[ATH6KL_RC_MAX_2G_CHAN_RECORD]);
+
+	for (i = 0; i < ATH6KL_RC_MAX_5G_CHAN_RECORD; i++, p2p_rc_chan++) {
+		chan = p2p_rc_chan->channel;
+		if (chan) {
+			if ((only_p2p) &&
+			    (chan->flags & (IEEE80211_CHAN_RADAR |
+					    IEEE80211_CHAN_PASSIVE_SCAN |
+					    IEEE80211_CHAN_NO_IBSS)) &&
+			    !ath6kl_p2p_is_p2p_channel(chan->center_freq))
+				continue;
+
+			/* If DFS channel but any AP exist and still use it. */
+			if ((p2p_rc->flags & ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN) &&
+			    (chan->flags & IEEE80211_CHAN_RADAR) &&
+			    (p2p_rc_chan->best_snr == P2P_RC_NULL_SNR))
+				continue;
+
+			if (best_p2p_rc_chan) {
+				snr_h = (int)p2p_rc_chan->best_snr;
+				if (p2p_rc->flags & ATH6KL_RC_FLAGS_HIGH_CHAN)
+					snr_h++;
+
+				if (snr_h > (int)best_p2p_rc_chan->best_snr)
+					best_p2p_rc_chan = p2p_rc_chan;
+			} else
+				best_p2p_rc_chan = p2p_rc_chan;
+		}
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc get_5g freq %d snr %d\n",
+			(best_p2p_rc_chan ?
+				best_p2p_rc_chan->channel->center_freq : 0),
+			(best_p2p_rc_chan ?
+				best_p2p_rc_chan->best_snr : 0));
+
+	return best_p2p_rc_chan;
+}
+
+int ath6kl_p2p_rc_get(struct ath6kl *ar,
+			u16 *rc_2g,
+			u16 *rc_5g,
+			u16 *rc_all,
+			u16 *rc_p2p_social,
+			u16 *rc_p2p_2g,
+			u16 *rc_p2p_5g,
+			u16 *rc_p2p_all)
+{
+	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
+	struct p2p_rc_chan_record **p2p_rc_chan;
+
+	if (!p2p_rc)
+		return -ENOTSUPP;
+
+	/* Updating */
+	if (p2p_rc->flags & ATH6KL_RC_FLAGS_NEED_UPDATED)
+		return -EINPROGRESS;
+
+	if ((p2p_rc->flags & ATH6KL_RC_FLAGS_ALWAYS_FRESH) &&
+	    time_after(jiffies, p2p_rc->last_update + ATH6KL_RC_FRESH_TIME))
+		return -EAGAIN;
+
+	spin_lock_bh(&p2p_rc->p2p_rc_lock);
+
+	p2p_rc_chan = &(p2p_rc->last_p2p_rc[0]);
+
+	/*
+	 * No further channel information need to be parsed and just
+	 * return the last results.
+	 */
+	if (p2p_rc->flags & ATH6KL_RC_FLAGS_DONE)
+		goto done;
+
+	/* Get 2G recommand channel */
+	p2p_rc_chan[P2P_RC_TYPE_2GALL] = _p2p_rc_get_2g_chan(p2p_rc,
+								false,
+								false);
+	/* Get 5G recommand channel */
+	p2p_rc_chan[P2P_RC_TYPE_5GALL] = _p2p_rc_get_5g_chan(p2p_rc,
+								false);
+
+	/* Get overall recommand channel. */
+	if (p2p_rc_chan[P2P_RC_TYPE_2GALL]) {
+		if (p2p_rc_chan[P2P_RC_TYPE_5GALL]) {
+			if (p2p_rc_chan[P2P_RC_TYPE_2GALL]->aver_snr >
+			    (p2p_rc_chan[P2P_RC_TYPE_5GALL]->best_snr +
+			     p2p_rc->snr_compensation))
+				p2p_rc_chan[P2P_RC_TYPE_OVERALL] =
+						p2p_rc_chan[P2P_RC_TYPE_2GALL];
+			else	/* Prefer to use 5G if has the same value. */
+				p2p_rc_chan[P2P_RC_TYPE_OVERALL] =
+						p2p_rc_chan[P2P_RC_TYPE_5GALL];
+		} else
+			p2p_rc_chan[P2P_RC_TYPE_OVERALL] =
+					p2p_rc_chan[P2P_RC_TYPE_2GALL];
+	} else if (p2p_rc_chan[P2P_RC_TYPE_5GALL])
+		p2p_rc_chan[P2P_RC_TYPE_OVERALL] =
+			p2p_rc_chan[P2P_RC_TYPE_5GALL];
+
+	/* Get P2P-Social recommand channel */
+	p2p_rc_chan[P2P_RC_TYPE_SOCAIL] = _p2p_rc_get_2g_chan(p2p_rc,
+								true,
+								false);
+
+	/* Get P2P-2G recommand channel */
+	p2p_rc_chan[P2P_RC_TYPE_2GP2P] = _p2p_rc_get_2g_chan(p2p_rc,
+								false,
+								true);
+
+	/* Get P2P-5G recommand channel */
+	p2p_rc_chan[P2P_RC_TYPE_5GP2P] = _p2p_rc_get_5g_chan(p2p_rc,
+								true);
+
+	/* Get P2P-All recommand channel. */
+	if (p2p_rc_chan[P2P_RC_TYPE_2GP2P]) {
+		if (p2p_rc_chan[P2P_RC_TYPE_5GP2P]) {
+			if (p2p_rc_chan[P2P_RC_TYPE_2GP2P]->aver_snr >
+			    (p2p_rc_chan[P2P_RC_TYPE_5GP2P]->best_snr +
+			     p2p_rc->snr_compensation))
+				p2p_rc_chan[P2P_RC_TYPE_ALLP2P] =
+						p2p_rc_chan[P2P_RC_TYPE_2GP2P];
+			else	/* Prefer to use 5G if has the same value. */
+				p2p_rc_chan[P2P_RC_TYPE_ALLP2P] =
+						p2p_rc_chan[P2P_RC_TYPE_5GP2P];
+		} else
+			p2p_rc_chan[P2P_RC_TYPE_ALLP2P] =
+					p2p_rc_chan[P2P_RC_TYPE_2GP2P];
+	} else if (p2p_rc_chan[P2P_RC_TYPE_5GP2P])
+		p2p_rc_chan[P2P_RC_TYPE_ALLP2P] =
+			p2p_rc_chan[P2P_RC_TYPE_5GP2P];
+
+	p2p_rc->flags |= ATH6KL_RC_FLAGS_DONE;
+
+done:
+	/* Get all results back to the caller */
+	if ((p2p_rc_chan[P2P_RC_TYPE_2GALL]) && rc_2g)
+		*rc_2g =
+		p2p_rc_chan[P2P_RC_TYPE_2GALL]->channel->center_freq;
+
+	if ((p2p_rc_chan[P2P_RC_TYPE_5GALL]) && rc_5g)
+		*rc_5g =
+		p2p_rc_chan[P2P_RC_TYPE_5GALL]->channel->center_freq;
+
+	if ((p2p_rc_chan[P2P_RC_TYPE_OVERALL]) && rc_all)
+		*rc_all =
+		p2p_rc_chan[P2P_RC_TYPE_OVERALL]->channel->center_freq;
+
+	if ((p2p_rc_chan[P2P_RC_TYPE_SOCAIL]) && rc_p2p_social)
+		*rc_p2p_social =
+		p2p_rc_chan[P2P_RC_TYPE_SOCAIL]->channel->center_freq;
+
+	if ((p2p_rc_chan[P2P_RC_TYPE_2GP2P]) && rc_p2p_2g)
+		*rc_p2p_2g =
+		p2p_rc_chan[P2P_RC_TYPE_2GP2P]->channel->center_freq;
+
+	if ((p2p_rc_chan[P2P_RC_TYPE_5GP2P]) && rc_p2p_5g)
+		*rc_p2p_5g =
+		p2p_rc_chan[P2P_RC_TYPE_5GP2P]->channel->center_freq;
+
+	if ((p2p_rc_chan[P2P_RC_TYPE_ALLP2P]) && rc_p2p_all)
+		*rc_p2p_all =
+		p2p_rc_chan[P2P_RC_TYPE_ALLP2P]->channel->center_freq;
+
+	ath6kl_dbg(ATH6KL_DBG_RC,
+			"p2p_rc get 2/5/A %p %p %p P2P-S/2/5/A %p %p %p %p\n",
+			p2p_rc->last_p2p_rc[P2P_RC_TYPE_2GALL],
+			p2p_rc->last_p2p_rc[P2P_RC_TYPE_5GALL],
+			p2p_rc->last_p2p_rc[P2P_RC_TYPE_OVERALL],
+			p2p_rc->last_p2p_rc[P2P_RC_TYPE_SOCAIL],
+			p2p_rc->last_p2p_rc[P2P_RC_TYPE_2GP2P],
+			p2p_rc->last_p2p_rc[P2P_RC_TYPE_5GP2P],
+			p2p_rc->last_p2p_rc[P2P_RC_TYPE_ALLP2P]);
+
+	spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+
+	return 0;
+}
+
+int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
+{
+	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
+	struct p2p_rc_chan_record *p2p_rc_chan;
+	int i, idx = 0, len = 0;
+	u16 rc_2g, rc_5g, rc_all, rc_p2p_so, rc_p2p_2g, rc_p2p_5g, rc_p2p_all;
+
+	if ((!p2p_rc) || (!buf))
+		return 0;
+
+	len += snprintf(buf + len, buf_len - len,
+			"\nflags 0x%x snr_comp %d last_update %lld now %lld\n",
+			p2p_rc->flags,
+			p2p_rc->snr_compensation,
+			(long long int)p2p_rc->last_update,
+			(long long int)jiffies);
+
+	rc_2g = rc_5g = rc_all = 0;
+	rc_p2p_so = rc_p2p_2g = rc_p2p_5g = rc_p2p_all = 0;
+	if (ath6kl_p2p_rc_get(ar,
+			&rc_2g,
+			&rc_5g,
+			&rc_all,
+			&rc_p2p_so,
+			&rc_p2p_2g,
+			&rc_p2p_5g,
+			&rc_p2p_all) != 0)
+		return 0;
+
+	len += snprintf(buf + len, buf_len - len,
+			"\n2G/5G/ALL %d %d %d P2P-So/2G/5G/ALL %d %d %d %d\n",
+			rc_2g,
+			rc_5g,
+			rc_all,
+			rc_p2p_so,
+			rc_p2p_2g,
+			rc_p2p_5g,
+			rc_p2p_all);
+
+	spin_lock_bh(&p2p_rc->p2p_rc_lock);
+	len += snprintf(buf + len, buf_len - len,
+			"\nchan_record %d\n",
+			p2p_rc->chan_record_cnt);
+	for (i = 0, p2p_rc_chan = p2p_rc->chan_record;
+	     i < ATH6KL_RC_MAX_CHAN_RECORD;
+	     i++, p2p_rc_chan++) {
+		if (p2p_rc_chan->channel)
+			len += snprintf(buf + len, buf_len - len,
+					"%02d - %4d SNR %3d AVER_SNR %3d\n",
+					idx,
+					p2p_rc_chan->channel->center_freq,
+					(p2p_rc_chan->best_snr ==
+						P2P_RC_NULL_SNR) ?
+						-1 : p2p_rc_chan->best_snr,
+					(p2p_rc_chan->aver_snr ==
+						P2P_RC_NULL_SNR) ?
+						-1 : p2p_rc_chan->aver_snr);
+		idx++;
+	}
+	spin_unlock_bh(&p2p_rc->p2p_rc_lock);
+
+	return len;
+}
+
 bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len)
 {
 	struct ieee80211_p2p_action_public *action_frame =
@@ -1635,6 +2212,16 @@ bool ath6kl_p2p_is_p2p_channel(u32 freq)
 			}
 		}
 	}
+
+	return false;
+}
+
+bool ath6kl_p2p_is_social_channel(u32 freq)
+{
+	if ((freq == 2412) ||
+	    (freq == 2437) ||
+	    (freq == 2462))
+		return true;
 
 	return false;
 }
