@@ -23,7 +23,7 @@ wlan-y += drivers/net/wireless/ath/ath6kl-3.5/ap.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/reg.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/regdb.o
 
-ccflags-y += -DCONFIG_ATH6KL_UB134 -DCONFIG_ATH6KL_INTERNAL_REGDB
+ccflags-y += -DCONFIG_ATH6KL_UB134 -DCONFIG_ATH6KL_INTERNAL_REGDB -DUSB_AUTO_SUSPEND
 endif
 
 ifeq ($(BUILD_ATH6KL_VER_32), 1)
