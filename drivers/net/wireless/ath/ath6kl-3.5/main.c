@@ -550,7 +550,7 @@ enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 	return ar->ac2ep_map[ac];
 }
 
-static void ath6kl_cookie_pool_init(struct ath6kl *ar,
+static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	struct ath6kl_cookie_pool *cookie_pool,
 	enum cookie_type cookie_type,
 	u32 cookie_num)
@@ -571,7 +571,7 @@ static void ath6kl_cookie_pool_init(struct ath6kl *ar,
 		ath6kl_err("unable to allocate cookie, type %d num %d\n",
 				cookie_type,
 				cookie_num);
-		BUG_ON(1);
+		return -ENOMEM;
 	}
 
 	for (i = 0; i < cookie_num; i++) {
@@ -589,7 +589,7 @@ static void ath6kl_cookie_pool_init(struct ath6kl *ar,
 	ath6kl_info("Create HTC cookie, type %d num %d\n",
 			cookie_type,
 			cookie_num);
-	return;
+	return 0;
 }
 
 static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
@@ -648,21 +648,28 @@ struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
 	return cookie;
 }
 
-void ath6kl_cookie_init(struct ath6kl *ar)
+int ath6kl_cookie_init(struct ath6kl *ar)
 {
 	/* Create HTC cookies pool for DATA frame */
-	ath6kl_cookie_pool_init(ar,
-				&ar->cookie_data,
-				COOKIE_TYPE_DATA,
-				MAX_COOKIE_DATA_NUM);
+	if (ath6kl_cookie_pool_init(ar,
+				    &ar->cookie_data,
+				    COOKIE_TYPE_DATA,
+				    MAX_COOKIE_DATA_NUM))
+		goto fail;
 
 	/* Create HTC cookies pool for CTRL command */
-	ath6kl_cookie_pool_init(ar,
-				&ar->cookie_ctrl,
-				COOKIE_TYPE_CTRL,
-				MAX_COOKIE_CTRL_NUM);
+	if (ath6kl_cookie_pool_init(ar,
+				    &ar->cookie_ctrl,
+				    COOKIE_TYPE_CTRL,
+				    MAX_COOKIE_CTRL_NUM))
+		goto fail;
 
-	return;
+	return 0;
+
+fail:
+	ath6kl_cookie_cleanup(ar);
+
+	return -ENOMEM;
 }
 
 void ath6kl_cookie_cleanup(struct ath6kl *ar)

@@ -900,9 +900,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 			list_for_each_entry(vif, &ar->vif_list, list) {
 
 				/* keep but stop the netqueues */
-				spin_lock_bh(&vif->if_lock);
 				set_bit(NETQ_STOPPED, &vif->flags);
-				spin_unlock_bh(&vif->if_lock);
 				netif_stop_queue(vif->ndev);
 			}
 			spin_unlock_bh(&ar->list_lock);
@@ -964,9 +962,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 			if (ath6kl_htc_stop_netif_queue_full(ar->htc_target) ||
 			    vif->nw_type == INFRA_NETWORK ||
 			    ar->ac_stream_active_num == 1) {
-				spin_lock_bh(&vif->if_lock);
 				set_bit(NETQ_STOPPED, &vif->flags);
-				spin_unlock_bh(&vif->if_lock);
 				netif_stop_queue(vif->ndev);
 			}
 

@@ -38,6 +38,7 @@ unsigned int debug_mask;
 unsigned int htc_bundle_recv;
 unsigned int htc_bundle_send;
 unsigned int htc_bundle_send_timer;
+unsigned int htc_bundle_send_th = 6000;
 unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
@@ -87,6 +88,10 @@ module_param(fwpath, charp, 0644);
 module_param(ath6kl_ath0_name, uint, 0644);
 #ifdef CE_SUPPORT
 module_param(ath6kl_ce_flags, uint, 0644);
+char *bdatapath;
+module_param(bdatapath, charp, 0644);
+char *fwdatapath;
+module_param(fwdatapath, charp, 0644);
 #endif
 module_param(starving_prevention, uint, 0644);
 
@@ -659,7 +664,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	memset(&vif->sc_params, 0, sizeof(vif->sc_params));
 	vif->sc_params.short_scan_ratio = 3;
-	if (ar->hif_type == ATH6KL_HIF_TYPE_USB ||
+	if (ar->roam_mode == ATH6KL_MODULEROAM_DISABLE ||
 		(vif->wdev.iftype != NL80211_IFTYPE_STATION)) {
 		vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
 						  SCAN_CONNECTED_CTRL_FLAGS |
@@ -947,7 +952,9 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
 		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
 		param = 0;
-	else
+	else if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
+		param = 2;
+	else /* sdio */
 		param = 3;
 
 	if (ath6kl_bmi_write(ar,
@@ -1114,9 +1121,7 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	ath6kl_p2p_rc_deinit(ar);
 
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	ath6kl_reg_deinit(ar);
-#endif
 
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
@@ -1132,9 +1137,120 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 }
 
 /* firmware upload */
+#ifdef CE_SUPPORT
+#include <linux/init.h>
+#include <linux/slab.h>
+#include <linux/unistd.h>
+#include <linux/sched.h>
+#include <linux/fs.h>
+#include <linux/file.h>
+#include <linux/mm.h>
+#include <linux/uaccess.h>
+
+static mm_segment_t oldfs;
+
+static struct file *openFile(char *path, int flag, int mode)
+{
+	struct file *fp;
+	fp = filp_open(path, flag, 0);
+	if (IS_ERR(fp))
+		return NULL;
+	return fp;
+}
+
+static int readFile(struct file *fp, char *buf, int readlen)
+{
+	if (fp->f_op && fp->f_op->read)
+		return fp->f_op->read(fp, buf, readlen, &fp->f_pos);
+	else
+		return -1;
+}
+
+static int closeFile(struct file *fp)
+{
+	filp_close(fp, NULL);
+	return 0;
+}
+
+static void initKernelEnv(void)
+{
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+}
+#endif
+
 static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 			 u8 **fw, size_t *fw_len)
 {
+#ifdef CE_SUPPORT
+#define MAX_BUFFER_SIZE	128
+	struct file *fp = NULL;
+	int ret;
+	char buf[MAX_BUFFER_SIZE];
+	char full_patch[90];
+	int total_len = 0, temp_len = 0;
+	u8 *temp_buf;
+	int status = -1;
+	initKernelEnv();
+	if (filename[0] == '/') {
+		/* assign directory */
+		sprintf(full_patch, "%s", filename);
+		ath6kl_info("%s\n\r", full_patch);
+	} else {
+		sprintf(full_patch, "/lib/firmware/%s", filename);
+		ath6kl_info("%s\n\r", full_patch);
+	}
+	fp = openFile(full_patch, O_RDONLY, 0);
+	if (fp != NULL) {
+		memset(buf, 0, MAX_BUFFER_SIZE);
+		ret = readFile(fp, buf, MAX_BUFFER_SIZE);
+		if (ret > 0) {
+			total_len = ret;
+			while ((ret = readFile(fp, buf, MAX_BUFFER_SIZE)) > 0)
+				total_len += ret;
+			ath6kl_info("total_len=%d\n", total_len);
+		} else
+			ath6kl_err("read file error %d\n", ret);
+		closeFile(fp);
+	} else
+		goto fail;
+
+	fp = openFile(full_patch, O_RDONLY, 0);
+	if (fp != NULL) {
+		temp_buf = kmalloc(total_len, GFP_KERNEL);
+		if (temp_buf != NULL) {
+			memset(buf, 0, MAX_BUFFER_SIZE);
+			ret = readFile(fp, buf, MAX_BUFFER_SIZE);
+			if (ret > 0) {
+				memcpy(&temp_buf[temp_len], buf, ret);
+				temp_len = ret;
+				while ((ret = readFile(fp, buf,
+				MAX_BUFFER_SIZE)) > 0) {
+					memcpy(&temp_buf[temp_len], buf, ret);
+					temp_len += ret;
+				}
+				status = 0;
+			} else
+				ath6kl_err("read file error %d\n", ret);
+		}
+		closeFile(fp);
+	} else
+		goto fail;
+	if (status == 0) {
+		if (temp_buf != NULL) {
+			*fw_len = total_len;
+			*fw = kmemdup(temp_buf, total_len, GFP_KERNEL);
+			if (*fw == NULL)
+				status = -ENOMEM;
+		}
+	}
+	if (temp_buf != NULL)
+		kfree(temp_buf);
+fail:
+	set_fs(oldfs);
+#undef MAX_BUFFER_SIZE
+	return status;
+#else
 	const struct firmware *fw_entry;
 	int ret;
 
@@ -1151,6 +1267,7 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 	release_firmware(fw_entry);
 
 	return ret;
+#endif
 }
 
 #ifdef CONFIG_OF
@@ -1305,7 +1422,14 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 	if (WARN_ON(ar->hw.fw_board == NULL))
 		return -EINVAL;
 
+#ifdef CE_SUPPORT
+	if (bdatapath != NULL)
+		filename = bdatapath;
+	else
+		filename = ar->hw.fw_board;
+#else
 	filename = ar->hw.fw_board;
+#endif
 
 	ret = ath6kl_get_fw(ar, filename, &ar->fw_board,
 			    &ar->fw_board_len);
@@ -1450,8 +1574,16 @@ static int ath6kl_fetch_fw_file(struct ath6kl *ar)
 	if (WARN_ON(ar->hw.fw.fw == NULL))
 		return -EINVAL;
 
+#ifdef CE_SUPPORT
+	if (fwdatapath != NULL)
+		strcpy(filename, fwdatapath);
+	else
+		snprintf(filename, sizeof(filename), "%s/%s",
+			 ar->hw.fw.dir, ar->hw.fw.fw);
+#else
 	snprintf(filename, sizeof(filename), "%s/%s",
 		 ar->hw.fw.dir, ar->hw.fw.fw);
+#endif
 
 get_fw:
 	ret = ath6kl_get_fw(ar, filename, &ar->fw, &ar->fw_len);
@@ -2349,7 +2481,8 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 	address = MBOX_BASE_ADDRESS + LOCAL_SCRATCH_ADDRESS;
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULES_ANI_ENABLE) ||
 		((ar->version.target_ver != AR6004_HW_1_1_VERSION) &&
-			(ar->version.target_ver != AR6004_HW_1_3_VERSION))) {
+		 (ar->version.target_ver != AR6004_HW_1_3_VERSION) &&
+		 (ar->version.target_ver != AR6004_HW_3_0_VERSION))) {
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "NO ANI\n");
 		param = options | 0x20;
 	} else {
@@ -2831,6 +2964,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	}
 
+	/* Always use internal-regdb by default. */
+	set_bit(INTERNAL_REGDB, &ar->flag);
+
 	ret = ath6kl_register_ieee80211_hw(ar);
 	if (ret)
 		goto err_node_cleanup;
@@ -2872,6 +3008,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
 			__func__, ndev->name, ndev, ar);
 
+	for (i = 0; i < WMM_NUM_AC; i++)
+		ar->ac_stream_active[i] = false;
+
 	/* setup access class priority mappings */
 	ar->ac_stream_pri_map[WMM_AC_BK] = 0; /* lowest  */
 	ar->ac_stream_pri_map[WMM_AC_BE] = 1;
@@ -2893,7 +3032,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 	/* allocate some buffers that handle larger AMSDU frames */
 	ath6kl_refill_amsdu_rxbufs(ar, ATH6KL_MAX_AMSDU_RX_BUFFERS);
 
-	ath6kl_cookie_init(ar);
+	ret = ath6kl_cookie_init(ar);
+	if (ret)
+		goto err_rxbuf_cleanup;
 
 	ar->conf_flags = ATH6KL_CONF_IGNORE_ERP_BARKER |
 			 ATH6KL_CONF_ENABLE_11N | ATH6KL_CONF_ENABLE_TX_BURST;
@@ -2925,18 +3066,27 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
-	/* Disable P2P-in-passive-chan channels by default. */
-	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB)) {
+	if (test_bit(INTERNAL_REGDB, &ar->flag)) {
+		/* Disable P2P-in-passive-chan channels by default. */
 		ar->reg_ctx = ath6kl_reg_init(ar, true, ar->p2p_in_pasv_chan);
 
 		/* P2P recommend channel works only internal regdb turns on. */
 		ar->p2p_rc_info_ctx = ath6kl_p2p_rc_init(ar);
 	} else
 		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
-#endif
 
 	set_bit(FIRST_BOOT, &ar->flag);
+
+	/* init green tx params */
+	ar->green_tx_params.enable = true;
+	ar->green_tx_params.next_probe_count =
+		ATH6KL_GTX_NEXT_PROBE_COUNT;
+	ar->green_tx_params.max_back_off =
+		ATH6KL_GTX_MAX_BACK_OFF;
+	ar->green_tx_params.min_gtx_rssi =
+		ATH6KL_GTX_MIN_RSSI;
+	ar->green_tx_params.force_back_off =
+		ATH6KL_GTX_FORCE_BACKOFF;
 
 	ret = ath6kl_init_hw_start(ar);
 	if (ret) {
@@ -2993,21 +3143,14 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
-	ar->green_tx_params.enable = true;
-	ar->green_tx_params.next_probe_count =
-		ATH6KL_GTX_NEXT_PROBE_COUNT;
-	ar->green_tx_params.max_back_off =
-		ATH6KL_GTX_MAX_BACK_OFF;
-	ar->green_tx_params.min_gtx_rssi =
-		ATH6KL_GTX_MIN_RSSI;
-	ar->green_tx_params.force_back_off =
-		ATH6KL_GTX_FORCE_BACKOFF;
-
 	return ret;
 
 err_rxbuf_cleanup:
 	ath6kl_htc_flush_rx_buf(ar->htc_target);
 	ath6kl_cleanup_amsdu_rxbufs(ar);
+	spin_lock_bh(&ar->list_lock);
+	list_del(&(((struct ath6kl_vif *)(netdev_priv(ndev)))->list));
+	spin_unlock_bh(&ar->list_lock);
 	rtnl_lock();
 	ath6kl_deinit_if_data(netdev_priv(ndev));
 	rtnl_unlock();

@@ -84,8 +84,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* enable fw crash notify function */
 	ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY = BIT(21),
 
-	/* enable usb auto power management feathre */
-	ATH6KL_MODULE_ENABLE_USB_AUTO_PM = BIT(22),
+	/* disable usb auto power management feature */
+	ATH6KL_MODULE_DISABLE_USB_AUTO_PM = BIT(22),
 
 	/* disable wmi sync mechanism */
 	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
@@ -96,8 +96,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* Config AP keep-alive from supplicant */
 	ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP	= BIT(25),
 
-	/* Follow the driver's regdb */
-	ATH6KL_MODULE_DRIVER_REGDB = BIT(26),
+	/* hole */
 };
 
 enum ATH6KL_MODULE_P2P {
@@ -123,6 +122,9 @@ enum ATH6KL_MODULE_P2P {
 
 	/* enable p2p_in_pasv_chan */
 	ATH6KL_MODULEP2P_P2P_IN_PASSIVE_CHAN		= BIT(9),
+
+	/* enable p2p_wise_scan */
+	ATH6KL_MODULEP2P_P2P_WISE_SCAN			= BIT(10),
 };
 
 enum ATH6KL_MODULE_ROAM {

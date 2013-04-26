@@ -43,11 +43,7 @@
 #include "htcoex.h"
 #include "p2p.h"
 #include "ap.h"
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 #include "reg.h"
-#else
-#include "../regd.h"
-#endif
 #include <linux/wireless.h>
 #include <linux/interrupt.h>
 
@@ -55,7 +51,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.322)
+#define __BUILD_VERSION_ (3.5.0.337)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -96,7 +92,6 @@
 	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	/* ATH6KL_MODULE_DRIVER_REGDB | */		\
 	 0)
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
@@ -104,7 +99,6 @@
 	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	/* ATH6KL_MODULE_DRIVER_REGDB | */		\
 	 0)
 #endif
 
@@ -117,7 +111,7 @@
 #endif
 
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(0)
 #endif
 
 #ifndef ATH6KL_DEVNAME_DEF_P2P
@@ -181,7 +175,6 @@
  */
 #ifdef CONFIG_ANDROID
 #define ATH6KL_SUPPORT_NL80211_QCA
-#define ATH6KL_BUS_VOTE 1
 
 #if defined(ATH6KL_SUPPORT_NL80211_KERNEL3_4) ||	\
 	defined(ATH6KL_SUPPORT_NL80211_KERNEL3_6)
@@ -358,11 +351,14 @@
 #ifdef CONFIG_ANDROID
 #define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
 	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI
+#define ATH6KL_USB_DEFAULT_ROAM_MODE \
+	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI
 #else
 #define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
 	ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN
+#define ATH6KL_USB_DEFAULT_ROAM_MODE \
+		ATH6KL_MODULEROAM_DISABLE
 #endif
-#define ATH6KL_USB_DEFAULT_ROAM_MODE ATH6KL_MODULEROAM_DISABLE
 
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
@@ -693,6 +689,7 @@ enum scanband_type {
 	SCANBAND_TYPE_2G,		/* Scan 2GHz channel only */
 	SCANBAND_TYPE_5G,		/* Scan 5GHz channel only */
 	SCANBAND_TYPE_CHAN_ONLY,	/* Scan single channel only */
+	SCANBAND_TYPE_P2PCHAN,		/* Scan P2P channel only */
 };
 
 #define ATH6KL_RSN_CAP_NULLCONF		(0xffff)
@@ -1237,7 +1234,11 @@ struct ath6kl_vif {
 	enum ath6kl_phy_mode phymode;	/* Working PhyMode for AP&STA modes */
 	enum ath6kl_chan_type chan_type;/* Working ChanType for AP mode */
 	struct ath6kl_wep_key wep_key_list[WMI_MAX_KEY_INDEX + 1];
+#ifdef PMF_SUPPORT
+	struct ath6kl_key keys[WMI_MAX_IGTK_INDEX + 1];
+#else
 	struct ath6kl_key keys[WMI_MAX_KEY_INDEX + 1];
+#endif
 	struct aggr_info *aggr_cntxt;
 	struct timer_list disconnect_timer;
 	u32 connect_ctrl_flags;
@@ -1249,6 +1250,7 @@ struct ath6kl_vif {
 	u8 intra_bss;
 	u8 ap_apsd;
 	struct wmi_ap_mode_stat ap_stats;
+	int last_dump_ap_stats_idx;	/* for dump_station call-back */
 	u8 ap_country_code[3];
 	int sta_no_ht_num;
 	struct ath6kl_sta sta_list[AP_MAX_NUM_STA];
@@ -1337,6 +1339,7 @@ enum ath6kl_dev_state {
 	MCC_ENABLED,
 	SKIP_FLOWCTRL_EVENT,
 	DISABLE_SCAN,
+	INTERNAL_REGDB,
 };
 
 enum ath6kl_state {
@@ -1540,11 +1543,17 @@ struct ath6kl {
 	/* Allow P2P operate in PASSIVE/IBSS channels */
 	bool p2p_in_pasv_chan;
 
+	/* Only scan P2P channels for all P2P interfaces */
+	bool p2p_wise_scan;
+
 	/* WAR EV119712 */
 	bool p2p_war_bad_intel_go;
 
 	/* WAR CR468120 */
 	bool p2p_war_bad_broadcom_go;
+
+	/* WAR CR479897 */
+	bool p2p_war_p2p_client_awake;
 
 	/* IOT : Not to append P2P IE in concurrent STA interface */
 #define P2P_IE_IN_PROBE_REQ	(1 << 0)
@@ -1645,11 +1654,7 @@ struct ath6kl {
 
 	u32 tx_on_vif;
 
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	struct reg_info *reg_ctx;
-#else
-	struct country_code_to_enum_rd *current_reg_domain;
-#endif
 
 	void (*fw_crash_notify)(struct ath6kl *ar);
 
@@ -1659,7 +1664,6 @@ struct ath6kl {
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
 	unsigned long  usb_autopm_scan;
-	struct work_struct auto_pm_wakeup_resume_wk;
 	int auto_pm_cnt;
 
 #endif
@@ -1722,7 +1726,7 @@ int ath6kl_configure_target(struct ath6kl *ar);
 void ath6kl_detect_error(unsigned long ptr);
 void disconnect_timer_handler(unsigned long ptr);
 void init_netdev(struct net_device *dev);
-void ath6kl_cookie_init(struct ath6kl *ar);
+int ath6kl_cookie_init(struct ath6kl *ar);
 void ath6kl_cookie_cleanup(struct ath6kl *ar);
 void ath6kl_rx(struct htc_target *target, struct htc_packet *packet);
 void ath6kl_tx_complete(struct htc_target *context,
@@ -1848,6 +1852,11 @@ void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
 #endif
 
+#ifdef ATH6KL_BUS_VOTE
+int ath6kl_hsic_init_msm(void);
+void ath6kl_hsic_exit_msm(void);
+#endif
+
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
 void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
@@ -1867,6 +1876,7 @@ int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar);
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
 extern unsigned int htc_bundle_send_timer;
+extern unsigned int htc_bundle_send_th;
 #ifdef CE_SUPPORT
 extern unsigned int ath6kl_ce_flags;
 #endif

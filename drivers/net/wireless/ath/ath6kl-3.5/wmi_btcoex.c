@@ -264,8 +264,10 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME);
 			}
 
-			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
-				BTCOEX_APMODE_A2DP_MIN_BURST_CNT);
+			if (ar->version.target_ver == AR6004_HW_1_3_VERSION) {
+				pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
+					BTCOEX_APMODE_A2DP_MIN_BURST_CNT);
+			}
 		}
 	}
 	break;

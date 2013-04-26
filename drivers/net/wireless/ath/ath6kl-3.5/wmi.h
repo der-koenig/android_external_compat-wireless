@@ -133,7 +133,6 @@ struct wmi {
 	bool is_probe_ssid;
 
 	struct list_head mgmt_tx_frame_list;
-	u8 fat_pipe_exist_check_re_entry;
 };
 
 struct host_app_area {
@@ -788,12 +787,21 @@ enum auth_mode {
 	WPA2_PSK_AUTH = 0x10,
 	WPA_AUTH_CCKM = 0x20,
 	WPA2_AUTH_CCKM = 0x40,
+#ifdef PMF_SUPPORT
+	WPA2_PSK_SHA256_AUTH = 0x80,
+#endif
 };
 
 #define WMI_MIN_KEY_INDEX   0
 #define WMI_MAX_KEY_INDEX   3
 
 #define WMI_MAX_KEY_LEN     32
+
+#ifdef PMF_SUPPORT
+#define WMI_MIN_IGTK_INDEX  4
+#define WMI_MAX_IGTK_INDEX  5
+#define WMI_IGTK_KEY_LEN    16
+#endif
 
 /*
  * NB: these values are ordered carefully; there are lots of
@@ -919,6 +927,15 @@ struct wmi_delete_cipher_key_cmd {
 struct wmi_add_krk_cmd {
 	u8 krk[WMI_KRK_LEN];
 } __packed;
+
+#ifdef PMF_SUPPORT
+struct wmi_add_igtk_cmd{
+	u8 key_index;
+	u8 key_len;
+	u8 key_rsc[6];
+	u8 key[WMI_IGTK_KEY_LEN];
+} __packed;
+#endif
 
 /* WMI_SETPMKID_CMDID */
 
@@ -3153,11 +3170,12 @@ struct wmi_set_arp_ns_offload_cmd {
  *
  */
 enum WMI_MCC_PROFILE {
-	WMI_MCC_PROFILE_STA50 = BIT(0),
-	WMI_MCC_PROFILE_STA20 = BIT(1),
-	WMI_MCC_PROFILE_STA80 = BIT(2),
-	WMI_MCC_CTS_ENABLE    = BIT(4),
-	WMI_MCC_PSPOLL_ENABLE = BIT(5),
+	WMI_MCC_PROFILE_STA50  = BIT(0),
+	WMI_MCC_PROFILE_STA20  = BIT(1),
+	WMI_MCC_PROFILE_STA80  = BIT(2),
+	WMI_MCC_CTS_ENABLE     = BIT(4),
+	WMI_MCC_PSPOLL_ENABLE  = BIT(5),
+        WMI_MCC_DUAL_TIME_MASK = BIT(8),
 };
 
 struct wmi_set_mcc_profile_cmd {
@@ -3251,6 +3269,11 @@ int ath6kl_wmi_addkey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
 			  u8 *key_material,
 			  u8 key_op_ctrl, u8 *mac_addr,
 			  enum wmi_sync_flag sync_flag);
+#ifdef PMF_SUPPORT
+int ath6kl_wmi_addkey_igtk_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
+				u8 key_len, u8 *key_rsc, u8 *key_material,
+				enum wmi_sync_flag sync_flag);
+#endif
 int ath6kl_wmi_add_krk_cmd(struct wmi *wmi, u8 if_idx, u8 *krk);
 int ath6kl_wmi_deletekey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index);
 int ath6kl_wmi_setpmkid_cmd(struct wmi *wmi, u8 if_idx, const u8 *bssid,

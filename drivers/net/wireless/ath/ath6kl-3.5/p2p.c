@@ -1957,6 +1957,15 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 	if (vif->nw_type != INFRA_NETWORK)
 		return;
 
+	if ((vif->ar->p2p_war_p2p_client_awake) &&
+	    (vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT)) {
+		set_bit(PS_STICK, &vif->flags);
+		ath6kl_wmi_powermode_cmd(vif->ar->wmi,
+					vif->fw_vif_idx,
+					MAX_PERF_POWER);
+		return;
+	}
+
 	/* Now, only p2p_war_bad_intel_go need to do something here. */
 	if (!vif->ar->p2p_war_bad_intel_go)
 		return;
@@ -2217,7 +2226,6 @@ bool ath6kl_p2p_ie_append(struct ath6kl_vif *vif, u8 mgmt_frame_type)
 /* P802.11REVmb */
 static struct p2p_oper_chan ath6kl_p2p_oper_chan[] = {
 	{ 81,  2412, 2472, 5,  P2P_OPER_CHAN_BW_HT20},       /* CH1   - CH13 */
-	{ 82,  2484, 2484, 5,  P2P_OPER_CHAN_BW_HT20},       /* CH14  - CH14 */
 	{ 115, 5180, 5240, 20, P2P_OPER_CHAN_BW_HT20},       /* CH36  - CH48 */
 	{ 116, 5180, 5220, 20, P2P_OPER_CHAN_BW_HT40_PLUS},  /* CH36  - CH44 */
 	{ 117, 5200, 5240, 20, P2P_OPER_CHAN_BW_HT40_MINUS}, /* CH40  - CH48 */

@@ -20,9 +20,6 @@
 #include "testmode.h"
 #include "wlan_location_defs.h"
 #include "rttapi.h"
-#ifndef CONFIG_ATH6KL_INTERNAL_REGDB
-#include "../regd_common.h"
-#endif
 #ifdef ATHTST_SUPPORT
 #include "ce_athtst.h"
 #endif
@@ -483,10 +480,10 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 	wmi_data_hdr_set_up(data_hdr, usr_pri);
 
 	spin_lock_bh(&wmi->lock);
-	stream_exist = wmi->fat_pipe_exist_check_re_entry;
+	stream_exist = wmi->fat_pipe_exist;
 
 	if (!(stream_exist & (1 << traffic_class))) {
-		wmi->fat_pipe_exist_check_re_entry |= (1 << traffic_class);
+		wmi->fat_pipe_exist |= (1 << traffic_class);
 		spin_unlock_bh(&wmi->lock);
 
 		memset(&cmd, 0, sizeof(cmd));
@@ -1436,7 +1433,6 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 	return 0;
 }
 
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 {
 	struct ath6kl_wmi_regdomain *ev;
@@ -1456,91 +1452,6 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 
 	return;
 }
-#else
-static struct country_code_to_enum_rd *
-ath6kl_regd_find_country(u16 countryCode)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(allCountries); i++) {
-		if (allCountries[i].countryCode == countryCode)
-			return &allCountries[i];
-	}
-
-	return NULL;
-}
-
-static struct reg_dmn_pair_mapping *
-ath6kl_get_regpair(u16 regdmn)
-{
-	int i;
-
-	if (regdmn == NO_ENUMRD)
-		return NULL;
-
-	for (i = 0; i < ARRAY_SIZE(regDomainPairs); i++) {
-		if (regDomainPairs[i].regDmnEnum == regdmn)
-			return &regDomainPairs[i];
-	}
-
-	return NULL;
-}
-
-static struct country_code_to_enum_rd *
-ath6kl_regd_find_country_by_rd(u16 regdmn)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(allCountries); i++) {
-		if (allCountries[i].regDmnEnum == regdmn)
-			return &allCountries[i];
-	}
-
-	return NULL;
-}
-
-static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
-{
-	struct ath6kl_wmi_regdomain *ev;
-	struct country_code_to_enum_rd *country = NULL;
-	struct reg_dmn_pair_mapping *regpair = NULL;
-	char alpha2[2];
-	u32 reg_code;
-
-	ev = (struct ath6kl_wmi_regdomain *) datap;
-	reg_code = le32_to_cpu(ev->reg_code);
-
-#ifdef CONFIG_QC_INTERNAL
-	ath6kl_info("%s: 0x%x WWR:%d\n",
-			reg_code & BIT(31) ? "Country Code" : "Reg Domain",
-			reg_code & 0xfff, !!(reg_code & BIT(30)));
-#endif
-
-	if ((reg_code >> ATH6KL_COUNTRY_RD_SHIFT) & COUNTRY_ERD_FLAG)
-		country = ath6kl_regd_find_country((u16) reg_code);
-	else if (!(((u16) reg_code & WORLD_SKU_MASK) == WORLD_SKU_PREFIX)) {
-
-		regpair = ath6kl_get_regpair((u16) reg_code);
-		country = ath6kl_regd_find_country_by_rd((u16) reg_code);
-		ath6kl_dbg(ATH6KL_DBG_WMI, "Regpair used: 0x%0x\n",
-				regpair->regDmnEnum);
-	}
-
-	if (country) {
-		alpha2[0] = country->isoName[0];
-		alpha2[1] = country->isoName[1];
-
-		regulatory_hint(wmi->parent_dev->wiphy, alpha2);
-
-		ath6kl_dbg(ATH6KL_DBG_WMI, "Country alpha2 being used: %c%c\n",
-				alpha2[0], alpha2[1]);
-	}
-
-	wmi->parent_dev->current_reg_domain = country;
-
-	return;
-}
-#endif
 
 static int ath6kl_wmi_disconnect_event_rx(struct wmi *wmi, u8 *datap, int len,
 					  struct ath6kl_vif *vif)
@@ -1769,7 +1680,6 @@ static int ath6kl_wmi_pstream_timeout_event_rx(struct wmi *wmi, u8 *datap,
 	spin_lock_bh(&wmi->lock);
 	wmi->stream_exist_for_ac[ev->traffic_class] = 0;
 	wmi->fat_pipe_exist &= ~(1 << ev->traffic_class);
-	wmi->fat_pipe_exist_check_re_entry &= ~(1 << ev->traffic_class);
 	spin_unlock_bh(&wmi->lock);
 
 	/* Indicate inactivity to driver layer for this fatpipe (pstream) */
@@ -2212,7 +2122,6 @@ static int ath6kl_wmi_cac_event_rx(struct wmi *wmi, u8 *datap, int len,
 						    false);
 			spin_lock_bh(&wmi->lock);
 			wmi->fat_pipe_exist &= ~(1 << reply->ac);
-			wmi->fat_pipe_exist_check_re_entry &= ~(1 << reply->ac);
 			spin_unlock_bh(&wmi->lock);
 		}
 	}
@@ -2827,6 +2736,41 @@ int ath6kl_wmi_addkey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
 	return ret;
 }
 
+#ifdef PMF_SUPPORT
+int ath6kl_wmi_addkey_igtk_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
+				u8 key_len, u8 *key_rsc, u8 *key_material,
+				enum wmi_sync_flag sync_flag)
+{
+	struct sk_buff *skb;
+	struct wmi_add_igtk_cmd *cmd;
+	int ret;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "addkey_igtk cmd: key_index=%u "
+				"key_len=%d \n", key_index, key_len);
+
+	if ((key_index > WMI_MAX_IGTK_INDEX) ||
+	    (key_index < WMI_MIN_IGTK_INDEX) ||
+	    (key_len > WMI_IGTK_KEY_LEN) ||
+	    (key_material == NULL) || (NULL == key_rsc))
+		return -EINVAL;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_add_igtk_cmd *)skb->data;
+	cmd->key_index = key_index;
+	cmd->key_len = key_len;
+	memcpy(cmd->key, key_material, key_len);
+	memcpy(cmd->key_rsc, key_rsc, 6);
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_IGTK_CMDID,
+				  sync_flag);
+
+	return ret;
+}
+#endif
+
 int ath6kl_wmi_add_krk_cmd(struct wmi *wmi, u8 if_idx, u8 *krk)
 {
 	struct sk_buff *skb;
@@ -3030,7 +2974,8 @@ int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 {
 	struct sk_buff *skb;
 	struct wmi_create_pstream_cmd *cmd;
-	u8 fatpipe_exist_for_ac = 0;
+	struct ath6kl *ar = wmi->parent_dev;
+	bool fatpipe_exist_for_ac = false;
 	s32 min_phy = 0;
 	s32 nominal_phy = 0;
 	int ret;
@@ -3086,17 +3031,15 @@ int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 	/* This is an implicitly created Fat pipe */
 	if ((u32) params->tsid == (u32) WMI_IMPLICIT_PSTREAM) {
 		spin_lock_bh(&wmi->lock);
-		fatpipe_exist_for_ac = (wmi->fat_pipe_exist &
-					(1 << params->traffic_class));
+		fatpipe_exist_for_ac =
+			ar->ac_stream_active[params->traffic_class];
 		wmi->fat_pipe_exist |= (1 << params->traffic_class);
-		wmi->fat_pipe_exist_check_re_entry |=
-			(1 << params->traffic_class);
 		spin_unlock_bh(&wmi->lock);
 	} else {
 		/* explicitly created thin stream within a fat pipe */
 		spin_lock_bh(&wmi->lock);
-		fatpipe_exist_for_ac = (wmi->fat_pipe_exist &
-					(1 << params->traffic_class));
+		fatpipe_exist_for_ac =
+			ar->ac_stream_active[params->traffic_class];
 		wmi->stream_exist_for_ac[params->traffic_class] |=
 		    (1 << params->tsid);
 		/*
@@ -3104,8 +3047,6 @@ int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 		 * becomes active
 		 */
 		wmi->fat_pipe_exist |= (1 << params->traffic_class);
-		wmi->fat_pipe_exist_check_re_entry |=
-			(1 << params->traffic_class);
 		spin_unlock_bh(&wmi->lock);
 	}
 
@@ -3177,7 +3118,6 @@ int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
 					    traffic_class, false);
 		spin_lock_bh(&wmi->lock);
 		wmi->fat_pipe_exist &= ~(1 << traffic_class);
-		wmi->fat_pipe_exist_check_re_entry &= ~(1 << traffic_class);
 		spin_unlock_bh(&wmi->lock);
 	}
 
@@ -3253,7 +3193,6 @@ static void ath6kl_wmi_relinquish_implicit_pstream_credits(struct wmi *wmi)
 	/* FIXME: Can we do this assignment without locking ? */
 	spin_lock_bh(&wmi->lock);
 	wmi->fat_pipe_exist = stream_exist;
-	wmi->fat_pipe_exist_check_re_entry = stream_exist;
 	spin_unlock_bh(&wmi->lock);
 }
 
@@ -4796,7 +4735,6 @@ void ath6kl_wmi_reset(struct wmi *wmi)
 	spin_lock_bh(&wmi->lock);
 
 	wmi->fat_pipe_exist = 0;
-	wmi->fat_pipe_exist_check_re_entry = 0;
 	memset(wmi->stream_exist_for_ac, 0, sizeof(wmi->stream_exist_for_ac));
 
 	spin_unlock_bh(&wmi->lock);

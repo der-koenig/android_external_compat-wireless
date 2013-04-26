@@ -23,10 +23,21 @@
 #define MMC_MSM_DEV "msm_sdcc.4"
 #endif
 /* End MMC polling stuff */
+#endif /* #ifdef CONFIG_ANDROID_8960_SDIO */
 
+#include "core.h"
+#include "debug.h"
+#include <linux/module.h>
+#include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/wlan_plat.h>
+#include <mach/msm_bus.h>
+#include <linux/gpio.h>
+#include <linux/of.h>
+#include <linux/of_gpio.h>
+#include <linux/regulator/consumer.h>
 
+#ifdef CONFIG_ANDROID_8960_SDIO
 #define GET_INODE_FROM_FILEP(filp) ((filp)->f_path.dentry->d_inode)
 
 int android_readwrite_file(const char *filename, char *rbuf,
@@ -202,4 +213,314 @@ void __exit ath6kl_sdio_exit_msm(void)
 	mdelay(1000);
 
 }
+#else
+
+#ifdef ATH6KL_BUS_VOTE
+static u32 bus_perf_client;
+static struct msm_bus_scale_pdata *ath6kl_bus_scale_pdata;
+
+struct ath6kl_power_vreg_data {
+	/* voltage regulator handle */
+	struct regulator *reg;
+
+	/* regulator name */
+	const char *name;
+
+	/* voltage levels to be set */
+	unsigned int low_vol_level;
+	unsigned int high_vol_level;
+
+	/*
+	 * is set voltage supported for this regulator?
+	 * false => set voltage is not supported
+	 * true  => set voltage is supported
+	 *
+	 * Some regulators (like gpio-regulators, LVS (low voltage swtiches)
+	 * PMIC regulators) dont have the capability to call
+	 * regulator_set_voltage or regulator_set_optimum_mode
+	 * Use this variable to indicate if its a such regulator or not
+	 */
+	bool set_voltage_sup;
+
+	/* is this regulator enabled? */
+	bool is_enabled;
+};
+
+struct ath6kl_platform_data {
+	struct platform_device *pdev;
+	struct ath6kl_power_vreg_data *wifi_chip_pwd;
+};
+
+struct ath6kl_platform_data *gpdata;
+
+#define MAX_PROP_SIZE 32
+static int ath6kl_dt_parse_vreg_info(struct device *dev,
+		struct ath6kl_power_vreg_data **vreg_data, const char *vreg_name)
+{
+	int len, ret = 0;
+	const __be32 *prop;
+	char prop_name[MAX_PROP_SIZE];
+	struct ath6kl_power_vreg_data *vreg;
+	struct device_node *np = dev->of_node;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "vreg dev tree parse for %s\n", vreg_name);
+
+	snprintf(prop_name, MAX_PROP_SIZE, "%s-supply", vreg_name);
+	if (of_parse_phandle(np, prop_name, 0)) {
+		vreg = devm_kzalloc(dev, sizeof(*vreg), GFP_KERNEL);
+		if (!vreg) {
+			ath6kl_err("No memory for vreg: %s\n", vreg_name);
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		vreg->name = vreg_name;
+
+		snprintf(prop_name, MAX_PROP_SIZE,
+				"qcom,%s-voltage-level", vreg_name);
+		prop = of_get_property(np, prop_name, &len);
+		if (!prop || (len != (2 * sizeof(__be32)))) {
+			ath6kl_dbg(ATH6KL_DBG_BOOT, "%s %s property\n",
+				prop ? "invalid format" : "no", prop_name);
+		} else {
+			vreg->low_vol_level = be32_to_cpup(&prop[0]);
+			vreg->high_vol_level = be32_to_cpup(&prop[1]);
+		}
+
+		*vreg_data = vreg;
+		ath6kl_dbg(ATH6KL_DBG_BOOT, "%s: vol=[%d %d]uV\n",
+			vreg->name, vreg->low_vol_level,
+			vreg->high_vol_level);
+	}  else
+		ath6kl_info("%s: is not provided in device tree\n", vreg_name);
+
+err:
+	return ret;
+}
+
+static int ath6kl_vreg_disable(struct ath6kl_power_vreg_data *vreg)
+{
+	int rc = 0;
+
+	if (!vreg)
+		return rc;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "vreg_disable for : %s\n", vreg->name);
+
+	if (vreg->is_enabled) {
+		rc = regulator_disable(vreg->reg);
+		if (rc) {
+			ath6kl_err("regulator_disable(%s) failed. rc=%d\n",
+					vreg->name, rc);
+			goto out;
+		}
+		vreg->is_enabled = false;
+
+		if (vreg->set_voltage_sup) {
+			/* Set the min voltage to 0 */
+			rc = regulator_set_voltage(vreg->reg,
+						0,
+						vreg->high_vol_level);
+			if (rc) {
+				ath6kl_err("vreg_set_vol(%s) failed rc=%d\n",
+						vreg->name, rc);
+				goto out;
+
+			}
+		}
+	}
+
+out:
+	return rc;
+}
+
+static int ath6kl_vreg_init(struct ath6kl_power_vreg_data *vreg)
+{
+	int rc = 0;
+	struct device *dev = &(gpdata->pdev->dev);
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "vreg_get for : %s\n", vreg->name);
+
+	/* Get the regulator handle */
+	vreg->reg = regulator_get(dev, vreg->name);
+	if (IS_ERR(vreg->reg)) {
+		rc = PTR_ERR(vreg->reg);
+		ath6kl_err("%s: regulator_get(%s) failed. rc=%d\n",
+			__func__, vreg->name, rc);
+		goto out;
+	}
+
+	if ((regulator_count_voltages(vreg->reg) > 0)
+			&& (vreg->low_vol_level) && (vreg->high_vol_level))
+		vreg->set_voltage_sup = 1;
+
+out:
+	return rc;
+}
+
+static int ath6kl_vreg_enable(struct ath6kl_power_vreg_data *vreg)
+{
+	int rc = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "vreg_en for : %s\n", vreg->name);
+
+	if (!vreg->is_enabled) {
+		if (vreg->set_voltage_sup) {
+			rc = regulator_set_voltage(vreg->reg,
+						vreg->low_vol_level,
+						vreg->high_vol_level);
+			if (rc) {
+				ath6kl_err("vreg_set_vol(%s) failed rc=%d\n",
+						vreg->name, rc);
+				goto out;
+			}
+		}
+
+		rc = regulator_enable(vreg->reg);
+		if (rc) {
+			ath6kl_err("regulator_enable(%s) failed. rc=%d\n",
+					vreg->name, rc);
+			goto out;
+		}
+		vreg->is_enabled = true;
+	}
+out:
+	return rc;
+}
+
+static int ath6kl_configure_vreg(struct ath6kl_power_vreg_data *vreg)
+{
+	int rc = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "config %s\n", vreg->name);
+
+	/* Get the regulator handle for vreg */
+	if (!(vreg->reg)) {
+		rc = ath6kl_vreg_init(vreg);
+		if (rc < 0)
+			return rc;
+	}
+
+	rc = ath6kl_vreg_enable(vreg);
+	if (rc < 0)
+		return rc;
+
+	return rc;
+}
+
+static int ath6kl_platform_power(struct ath6kl_platform_data *pdata, int on)
+{
+	int rc = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "%s on: %d\n", __func__, on);
+
+	if (on) {
+		rc = ath6kl_configure_vreg(pdata->wifi_chip_pwd);
+		if (rc < 0) {
+			ath6kl_err("power on chip_pwd error\n");
+			goto chip_pwd_fail;
+		}
+	}
+	else {
+		rc = ath6kl_vreg_disable(pdata->wifi_chip_pwd);
+	}
+
+	return rc;
+
+chip_pwd_fail:
+	ath6kl_vreg_disable(pdata->wifi_chip_pwd);
+
+     return rc;
+}
+
+static int ath6kl_hsic_probe(struct platform_device *pdev)
+{
+	struct ath6kl_platform_data *pdata = NULL;
+	struct device *dev = &pdev->dev;
+	int ret = 0;
+
+	ath6kl_bus_scale_pdata = msm_bus_cl_get_pdata(pdev);
+	bus_perf_client = msm_bus_scale_register_client(ath6kl_bus_scale_pdata);
+	msm_bus_scale_client_update_request(bus_perf_client, 4);
+
+	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
+
+	if (!pdata) {
+		ath6kl_err("%s: Could not allocate memory for platform data\n",
+			__func__);
+		return -ENOMEM;
+	}
+
+	if (ath6kl_dt_parse_vreg_info(dev, &pdata->wifi_chip_pwd,
+			"qca,wifi-chip-pwd") != 0) {
+		ath6kl_err("%s: parse vreg info error\n", __func__);
+		goto err;
+	}
+
+	pdata->pdev = pdev;
+	platform_set_drvdata(pdev, pdata);
+	gpdata = pdata;
+
+	if (pdata->wifi_chip_pwd != NULL) 
+		ret = ath6kl_platform_power(pdata, 1);
+
+	return ret;
+
+err:
+	if (pdata != NULL)
+		devm_kfree(dev, pdata);
+
+	return -EINVAL;
+}
+
+static int ath6kl_hsic_remove(struct platform_device *pdev)
+{
+	struct ath6kl_platform_data *pdata = platform_get_drvdata(pdev);
+
+	msm_bus_scale_client_update_request(bus_perf_client, 1);
+	if (bus_perf_client)
+		msm_bus_scale_unregister_client(bus_perf_client);
+
+	if (pdata->wifi_chip_pwd != NULL)  {
+		ath6kl_platform_power(pdata, 0);
+
+		if (pdata->wifi_chip_pwd->reg)
+			regulator_put(pdata->wifi_chip_pwd->reg);
+	}
+
+	return 0;
+}
+
+static const struct of_device_id ath6kl_hsic_dt_match[] = {
+	{ .compatible = "qca,ar6004-hsic",},
+	{}
+};
+
+MODULE_DEVICE_TABLE(of, ath6kl_hsic_dt_match);
+
+static struct platform_driver ath6kl_hsic_device = {
+	.probe  = ath6kl_hsic_probe,
+	.remove = ath6kl_hsic_remove,
+	.driver = {
+		.name   = "ath6kl_hsic",
+		.of_match_table = ath6kl_hsic_dt_match,
+	}
+};
+
+int ath6kl_hsic_init_msm(void)
+{
+	int ret;
+
+	ret = platform_driver_register(&ath6kl_hsic_device);
+
+	return ret;
+}
+
+void ath6kl_hsic_exit_msm(void)
+{
+	platform_driver_unregister(&ath6kl_hsic_device);
+}
+
+#endif /* #ifdef ATH6KL_BUS_VOTE */
+
 #endif

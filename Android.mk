@@ -47,6 +47,10 @@ ifeq ($(BOARD_HAS_ATH_WLAN_AR6004), true)
 
 export BUILD_ATH6KL_VER_35=1
 
+ifeq ($(call is-board-platform,msm8974),true)
+export HAVE_BUS_VOTE=1
+endif
+
 ifeq ($(BOARD_HAS_CFG80211_KERNEL3_4), true)
 export HAVE_CFG80211=0
 export HAVE_CFG80211_KERNEL3_4=1

@@ -440,8 +440,6 @@ static int htc_issue_packets(struct htc_target *target,
 	return status;
 }
 
-#define HTC_BUNDLE_SEND_TH  6000
-
 static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 					  struct htc_endpoint *ep,
 					  struct list_head *callers_send_queue)
@@ -678,10 +676,8 @@ static void htc_tx_bundle_timer_handler(unsigned long ptr)
 {
 	struct htc_target *target = (struct htc_target *)ptr;
 	struct htc_endpoint *endpoint = &target->endpoint[ENDPOINT_2];
-	static u32 count;
-	static u32 tx_issued;
-	count = 0;
-	tx_issued = 0;
+	static u32 count = 0;
+	static u32 tx_issued = 0;
 
 	endpoint->call_by_timer = 1;
 	count++;
@@ -691,7 +687,7 @@ static void htc_tx_bundle_timer_handler(unsigned long ptr)
 		* endpoint->ep_st.tx_issued-tx_issued);
 		*/
 		if ((endpoint->ep_st.tx_issued - tx_issued)
-		     > HTC_BUNDLE_SEND_TH)
+		     > htc_bundle_send_th)
 			endpoint->pass_th = 1;
 		else
 			endpoint->pass_th = 0;

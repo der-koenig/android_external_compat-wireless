@@ -125,6 +125,6 @@ void ath6kl_switch_parameter_based_on_connection(
 			bool call_on_disconnect);
 
 #if defined(USB_AUTO_SUSPEND)
-void ath6kl_auto_pm_wakeup_resume(struct work_struct *);
+void ath6kl_auto_pm_wakeup_resume(struct ath6kl *wk);
 #endif
 #endif /* ATH6KL_CFG80211_H */
