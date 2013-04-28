@@ -248,10 +248,19 @@ static inline bool __is_ht40_not_allowed(struct ieee80211_channel *chan)
 {
 	if (!chan)
 		return true;
+
+	/* HT40 is not allowed in CH12, CH13 and CH14. */
+	if ((chan->center_freq == 2467) ||
+		(chan->center_freq == 2472) ||
+		(chan->center_freq == 2484))
+		return true;
+
 	if (chan->flags & IEEE80211_CHAN_DISABLED)
 		return true;
+
 	if (IEEE80211_CHAN_NO_HT40 == (chan->flags & (IEEE80211_CHAN_NO_HT40)))
 		return true;
+
 	return false;
 }
 
@@ -261,6 +270,7 @@ static void _reg_process_chan(struct ieee80211_supported_band *sband,
 	struct ieee80211_channel *channel;
 	struct ieee80211_channel *channel_before = NULL, *channel_after = NULL;
 	unsigned int i;
+	u16 start_freq = 0;
 
 	channel = &sband->channels[chan_idx];
 
@@ -278,15 +288,57 @@ static void _reg_process_chan(struct ieee80211_supported_band *sband,
 			channel_after = c;
 	}
 
-	if (__is_ht40_not_allowed(channel_before))
-		channel->flags |= IEEE80211_CHAN_NO_HT40MINUS;
-	else
-		channel->flags &= ~IEEE80211_CHAN_NO_HT40MINUS;
+	/* Only update it the channel still not yet marked as HT40+/HT40-.*/
+	if (channel->center_freq < 4000) {
+		if (!(channel->flags & IEEE80211_CHAN_NO_HT40MINUS)) {
+			if (__is_ht40_not_allowed(channel_before))
+				channel->flags |= IEEE80211_CHAN_NO_HT40MINUS;
+			else
+				channel->flags &= ~IEEE80211_CHAN_NO_HT40MINUS;
+		}
 
-	if (__is_ht40_not_allowed(channel_after))
-		channel->flags |= IEEE80211_CHAN_NO_HT40PLUS;
-	else
-		channel->flags &= ~IEEE80211_CHAN_NO_HT40PLUS;
+		if (!(channel->flags & IEEE80211_CHAN_NO_HT40PLUS)) {
+			if (__is_ht40_not_allowed(channel_after))
+				channel->flags |= IEEE80211_CHAN_NO_HT40PLUS;
+			else
+				channel->flags &= ~IEEE80211_CHAN_NO_HT40PLUS;
+		}
+	} else { /* No overlap HT40 in 5G. */
+		/*
+		 * Don't care 5170(CH34) - 5230(CH46) because no HT40
+		 * channel in it.
+		 */
+		if (channel->center_freq >= 5745)
+			start_freq = 5745;	/* Upper U-NII */
+		else
+			start_freq = 5180;
+
+		if (((channel->center_freq - start_freq) % 40) == 0) {
+			/* HT40+ only channel */
+			channel->flags |= IEEE80211_CHAN_NO_HT40MINUS;
+
+			if (!(channel->flags & IEEE80211_CHAN_NO_HT40PLUS)) {
+				if (__is_ht40_not_allowed(channel_after))
+					channel->flags |=
+						IEEE80211_CHAN_NO_HT40PLUS;
+				else
+					channel->flags &=
+						~IEEE80211_CHAN_NO_HT40PLUS;
+			}
+		} else {
+			/* HT40- only channel */
+			channel->flags |= IEEE80211_CHAN_NO_HT40PLUS;
+
+			if (!(channel->flags & IEEE80211_CHAN_NO_HT40MINUS)) {
+				if (__is_ht40_not_allowed(channel_before))
+					channel->flags |=
+						IEEE80211_CHAN_NO_HT40MINUS;
+				else
+					channel->flags &=
+						~IEEE80211_CHAN_NO_HT40MINUS;
+			}
+		}
+	}
 
 	return;
 }
@@ -303,31 +355,6 @@ static void ath6kl_reg_chan_flags_update(struct reg_info *reg)
 			sband = wiphy->bands[band];
 			for (i = 0; i < sband->n_channels; i++)
 				_reg_process_chan(sband, i);
-		}
-	}
-
-	return;
-}
-
-static void ath6kl_reg_chan_reset(struct reg_info *reg)
-{
-	struct wiphy *wiphy = reg->wiphy;
-	struct ieee80211_supported_band *sband;
-	struct ieee80211_channel *channel;
-	enum ieee80211_band band;
-	int i;
-
-	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
-		if (wiphy->bands[band]) {
-			sband = wiphy->bands[band];
-			for (i = 0; i < sband->n_channels; i++) {
-				channel = &sband->channels[i];
-				if (channel) {
-					channel->flags = 0;
-					channel->max_antenna_gain = 0;
-					channel->max_power = 30;
-				}
-			}
 		}
 	}
 
@@ -435,7 +462,9 @@ static struct ieee80211_regdomain *ath6kl_reg_get_regd(struct reg_info *reg,
 static int __reg_freq_reg_info_regd(u32 center_freq,
 			      u32 desired_bw_khz,
 			      const struct ieee80211_reg_rule **reg_rule,
-			      const struct ieee80211_regdomain *custom_regd)
+			      const struct ieee80211_regdomain *custom_regd,
+			      bool *is_freq_start,
+			      bool *is_freq_end)
 {
 #define ONE_GHZ_IN_KHZ	1000000
 	int i;
@@ -482,6 +511,12 @@ static int __reg_freq_reg_info_regd(u32 center_freq,
 			bw_fits = false;
 
 		if (band_rule_found && bw_fits) {
+			if (center_freq > MHZ_TO_KHZ(4000)) {
+				if (start_freq_khz == fr->start_freq_khz)
+					*is_freq_start = true;
+				if (end_freq_khz == fr->end_freq_khz)
+					*is_freq_end = true;
+			}
 			*reg_rule = rr;
 			return 0;
 		}
@@ -504,14 +539,18 @@ static void _reg_handle_channel(struct ieee80211_channel *chan,
 	const struct ieee80211_reg_rule *reg_rule = NULL;
 	const struct ieee80211_power_rule *power_rule = NULL;
 	const struct ieee80211_freq_range *freq_range = NULL;
+	bool is_freq_start = false, is_freq_end = false;
 
 	r = __reg_freq_reg_info_regd(MHZ_TO_KHZ(chan->center_freq),
 					desired_bw_khz,
 					&reg_rule,
-					regd);
+					regd,
+					&is_freq_start,
+					&is_freq_end);
 
 	if (r) {
-		chan->flags = IEEE80211_CHAN_DISABLED;
+		chan->flags =
+		chan->orig_flags = IEEE80211_CHAN_DISABLED;
 		return;
 	}
 
@@ -520,6 +559,17 @@ static void _reg_handle_channel(struct ieee80211_channel *chan,
 
 	if (freq_range->max_bandwidth_khz < MHZ_TO_KHZ(40))
 		bw_flags = IEEE80211_CHAN_NO_HT40;
+	else {
+		/*
+		 * A hint to let _reg_process_chan() know that this channel
+		 * is a boundry channel and HT40+/HT40- already known.
+		 */
+		if (is_freq_start)
+			bw_flags |= IEEE80211_CHAN_NO_HT40MINUS;
+
+		if (is_freq_end)
+			bw_flags |= IEEE80211_CHAN_NO_HT40PLUS;
+	}
 
 	if (reg_rule->flags & NL80211_RRF_PASSIVE_SCAN)
 		channel_flags |= IEEE80211_CHAN_PASSIVE_SCAN;
@@ -528,7 +578,8 @@ static void _reg_handle_channel(struct ieee80211_channel *chan,
 	if (reg_rule->flags & NL80211_RRF_DFS)
 		channel_flags |= IEEE80211_CHAN_RADAR;
 
-	chan->flags |= (channel_flags | bw_flags);
+	chan->flags = (channel_flags | bw_flags);
+	chan->orig_flags = chan->flags;
 	chan->max_antenna_gain = (int) MBI_TO_DBI(power_rule->max_antenna_gain);
 	chan->max_power = (int) MBM_TO_DBM(power_rule->max_eirp);
 
@@ -579,8 +630,6 @@ static struct ieee80211_regdomain *ath6kl_reg_update(struct reg_info *reg,
 				reg_code,
 				target_update ? "" : "not ");
 
-	/* Reset support channels */
-	ath6kl_reg_chan_reset(reg);
 
 	/* Query the local regulatory database from alpha2 words. */
 	regd = ath6kl_reg_get_regd(reg, reg_code);
@@ -593,6 +642,9 @@ static struct ieee80211_regdomain *ath6kl_reg_update(struct reg_info *reg,
 
 	if (target_update && regd)
 		regulatory_hint(reg->wiphy, regd->alpha2);
+
+	/* Notify to update the channel record. */
+	ath6kl_p2p_rc_fetch_chan(reg->ar);
 
 	return regd;
 }
@@ -692,6 +744,38 @@ bool ath6kl_reg_is_init_done(struct ath6kl *ar)
 		return true;
 	else
 		return false;
+}
+
+bool ath6kl_reg_is_p2p_channel(struct ath6kl *ar, u32 freq)
+{
+#define _REG_CHAN_P2P_NOT_ALLOWED (				\
+				IEEE80211_CHAN_RADAR |		\
+				IEEE80211_CHAN_PASSIVE_SCAN |	\
+				IEEE80211_CHAN_NO_IBSS)
+	if (ath6kl_p2p_is_p2p_channel(freq)) {
+		struct wiphy *wiphy = ar->wiphy;
+		enum ieee80211_band band = NL80211_BAND_2GHZ;
+		struct ieee80211_supported_band *sband;
+		struct ieee80211_channel *chan;
+		int i;
+
+		if (freq > 4000)
+			band = NL80211_BAND_5GHZ;
+
+		sband = wiphy->bands[band];
+		for (i = 0; i < sband->n_channels; i++) {
+			chan = &sband->channels[i];
+			if (chan->center_freq == freq) {
+				if (chan->flags & _REG_CHAN_P2P_NOT_ALLOWED)
+					return false;
+				else
+					return true;
+			}
+		}
+		return false;
+	} else
+		return false;
+#undef _REG_CHAN_P2P_NOT_ALLOWED
 }
 
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,

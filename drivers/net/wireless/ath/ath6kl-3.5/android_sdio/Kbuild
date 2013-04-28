@@ -25,7 +25,6 @@ wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/hif.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/sdio.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/reg.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/regdb.o
-ccflags-y += -DCONFIG_ATH6KL_INTERNAL_REGDB
 endif
 
 ifeq ($(HAVE_CFG80211), 1)

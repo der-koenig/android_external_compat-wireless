@@ -360,6 +360,7 @@ int ath6kl_reg_notifier(struct wiphy *wiphy,
 			struct regulatory_request *request);
 int ath6kl_reg_target_notify(struct ath6kl *ar, u32 reg_code);
 bool ath6kl_reg_is_init_done(struct ath6kl *ar);
+bool ath6kl_reg_is_p2p_channel(struct ath6kl *ar, u32 freq);
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
 				bool p2pInPasvCh);
