@@ -51,7 +51,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.337)
+#define __BUILD_VERSION_ (3.5.0.339)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -78,11 +78,13 @@
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
-	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
+	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN |	\
+	 ATH6KL_MODULEP2P_P2P_WISE_SCAN)
 #else
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
-	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
+	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
+	 ATH6KL_MODULEP2P_P2P_WISE_SCAN)
 #endif
 
 #ifdef CONFIG_ANDROID
@@ -137,6 +139,12 @@
  * PLEASE CHANGE THESE FLAGS TO MEET YOUR BSP IF THE BSP USE
  * SPECIFIC CFG80211 CODE.
  */
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_9		/* Kernel 3.9 series */
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_8
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_8
+#endif
+#endif
+
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_8		/* Kernel 3.8 series */
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_7
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_7
@@ -247,17 +255,22 @@
  * CFG80211_NEW_CHAN_DEFINITION: summary origional channel definition and
  *                               channel type into new channel definitaion.
  * CFG80211_SAFE_BSS_INFO_ACCESS: to fix BSS IE race access problem.
- * NL80211_CMD_TDLS_OPER_REQ: new cfg80211_tdls_oper_request() API for driver's
- *                            automatic TDLS link.
- * NL80211_ATTR_P2P_CTWINDOW_OPPPS: P2P-GO support CTWindow/OppPS setting.
  */
 #define NL80211_WIPHY_FEATURE_SCAN_FLUSH
 #define CFG80211_TX_POWER_PER_WDEV
 #define CFG80211_REMOVE_ROC_CHAN_TYPE
 #define CFG80211_NEW_CHAN_DEFINITION
 #define CFG80211_SAFE_BSS_INFO_ACCESS
-#define NL80211_CMD_TDLS_OPER_REQ	/* TODO */
-#define NL80211_ATTR_P2P_CTWINDOW_OPPPS	/* TODO */
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_9
+/*
+ * CFG80211_VOID_REG_NOTIFIER: The void function as *reg_notifier callback.
+ * CFG80211_NEW_REF_BSS_OPER: Preparation for using spinlock.
+ * NL80211_CMD_SET_AP_MAC_ACL: Support AP ACL.
+ */
+#define CFG80211_VOID_REG_NOTIFIER
+#define CFG80211_NEW_REF_BSS_OPER
+#define NL80211_CMD_SET_AP_MAC_ACL
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -348,7 +361,7 @@
 #define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
 
 /* default roam mode for different situation */
-#ifdef CONFIG_ANDROID
+#if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))
 #define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
 	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI
 #define ATH6KL_USB_DEFAULT_ROAM_MODE \
@@ -1720,6 +1733,30 @@ static inline bool ath6kl_is_wfd_ie(const u8 *pos)
 	return pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
 		pos[2] == 0x50 && pos[3] == 0x6f &&
 		pos[4] == 0x9a && pos[5] == 0x0a;
+}
+
+static inline struct cfg80211_bss *ath6kl_bss_get(struct ath6kl *ar,
+					    struct ieee80211_channel *channel,
+					    const u8 *bssid,
+					    const u8 *ssid, size_t ssid_len,
+					    u16 capa_mask, u16 capa_val)
+{
+	return cfg80211_get_bss(ar->wiphy,
+				channel,
+				bssid,
+				ssid,
+				ssid_len,
+				capa_mask,
+				capa_val);
+}
+
+static inline void ath6kl_bss_put(struct ath6kl *ar, struct cfg80211_bss *pub)
+{
+#ifdef CFG80211_NEW_REF_BSS_OPER
+	cfg80211_put_bss(ar->wiphy, pub);
+#else
+	cfg80211_put_bss(pub);
+#endif
 }
 
 int ath6kl_configure_target(struct ath6kl *ar);

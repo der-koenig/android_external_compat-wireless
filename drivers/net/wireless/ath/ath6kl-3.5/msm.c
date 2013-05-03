@@ -255,7 +255,7 @@ struct ath6kl_platform_data *gpdata;
 
 #define MAX_PROP_SIZE 32
 static int ath6kl_dt_parse_vreg_info(struct device *dev,
-		struct ath6kl_power_vreg_data **vreg_data, const char *vreg_name)
+	struct ath6kl_power_vreg_data **vreg_data, const char *vreg_name)
 {
 	int len, ret = 0;
 	const __be32 *prop;
@@ -420,8 +420,7 @@ static int ath6kl_platform_power(struct ath6kl_platform_data *pdata, int on)
 			ath6kl_err("power on chip_pwd error\n");
 			goto chip_pwd_fail;
 		}
-	}
-	else {
+	} else {
 		rc = ath6kl_vreg_disable(pdata->wifi_chip_pwd);
 	}
 
@@ -430,7 +429,7 @@ static int ath6kl_platform_power(struct ath6kl_platform_data *pdata, int on)
 chip_pwd_fail:
 	ath6kl_vreg_disable(pdata->wifi_chip_pwd);
 
-     return rc;
+	return rc;
 }
 
 static int ath6kl_hsic_probe(struct platform_device *pdev)
@@ -461,7 +460,7 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, pdata);
 	gpdata = pdata;
 
-	if (pdata->wifi_chip_pwd != NULL) 
+	if (pdata->wifi_chip_pwd != NULL)
 		ret = ath6kl_platform_power(pdata, 1);
 
 	return ret;

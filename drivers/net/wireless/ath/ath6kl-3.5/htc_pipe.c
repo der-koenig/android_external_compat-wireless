@@ -676,8 +676,8 @@ static void htc_tx_bundle_timer_handler(unsigned long ptr)
 {
 	struct htc_target *target = (struct htc_target *)ptr;
 	struct htc_endpoint *endpoint = &target->endpoint[ENDPOINT_2];
-	static u32 count = 0;
-	static u32 tx_issued = 0;
+	u32 count = 0;
+	u32 tx_issued = 0;
 
 	endpoint->call_by_timer = 1;
 	count++;

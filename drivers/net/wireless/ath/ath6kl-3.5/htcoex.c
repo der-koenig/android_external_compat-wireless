@@ -514,7 +514,7 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 	if (vif->nw_type != INFRA_NETWORK)
 		return;
 
-	bss = cfg80211_get_bss(vif->wdev.wiphy,
+	bss = ath6kl_bss_get(vif->ar,
 				NULL,
 				vif->bssid,
 				vif->ssid,
@@ -573,7 +573,7 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 	coex->current_ratemask = ATH6KL_HTCOEX_RATEMASK_FULL;
 	htcoex_flush_bss_info(coex);
 
-	cfg80211_put_bss(bss);
+	ath6kl_bss_put(vif->ar, bss);
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
 		   "htcoex connect (vif %p) flags %x interval %d cycle %d\n",

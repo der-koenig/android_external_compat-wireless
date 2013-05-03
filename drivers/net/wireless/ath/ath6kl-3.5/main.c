@@ -2008,6 +2008,12 @@ static int ath6kl_ioctl_ap_acl(struct ath6kl_vif *vif,
 {
 	int ret = 0;
 
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+	/* Configurate from NL80211. */
+	if (vif->ar->wiphy->max_acl_mac_addrs)
+		return -EINVAL;
+#endif
+
 	/* SET::ACL {MACCMD|ADDMAC|DELMAC} {{[0|1|2]}|{MAC ADDRESS}} */
 	if (len > 1) {
 		int i, policy, addr[ETH_ALEN];

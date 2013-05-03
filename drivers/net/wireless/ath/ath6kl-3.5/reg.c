@@ -694,6 +694,14 @@ int ath6kl_reg_notifier(struct wiphy *wiphy,
 	return 0;
 }
 
+void ath6kl_reg_notifier2(struct wiphy *wiphy,
+			struct regulatory_request *request)
+{
+	ath6kl_reg_notifier(wiphy, request);
+
+	return;
+}
+
 int ath6kl_reg_target_notify(struct ath6kl *ar, u32 reg_code)
 {
 	struct reg_info *reg = ar->reg_ctx;

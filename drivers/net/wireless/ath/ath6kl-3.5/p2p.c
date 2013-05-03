@@ -580,6 +580,16 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 						WMI_TIMEOUT/10);
 			WARN_ON(left <= 0);
 
+			/*
+			 * P2P-GO may dissolve P2P-Group immediately when
+			 * P2P-Client disconnect. A larger bmiss time to avoid
+			 * this in noisy environment.
+			 */
+			if (type == NL80211_IFTYPE_P2P_CLIENT)
+				ath6kl_wmi_set_bmiss_time(ar->wmi,
+							vif->fw_vif_idx,
+							ATH6KL_P2P_BMISS_TIME);
+
 			/* WAR: Revert HT CAP, only for AP/P2P-GO cases. */
 			if ((type == NL80211_IFTYPE_AP) ||
 			    (type == NL80211_IFTYPE_P2P_GO))
@@ -2078,7 +2088,7 @@ static inline bool _p2p_need_pending_connect(struct ath6kl_vif *vif,
 	    (vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT)) {
 		struct cfg80211_bss *bss;
 
-		bss = cfg80211_get_bss(vif->wdev.wiphy,
+		bss = ath6kl_bss_get(vif->ar,
 				NULL,
 				vif->bssid,
 				vif->ssid,
@@ -2117,7 +2127,7 @@ static inline bool _p2p_need_pending_connect(struct ath6kl_vif *vif,
 #ifdef CFG80211_SAFE_BSS_INFO_ACCESS
 			rcu_read_unlock();
 #endif
-			cfg80211_put_bss(bss);
+			ath6kl_bss_put(vif->ar, bss);
 		}
 	}
 

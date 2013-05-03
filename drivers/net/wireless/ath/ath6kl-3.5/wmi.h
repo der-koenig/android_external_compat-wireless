@@ -929,7 +929,7 @@ struct wmi_add_krk_cmd {
 } __packed;
 
 #ifdef PMF_SUPPORT
-struct wmi_add_igtk_cmd{
+struct wmi_add_igtk_cmd {
 	u8 key_index;
 	u8 key_len;
 	u8 key_rsc[6];
@@ -1012,7 +1012,10 @@ enum wmi_scan_ctrl_flags_bits {
 	 * Scan complete event with canceled status will be generated when
 	 * a scan is prempted before it gets completed.
 	 */
-	ENABLE_SCAN_ABORT_EVENT = 0x40
+	ENABLE_SCAN_ABORT_EVENT = 0x40,
+
+	/* set if skip scanning dfs channel */
+	ENABLE_DFS_SKIP_CTRL_FLAGS = 0x80,
 };
 
 struct wmi_scan_params_cmd {
@@ -3175,7 +3178,7 @@ enum WMI_MCC_PROFILE {
 	WMI_MCC_PROFILE_STA80  = BIT(2),
 	WMI_MCC_CTS_ENABLE     = BIT(4),
 	WMI_MCC_PSPOLL_ENABLE  = BIT(5),
-        WMI_MCC_DUAL_TIME_MASK = BIT(8),
+	WMI_MCC_DUAL_TIME_MASK = BIT(8),
 };
 
 struct wmi_set_mcc_profile_cmd {
@@ -3185,6 +3188,17 @@ struct wmi_set_mcc_profile_cmd {
 #define DISALBE_AP_INACTIVE_TIMEMER 0
 struct wmi_ap_conn_inact_cmd {
 	u32	period;
+} __packed;
+
+
+#define MIN_BMISS_TIME		1000
+#define MAX_BMISS_TIME		5000
+#define MIN_BMISS_BEACONS	1
+#define MAX_BMISS_BEACONS	50
+
+struct wmi_bmiss_time_cmd {
+	u16 bmissTime;
+	u16 numBeacons;
 } __packed;
 
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
@@ -3482,5 +3496,7 @@ int ath6kl_wmi_antdivstate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len);
 int ath6kl_wmi_antdivstate_debug_event_rx(struct ath6kl_vif *vif,
 	u8 *datap, int len);
 int ath6kl_antdiv_stat_debug(struct ath6kl *ar, u8 *buf, int buf_len);
+
+int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon);
 
 #endif /* WMI_H */

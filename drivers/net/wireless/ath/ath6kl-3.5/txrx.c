@@ -3170,11 +3170,7 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 
 	aggr->tx_amsdu_enable = true;
 	aggr->tx_amsdu_seq_pkt = true;
-#ifdef CONFIG_ANDROID
-	aggr->tx_amsdu_progressive = false;
-#else
 	aggr->tx_amsdu_progressive = true;
-#endif
 	aggr->tx_amsdu_max_aggr_num = AGGR_TX_MAX_NUM;
 	aggr->tx_amsdu_max_aggr_len = AGGR_TX_MAX_AGGR_SIZE - 100;
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;

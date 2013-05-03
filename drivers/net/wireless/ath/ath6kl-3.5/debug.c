@@ -4227,6 +4227,12 @@ static ssize_t ath6kl_ap_acl_policy_write(struct file *file,
 	ssize_t len;
 	int i;
 
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+	/* Configurate from NL80211. */
+	if (ar->wiphy->max_acl_mac_addrs)
+		return -EINVAL;
+#endif
+
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
@@ -4312,6 +4318,12 @@ static ssize_t ath6kl_ap_acl_mac_list_write(struct file *file,
 	int addr[ETH_ALEN];
 	ssize_t len;
 	int i;
+
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+	/* Configurate from NL80211. */
+	if (ar->wiphy->max_acl_mac_addrs)
+		return -EINVAL;
+#endif
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
@@ -4511,8 +4523,8 @@ static ssize_t ath6kl_mcc_profile(struct file *file,
 	buf[len] = '\0';
 	if (kstrtou32(buf, 0, &mcc_profile))
 		return -EINVAL;
-        sta_time = (mcc_profile & 0x0F)*10;
-	if(mcc_profile & WMI_MCC_DUAL_TIME_MASK){
+	sta_time = (mcc_profile & 0x0F)*10;
+	if (mcc_profile & WMI_MCC_DUAL_TIME_MASK) {
 		if (sta_time > TBTT_MCC_STA_UPPER_BOUND ||
 			sta_time < TBTT_MCC_STA_LOWER_BOUND) {
 			return -EINVAL;
@@ -4827,7 +4839,6 @@ static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
-
 static const struct file_operations fops_usb_autopm_usagecnt = {
 	.read = ath6kl_usb_autopm_usagecnt_read,
 	.write = ath6kl_usb_autopm_usagecnt_write,
@@ -4836,28 +4847,42 @@ static const struct file_operations fops_usb_autopm_usagecnt = {
 	.llseek = default_llseek,
 };
 
+static char *ar_state[]  = {
+	"OFF",
+	"ON",
+	"DEEPSLEEP",
+	"CUTPOWER",
+	"WOW",
+	"SUSPEND"
+};
 
-
-
-static ssize_t ath6kl_usb_pm_state_read(struct file *file,
+static ssize_t ath6kl_usb_pm_status_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-	char buf[32];
+	char buf[256];
 	int len;
-	int usb_pm_state;
+	int state;
+	int buf_len;
+	struct usb_pm_skb_queue_t *p_usb_pm_skb_queue;
 	struct ath6kl *ar = file->private_data;
 
-	usb_pm_state = debugfs_get_pm_state(ar);
+	buf_len = sizeof(buf);
 
-	len = snprintf(buf, sizeof(buf), "pm_state: 0x%x\n", usb_pm_state);
+	state = debugfs_get_pm_state(ar);
+
+	len = snprintf(buf, sizeof(buf), "state: %s\n", ar_state[state]);
+
+	p_usb_pm_skb_queue =  &ar->usb_pm_skb_queue;
+
+	len += snprintf(buf + len, buf_len - len, "usb_pm_q depth: %d\n",
+		get_queue_depth(&(p_usb_pm_skb_queue->list)));
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
-
-static const struct file_operations fops_usb_pm_state = {
-	.read = ath6kl_usb_pm_state_read,
+static const struct file_operations fops_usb_pm_status = {
+	.read = ath6kl_usb_pm_status_read,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -5187,8 +5212,8 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("usb_autopm_usagecnt", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_usb_autopm_usagecnt);
 
-	debugfs_create_file("usb_pm_state", S_IRUSR | S_IWUSR,
-			    ar->debugfs_phy, ar, &fops_usb_pm_state);
+	debugfs_create_file("usb_pm_status", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_usb_pm_status);
 #endif
 
 	debugfs_create_file("p2p_ie_not_append", S_IWUSR,

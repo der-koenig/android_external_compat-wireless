@@ -14,7 +14,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
 #ifndef CE_OLD_KERNEL_SUPPORT_2_6_23
@@ -1194,10 +1193,11 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 	initKernelEnv();
 	if (filename[0] == '/') {
 		/* assign directory */
-		sprintf(full_patch, "%s", filename);
+		snprintf(full_patch, sizeof(full_patch), "%s", filename);
 		ath6kl_info("%s\n\r", full_patch);
 	} else {
-		sprintf(full_patch, "/lib/firmware/%s", filename);
+		snprintf(full_patch, sizeof(full_patch),
+		"/lib/firmware/%s", filename);
 		ath6kl_info("%s\n\r", full_patch);
 	}
 	fp = openFile(full_patch, O_RDONLY, 0);
@@ -1576,7 +1576,8 @@ static int ath6kl_fetch_fw_file(struct ath6kl *ar)
 
 #ifdef CE_SUPPORT
 	if (fwdatapath != NULL)
-		strcpy(filename, fwdatapath);
+		snprintf(filename, sizeof(filename), "%s",
+			 fwdatapath);
 	else
 		snprintf(filename, sizeof(filename), "%s/%s",
 			 ar->hw.fw.dir, ar->hw.fw.fw);

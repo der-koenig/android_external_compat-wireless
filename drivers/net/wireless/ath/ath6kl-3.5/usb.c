@@ -364,7 +364,21 @@ static void ath6kl_usb_free_pipe_resources(struct ath6kl_usb_pipe *pipe)
 			while ((buf = skb_dequeue(&urb_context->comp_queue))
 				!= NULL)
 				dev_kfree_skb(buf);
+			if (pipe->logical_pipe_num >=
+				ATH6KL_USB_PIPE_TX_DATA_LP &&
+			    pipe->logical_pipe_num <=
+				ATH6KL_USB_PIPE_TX_DATA_VHP)
+				if (urb_context->buf != NULL) {
+					dev_kfree_skb(urb_context->buf);
+					urb_context->buf = NULL;
+				}
 		}
+		if (htc_bundle_recv)
+			if (pipe->logical_pipe_num == ATH6KL_USB_PIPE_RX_DATA)
+				if (urb_context->buf != NULL) {
+					dev_kfree_skb(urb_context->buf);
+					urb_context->buf = NULL;
+				}
 
 		kfree(urb_context);
 	}
@@ -2469,9 +2483,11 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 		hif_usb_post_recv_bundle_transfers(
 				&device->pipes[ATH6KL_USB_PIPE_RX_DATA],
 				0 /* not allocating urb-buffer again */);
-		hif_usb_post_recv_bundle_transfers(
+		if (0)/* no need for bundle mode resume */
+			hif_usb_post_recv_bundle_transfers(
 				&device->pipes[ATH6KL_USB_PIPE_RX_DATA2],
 				0 /* not allocating urb-buffer again */);
+
 	}
 
 	ath6kl_cfg80211_resume(ar);

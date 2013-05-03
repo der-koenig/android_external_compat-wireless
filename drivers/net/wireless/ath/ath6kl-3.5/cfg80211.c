@@ -411,7 +411,7 @@ static void ath6kl_set_key_mgmt(struct ath6kl_vif *vif, u32 key_mgmt)
 	} else if (key_mgmt == WLAN_AKM_SUITE_PSK_SHA256) {
 		vif->auth_mode = WPA2_PSK_SHA256_AUTH;
 	} else if ((key_mgmt != WLAN_AKM_SUITE_8021X) &&
-	           (key_mgmt != WLAN_AKM_SUITE_8021X_SHA256)) {
+		(key_mgmt != WLAN_AKM_SUITE_8021X_SHA256)) {
 #else
 	} else if (key_mgmt != WLAN_AKM_SUITE_8021X) {
 #endif
@@ -1170,7 +1170,7 @@ static struct cfg80211_bss *ath6kl_add_bss_if_needed(struct ath6kl_vif *vif,
 		cap_val = WLAN_CAPABILITY_ESS;
 	}
 
-	bss = cfg80211_get_bss(ar->wiphy, chan, bssid,
+	bss = ath6kl_bss_get(ar, chan, bssid,
 			       vif->ssid, vif->ssid_len,
 			       cap_mask, cap_val);
 	if (bss == NULL) {
@@ -1385,7 +1385,7 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "ad-hoc %s selected\n",
 				nw_type & ADHOC_CREATOR ? "creator" : "joiner");
 		cfg80211_ibss_joined(vif->ndev, bssid, GFP_KERNEL);
-		cfg80211_put_bss(bss);
+		ath6kl_bss_put(vif->ar, bss);
 		return;
 	}
 
@@ -1402,7 +1402,7 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 		(enum wifi_diag_mac_fsm_t)WIFI_DIAG_MAC_FSM_CONNECTED,
 		vif->diag.connect_seq_num);
 #endif
-		cfg80211_put_bss(bss);
+		ath6kl_bss_put(vif->ar, bss);
 		ath6kl_cfg80211_connect_result(vif, bssid,
 					assoc_req_ie, assoc_req_len,
 					assoc_resp_ie, assoc_resp_len,
@@ -2047,10 +2047,11 @@ out:
 }
 
 #ifdef PMF_SUPPORT
-static int ath6kl_cfg80211_add_mgmt_key(struct wiphy *wiphy, struct net_device *ndev,
-				   u8 key_index, bool pairwise,
-				   const u8 *mac_addr,
-				   struct key_params *params)
+static int ath6kl_cfg80211_add_mgmt_key(struct wiphy *wiphy,
+					struct net_device *ndev,
+					u8 key_index, bool pairwise,
+					const u8 *mac_addr,
+					struct key_params *params)
 {
 	struct ath6kl *ar = (struct ath6kl *)ath6kl_priv(ndev);
 	struct ath6kl_vif *vif = netdev_priv(ndev);
@@ -2096,21 +2097,24 @@ static int ath6kl_cfg80211_add_mgmt_key(struct wiphy *wiphy, struct net_device *
 	}
 
 	if (vif->nw_type == AP_NETWORK && !pairwise && params) {
-		//Do something here for AP/GO mode.
+		/* Do something here for AP/GO mode. */
+		;
 	}
 
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_WMI_SYC))
 		sync_flag = NO_SYNC_WMIFLAG;
 
 	ret = ath6kl_wmi_addkey_igtk_cmd(ar->wmi, vif->fw_vif_idx, key_index,
-				     key->key_len, key->seq, key->key, sync_flag);
+				     key->key_len, key->seq,
+				     key->key, sync_flag);
 
 	up(&ar->sem);
 	return ret;
 }
 #endif
 
-static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
+static int ath6kl_cfg80211_add_key(struct wiphy *wiphy,
+				   struct net_device *ndev,
 				   u8 key_index, bool pairwise,
 				   const u8 *mac_addr,
 				   struct key_params *params)
@@ -4189,10 +4193,14 @@ static int ath6kl_set_akm_suites(struct wiphy *wiphy, struct net_device *dev,
 				offset = 1 + 1 + 2 + 4 + 2 + (pos[8] * 4);
 				if (pos[offset]) {
 					sme->crypto.n_akm_suites = pos[offset];
-					sme->crypto.akm_suites[0] = pos[offset + 2];
+					sme->crypto.akm_suites[0]
+						 = pos[offset + 2];
 					for (i = 1; i < 4; i++) {
-						sme->crypto.akm_suites[0] = sme->crypto.akm_suites[0] << 8;
-						sme->crypto.akm_suites[0] += pos[offset + 2 + i];
+						sme->crypto.akm_suites[0]
+						 = sme->crypto.akm_suites[0]
+						   << 8;
+						sme->crypto.akm_suites[0]
+						 += pos[offset + 2 + i];
 					}
 					break;
 				}
@@ -4319,6 +4327,48 @@ static u16 _ath6kl_ap_get_channel(struct ath6kl_vif *vif,
 	return chan;
 }
 
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+static void _ath6kl_acl_config(struct ath6kl_vif *vif,
+				const struct cfg80211_acl_data *acl)
+{
+	enum ap_acl_mode mode;
+	u8 mac_addr[ETH_ALEN];
+	int i;
+
+	/* Remove all ACL address first. */
+	ath6kl_ap_acl_config_mac_list_reset(vif);
+
+	/* Disable ACL. */
+	ath6kl_ap_acl_config_policy(vif, AP_ACL_MODE_DISABLE);
+
+	/* Turn-on if need. */
+	if (acl->n_acl_entries == 0)
+		mode = AP_ACL_MODE_DISABLE;
+	else if (acl->acl_policy == NL80211_ACL_POLICY_ACCEPT_UNLESS_LISTED)
+		mode = AP_ACL_MODE_ALLOW;
+	else if (acl->acl_policy == NL80211_ACL_POLICY_DENY_UNLESS_LISTED)
+		mode = AP_ACL_MODE_DENY;
+	else {
+		WARN_ON(1);
+		mode = AP_ACL_MODE_DISABLE;
+	}
+	ath6kl_ap_acl_config_policy(vif, mode);
+
+	/* Add new ACL address. */
+	for (i = 0; i < acl->n_acl_entries; i++) {
+		if (i < AP_ACL_SIZE) {
+			memcpy(mac_addr, acl->mac_addrs[i].addr, ETH_ALEN);
+			ath6kl_ap_acl_config_mac_list(vif, mac_addr, false);
+		} else {
+			ath6kl_err("Wrong ACL number %d\n", acl->n_acl_entries);
+			break;
+		}
+	}
+
+	return;
+}
+#endif
+
 static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 			    struct ath6kl_beacon_parameters *info, bool add)
 {
@@ -4397,6 +4447,12 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 		up(&ar->sem);
 		return 0;
 	}
+
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+	/* Config ACL */
+	if (info->acl)
+		_ath6kl_acl_config(vif, info->acl);
+#endif
 
 	/* Config keep-alive */
 	if (info->inactivity_timeout)
@@ -4593,13 +4649,17 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	info->channel_type	= settings->channel_type;
 #endif
 #endif
-#ifdef NL80211_ATTR_P2P_CTWINDOW_OPPPS
-	info->p2p_ctwindow	= settings->p2p_ctwindow;
-	info->p2p_opp_ps	= settings->p2p_opp_ps;
-#else
 	info->p2p_ctwindow	= 0;
 	info->p2p_opp_ps	= false;
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+	info->acl		= settings->acl;
 #endif
+
+	/*
+	 * The target will take care DFS behavior and the host just need to
+	 * report events back to the user.
+	 */
+	info->radar_required	= false;
 
 	info->head              = settings->beacon.head;
 	info->tail              = settings->beacon.tail;
@@ -5676,6 +5736,19 @@ ath6kl_mgmt_stypes[NUM_NL80211_IFTYPES] = {
 	},
 };
 
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+static int ath6kl_cfg80211_ap_acl(struct wiphy *wiphy, struct net_device *dev,
+					const struct cfg80211_acl_data *params)
+{
+	struct ath6kl_vif *vif = netdev_priv(dev);
+
+	if (params)
+		_ath6kl_acl_config(vif, params);
+
+	return 0;
+}
+#endif
+
 /* NOTE : this table may be over-wrote by ath6kl_change_cfg80211_ops() call. */
 static struct cfg80211_ops ath6kl_cfg80211_ops = {
 	.add_virtual_intf = ath6kl_cfg80211_add_iface,
@@ -5809,6 +5882,14 @@ static void ath6kl_change_cfg80211_ops(struct cfg80211_ops *cfg80211_ops)
 		cfg80211_ops->sched_scan_stop = ath6kl_sched_scan_stop;
 	}
 
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+	if (debug_quirks & ATH6KL_MODULE_AP_ACL_BY_NL80211) {
+		cfg80211_ops->set_mac_acl = ath6kl_cfg80211_ap_acl;
+
+		ath6kl_info("Configurate AP-ACL from NL80211.\n");
+	}
+#endif
+
 	return;
 }
 
@@ -5899,11 +5980,11 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 		ar->p2p_war_p2p_client_awake = false;
 	}
 
-	ar->p2p_ie_not_append = 0;
+	ar->p2p_ie_not_append = P2P_IE_IN_PROBE_REQ;
 
 	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
 		" %s dedicate p2p-device,"
-		" multi-channel-concurrent %s, p2p-compat %s%s%s\n",
+		" multi-channel-concurrent %s, p2p-compat %s%s%s%s\n",
 		ar->vif_max,
 		ar->max_norm_iface,
 		(ar->p2p ? "enable" : "disable"),
@@ -5912,6 +5993,7 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 		(ar->p2p_dedicate ? "with" : "without"),
 		(ar->p2p_multichan_concurrent ? "enable" : "disable"),
 		(ar->p2p_compat ? "enable (ignore p2p_dedicate)" : "disable"),
+		(ar->p2p_ie_not_append ? ", sta-p2p-ie removed" : ""),
 		(ar->p2p_in_pasv_chan ? ", p2p_in_pasv_chan enable" : ""),
 		(ar->p2p_wise_scan ? ", p2p_wise_scan enable" : ""));
 
@@ -6247,11 +6329,20 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 #endif
 
 	if (test_bit(INTERNAL_REGDB, &ar->flag)) {
+#ifdef CFG80211_VOID_REG_NOTIFIER
+		wiphy->reg_notifier = ath6kl_reg_notifier2;
+#else
 		wiphy->reg_notifier = ath6kl_reg_notifier;
+#endif
 		wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_STRICT_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_DISABLE_BEACON_HINTS;
 	}
+
+#ifdef NL80211_CMD_SET_AP_MAC_ACL
+	if (debug_quirks & ATH6KL_MODULE_AP_ACL_BY_NL80211)
+		wiphy->max_acl_mac_addrs = ATH6KL_AP_ACL_MAX_NUM;
+#endif
 
 	ret = wiphy_register(wiphy);
 	if (ret < 0) {
@@ -6363,7 +6454,7 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		/* Only apply to P2P related interfaces. */
 		vif->scanband_type = SCANBAND_TYPE_P2PCHAN;
 	} else
-	vif->scanband_type = SCANBAND_TYPE_ALL;
+		vif->scanband_type = SCANBAND_TYPE_ALL;
 
 	vif->last_pwr_mode = REC_POWER;
 
