@@ -1384,6 +1384,23 @@ void ath6kl_ap_ch_switch(struct ath6kl_vif *vif)
 	if (vif->nw_type != AP_NETWORK)
 		return;
 
+#ifdef CE_SUPPORT
+{
+	u32 freq;
+	enum nl80211_channel_type channel_type;
+	freq = (u32)le16_to_cpu(vif->bss_ch);
+
+	if (vif->chan_type == ATH6KL_CHAN_TYPE_NONE)
+		channel_type = NL80211_CHAN_NO_HT;
+	else if (vif->chan_type == ATH6KL_CHAN_TYPE_HT20)
+		channel_type = NL80211_CHAN_HT20;
+	else if (vif->chan_type == ATH6KL_CHAN_TYPE_HT40MINUS)
+		channel_type = NL80211_CHAN_HT40MINUS;
+	else if (vif->chan_type == ATH6KL_CHAN_TYPE_HT40PLUS)
+		channel_type = NL80211_CHAN_HT40PLUS;
+	cfg80211_csa_done_info(vif->ndev, freq, channel_type, 1, GFP_ATOMIC);
+}
+#endif
 	/*
 	 * If target use the different channel setting as the host and use this
 	 * helper API to update the working channel information to the user.

@@ -100,6 +100,12 @@ enum ATH6KL_MODULE_QUIRKS {
 
 	/* config AP-ACL from NL80211 */
 	ATH6KL_MODULE_AP_ACL_BY_NL80211  = BIT(27),
+
+	/* enable Diagnostic */
+	ATH6KL_MODULE_ENABLE_DIAGNOSTIC = BIT(28),
+
+	/* enable RTT */
+	ATH6KL_MODULE_ENABLE_RTT = BIT(29),
 };
 
 enum ATH6KL_MODULE_P2P {

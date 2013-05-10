@@ -749,6 +749,10 @@ enum wmi_cmd_id {
 	WMI_GET_ANTDIVSTAT_CMDID,
 
 	WMI_SET_SEAMLESS_MCC_SCC_SWITCH_FREQ_CMDID,
+
+	WMI_SET_CHAIN_MASK_CMDID,
+
+	WMI_SET_SCAN_CHAN_PLAN_CMDID,
 /* merge from olca mainline for align command id - end */
 
 	WMI_SET_CREDIT_BYPASS_CMDID,
@@ -1579,7 +1583,7 @@ enum wmi_event_id {
 	WMI_RX_PROBE_RESP_EVENTID,
 	WMI_ACL_REJECT_EVENTID,
 	WMI_GET_WIDIMODE_EVENTID,/* 0x902C */
-
+	WMI_CSA_EVENTID,
 };
 
 struct wmi_ready_event_2 {
@@ -3201,6 +3205,19 @@ struct wmi_bmiss_time_cmd {
 	u16 numBeacons;
 } __packed;
 
+enum WMI_SCAN_PLAN_TYPE {
+	WMI_SCAN_PLAN_IN_ORDER  = 0,
+	WMI_SCAN_PLAN_REVERSE_ORDER = 1,
+	WMI_SCAN_PLAN_HOST_ORDER = 2,
+};
+
+struct wmi_scan_chan_plan_cmd {
+	u32 flag;
+	u8 type;
+	u8 numChannels;
+	__le16 channellist[1];
+} __packed;
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
@@ -3326,7 +3343,7 @@ int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 				u8 *kek, u8 *kck, u8 *replay_ctr);
 
 int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
-	u16  lowrssi_scan_period, u16  lowrssi_scan_threshold,
+	u8 fw_vif_idx,	u16  lowrssi_scan_period, u16  lowrssi_scan_threshold,
 	u16  lowrssi_roam_threshold,
 	u8   roam_rssi_floor);
 
@@ -3499,4 +3516,6 @@ int ath6kl_antdiv_stat_debug(struct ath6kl *ar, u8 *buf, int buf_len);
 
 int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon);
 
+int ath6kl_wmi_set_scan_chan_plan(struct wmi *wmi, u8 if_idx,
+					u8 type, u8 numChan, u16 *chanList);
 #endif /* WMI_H */

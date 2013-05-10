@@ -1172,10 +1172,6 @@ static int htc_send_pkts_sched_check(struct htc_target *target,
 	spin_unlock_bh(&target->tx_lock);
 
 	switch (id) {
-	case ENDPOINT_2: /* BE */
-		status = ac_queue_status[0] && ac_queue_status[2] &&
-			 ac_queue_status[3];
-		break;
 	case ENDPOINT_3: /* BK */
 		status = ac_queue_status[0] && ac_queue_status[1] &&
 			 ac_queue_status[2] && ac_queue_status[3];
@@ -1186,8 +1182,9 @@ static int htc_send_pkts_sched_check(struct htc_target *target,
 	case ENDPOINT_5: /* VO */
 		status = ac_queue_status[3];
 		break;
-	default:
-		status = 0;
+	default: /* BE */
+		status = ac_queue_status[0] && ac_queue_status[2] &&
+			 ac_queue_status[3];
 		break;
 	}
 	return status;
@@ -1390,9 +1387,6 @@ static int htc_process_trailer(struct htc_target *target,
 				   record->rec_id, record->len);
 			break;
 		}
-
-		if (status != 0)
-			break;
 
 		/* advance buffer past this record for next time around */
 		buffer += record->len;
@@ -1712,7 +1706,7 @@ static void htc_flush_rx_queue(struct htc_target *target,
 /* polling routine to wait for a control packet to be received */
 static int htc_wait_recv_ctrl_message(struct htc_target *target)
 {
-	int count = HTC_TARGET_RESPONSE_POLL_COUNT;
+	int ret, count = HTC_TARGET_RESPONSE_POLL_COUNT;
 
 	while (count > 0) {
 		spin_lock_bh(&target->rx_lock);
@@ -1728,7 +1722,7 @@ static int htc_wait_recv_ctrl_message(struct htc_target *target)
 		count--;
 
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout(msecs_to_jiffies(HTC_TARGET_RESPONSE_POLL_MS));
+		ret = schedule_timeout(msecs_to_jiffies(HTC_TARGET_RESPONSE_POLL_MS));
 		set_current_state(TASK_RUNNING);
 	}
 	if (count <= 0) {

@@ -19,7 +19,6 @@
 #include "htc-ops.h"
 #include "epping.h"
 #include <linux/version.h>
-#include <net/arp.h>
 
 /* 802.1d to AC mapping. Refer pg 57 of WMM-test-plan-v1.2 */
 static const u8 up_to_ac[] = {
@@ -417,52 +416,6 @@ bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif,
 	return ps_queued;
 }
 
-static inline  void __ath6kl_arp_parse_offload(struct ath6kl_vif *vif,
-					       struct sk_buff *skb)
-{
-	struct ath6kl *ar = vif->ar;
-	struct ethhdr *eth_hdr = (struct ethhdr *) skb->data;
-	struct ath6kl_llc_snap_hdr *llc_hdr;
-	struct arphdr *arp_hdr;
-	unsigned char *ar_sip;
-	unsigned char src_ip[4];
-	u16 ether_type;
-	int hdr_size;
-
-	if (is_ethertype(be16_to_cpu(eth_hdr->h_proto))) {
-		/* packet is in DIX format */
-		ether_type = eth_hdr->h_proto;
-		hdr_size = sizeof(struct ethhdr);
-	} else {
-		/* packet is in 802.3 format */
-		llc_hdr = (struct ath6kl_llc_snap_hdr *)(skb->data
-			+ sizeof(struct ethhdr));
-		ether_type = llc_hdr->eth_type;
-		hdr_size = sizeof(struct ethhdr)
-			+ sizeof(struct ath6kl_llc_snap_hdr);
-	}
-
-	if (ether_type == htons(ETH_P_ARP)) {
-		arp_hdr = (struct arphdr *)(skb->data + hdr_size);
-		ar_sip = skb->data + hdr_size
-			+ sizeof(struct arphdr) + ETH_ALEN;
-
-		if (arp_hdr->ar_op == htons(ARPOP_REPLY)) {
-			memcpy(src_ip, ar_sip, 4);
-
-			vif->arp_offload_ip_set = 0;
-			if (!ath6kl_wmi_set_arp_offload_ip_cmd(ar->wmi,
-				src_ip)) {
-				vif->arp_offload_ip_set = 1;
-				ath6kl_dbg(ATH6KL_DBG_WOWLAN,
-				"%s: enable arp offload %d.%d.%d.%d\n",
-				__func__, src_ip[0], src_ip[1]
-				, src_ip[2], src_ip[3]);
-			}
-		}
-	}
-}
-
 /* Tx functions */
 
 int ath6kl_control_tx(void *devt, struct sk_buff *skb,
@@ -545,10 +498,6 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	int ret, aggr_tx_status = AGGR_TX_UNKNOW;
 	struct ath6kl_sta *conn = NULL;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
-		   "%s: skb=0x%p, data=0x%p, len=0x%x\n", __func__,
-		   skb, skb->data, skb->len);
-
 	/* If target is not associated */
 	if (!test_bit(CONNECTED, &vif->flags) &&
 	    !test_bit(TESTMODE_EPPING, &ar->flag)) {
@@ -560,6 +509,20 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	    !test_bit(TESTMODE_EPPING, &ar->flag)) {
 		goto fail_tx;
 	}
+
+	if ((ar->conf_flags & ATH6KL_CONF_SKB_DUP) &&
+		(skb_cloned(skb) || skb_shared(skb))) {
+		struct sk_buff *nskb;
+		nskb = skb_copy(skb, GFP_ATOMIC);
+		if (nskb == NULL)
+			goto fail_tx;
+		dev_kfree_skb_any(skb);
+		skb = nskb;
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
+		"%s: skb=0x%p, data=0x%p, len=0x%x\n", __func__,
+		skb, skb->data, skb->len);
 
 	/* AP mode Power saving processing */
 	if (vif->nw_type == AP_NETWORK) {
@@ -581,11 +544,6 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 			kfree_skb(skb);
 			skb = tmp_skb;
 		}
-
-		/* sniffer ARP reply, enable ARP offload by default */
-		if ((vif == ath6kl_vif_first(ar))
-			&& (vif->nw_type == INFRA_NETWORK))
-			__ath6kl_arp_parse_offload(vif, skb);
 
 		if (ath6kl_wmi_dix_2_dot3(ar->wmi, skb)) {
 			ath6kl_err("ath6kl_wmi_dix_2_dot3 failed\n");
@@ -805,9 +763,10 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 
 			spin_unlock_bh(&ar->lock);
 
-			ath6kl_wmi_set_credit_bypass(ar->wmi,
-				vif->fw_vif_idx,
-				ar->ac2ep_map[WMM_AC_BE], 0, 6);
+			if (vif)
+				ath6kl_wmi_set_credit_bypass(ar->wmi,
+					vif->fw_vif_idx,
+					ar->ac2ep_map[WMM_AC_BE], 0, 6);
 
 			spin_lock_bh(&ar->lock);
 		}
@@ -845,10 +804,11 @@ void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active)
 
 			spin_unlock_bh(&ar->lock);
 
-			ath6kl_wmi_set_credit_bypass(ar->wmi,
-					vif->fw_vif_idx,
-					ar->ac2ep_map[WMM_AC_BE],
-					1, 1);
+			if (vif)
+				ath6kl_wmi_set_credit_bypass(ar->wmi,
+						vif->fw_vif_idx,
+						ar->ac2ep_map[WMM_AC_BE],
+						1, 1);
 
 			spin_lock_bh(&ar->lock);
 		}
@@ -1320,11 +1280,13 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 
 #ifdef CONFIG_ANDROID
 	if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
+		struct ath6kl *ar = vif->ar;
 
 		if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) &&
-			(vif->ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM)) {
+			(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM)) {
 			if (vif->pend_skb != NULL)
-				flush_delayed_work(&vif->work_eapol_send);
+				ath6kl_flush_pend_skb(vif);
+
 			if (test_bit(FIRST_EAPOL_PENDSENT, &vif->flags)) {
 				vif->pend_skb = skb;
 				INIT_DELAYED_WORK(&vif->work_eapol_send,
@@ -1332,6 +1294,35 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 				schedule_delayed_work(&vif->work_eapol_send,
 					ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE);
 				return;
+			}
+		} else if (test_bit(CONNECTED, &vif->flags)) {
+			struct ath6kl_vif *tmp;
+			int i;
+
+			/*
+			 * To avoid scan let EAPOL frame lost or timeout and
+			 * here preempt scan for a while when receive EAPOL
+			 * frame.
+			 */
+			set_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
+			ar->eapol_shprotect_vif |= (1 << vif->fw_vif_idx);
+
+			mod_timer(&ar->eapol_shprotect_timer,
+				jiffies + ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE);
+
+			for (i = 0; i < ar->vif_max; i++) {
+				tmp = ath6kl_get_vif_by_index(ar, i);
+				if (tmp && tmp->scan_req) {
+					ath6kl_info("EAPOL on-going, vif %d\n",
+						tmp->fw_vif_idx);
+
+					del_timer(&tmp->vifscan_timer);
+					ath6kl_wmi_abort_scan_cmd(ar->wmi,
+							tmp->fw_vif_idx);
+					cfg80211_scan_done(tmp->scan_req, true);
+					tmp->scan_req = NULL;
+					clear_bit(SCANNING, &tmp->flags);
+				}
 			}
 		}
 	}
@@ -3373,3 +3364,25 @@ void ath6kl_indicate_wmm_schedule_change(void *devt, bool change)
 		}
 	}
 }
+
+void ath6kl_flush_pend_skb(struct ath6kl_vif *vif)
+{
+
+	spin_lock_bh(&vif->pend_skb_lock);
+
+	if (!vif->pend_skb) {
+		spin_unlock_bh(&vif->pend_skb_lock);
+		return;
+	}
+
+	if (!(vif->pend_skb->dev->flags & IFF_UP))
+			dev_kfree_skb_any(vif->pend_skb);
+	else
+		netif_rx_ni(vif->pend_skb);
+
+	vif->pend_skb = NULL;
+	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+
+	spin_unlock_bh(&vif->pend_skb_lock);
+}
+

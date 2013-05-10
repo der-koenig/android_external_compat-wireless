@@ -20,6 +20,7 @@
 #endif
 #include <linux/interrupt.h>
 #include <linux/time.h>
+#include <linux/inetdevice.h>
 #include "core.h"
 #include "cfg80211.h"
 #include "debug.h"
@@ -303,6 +304,8 @@ static int ath6kl_set_rsn_cap(struct wiphy *wiphy, struct net_device *dev,
 				const u8 *ies, int ies_len);
 #endif
 
+static void ath6kl_eapol_shprotect_timer_handler(unsigned long ptr);
+
 static int ath6kl_set_wpa_version(struct ath6kl_vif *vif,
 				  enum nl80211_wpa_versions wpa_version)
 {
@@ -558,7 +561,8 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 				     ath6kl_is_wfd_ie(pos)) &&
 				    !ath6kl_p2p_ie_append(vif,
 							P2P_IE_IN_ASSOC_REQ))
-					ath6kl_info("Remove Asso's P2P IE\n");
+					ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+						"Remove Asso's P2P IE\n");
 				else {
 					memcpy(buf + len, pos, 2 + pos[1]);
 					len += 2 + pos[1];
@@ -728,13 +732,14 @@ void ath6kl_judge_roam_parameter(
 DONE:
 	if (lrssi_scan_enable) {
 		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+				0,
 				ar->low_rssi_roam_params.lrssi_scan_period,
 				ar->low_rssi_roam_params.lrssi_scan_threshold,
 				ar->low_rssi_roam_params.lrssi_roam_threshold,
 				ar->low_rssi_roam_params.roam_rssi_floor);
 	} else {
 		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
-			0xFFFF, 0, 0, 100);
+			0, 0xFFFF, 0, 0, 100);
 	}
 
 }
@@ -845,6 +850,21 @@ void ath6kl_switch_parameter_based_on_connection(
 		}
 	}
 
+
+	/*
+	 * Delete rekey protection timer if
+	 * 1. all vifs disconnected
+	 * 2. the timer was only fireed by this vif.
+	 */
+	if ((call_on_disconnect) &&
+	    test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag)) {
+		if ((connected_count == 0) ||
+		    (ar->eapol_shprotect_vif == (1 << vif->fw_vif_idx))) {
+			clear_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
+			del_timer(&ar->eapol_shprotect_timer);
+		}
+	}
+
 	/*
 	 * Switch scan parameter
 	 * Currently, when there are more than one vif connected,
@@ -911,9 +931,122 @@ void ath6kl_switch_parameter_based_on_connection(
 		}
 	}
 
+	/* Reconfigurate the PS mode case by case. */
+	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect);
+
 #ifdef USB_AUTO_SUSPEND
 	ath6kl_check_autopm_onoff(ar);
 #endif /* USB_AUTO_SUSPEND */
+}
+
+static inline void _change_p2p_scan_plan(struct ath6kl_vif *vif)
+{
+#define _MAX_STAY_TIME		(200)	/* 2 Beacon Time */
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *tmp;
+	bool change_scan_plan = true;
+	int i;
+
+	/*
+	 * Only fine tune for SCC case to stay the target channel
+	 * at least 2 beacon time for connection try rather than report
+	 * disconnect immediately.
+	 */
+
+	list_for_each_entry(tmp, &ar->vif_list, list) {
+		if ((tmp != vif) &&
+		    test_bit(CONNECTED, &tmp->flags) &&
+		    (tmp->bss_ch != vif->ch_hint)) {
+			change_scan_plan = false;
+			break;
+		}
+	}
+
+	if (change_scan_plan) {
+		vif->scan_plan.type = ATH6KL_SCAN_PLAN_HOST_ORDER;
+		vif->scan_plan.numChan = _MAX_STAY_TIME /
+					 vif->sc_params.maxact_chdwell_time;
+
+		for (i = 0; i < vif->scan_plan.numChan; i++)
+			vif->scan_plan.chanList[i] = vif->ch_hint;
+	}
+
+	return;
+#undef _MAX_STAY_TIME
+}
+
+void ath6kl_change_scan_plan(struct ath6kl_vif *vif, bool reset)
+{
+	struct ath6kl *ar = vif->ar;
+
+	/* Default */
+	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
+	vif->scan_plan.numChan = 0;
+
+	if (!reset) {
+		/*
+		 * Currently, only fine tune scan-plan when turn-on target
+		 * roaming.
+		 */
+		if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
+			goto done;
+
+		if (vif->wdev.iftype == NL80211_IFTYPE_STATION) {
+			/* For STA, prefer to use 5G APs. */
+			vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
+		} else if ((vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) &&
+			   (vif->ssid_len)) {
+			struct cfg80211_bss *bss;
+
+			/*
+			 * Firmware roaming is global setting in cfg80211 but
+			 * not in target and P2P-Client actually no need
+			 * roaming and therefore pass the channel & bssid hint
+			 * to target.
+			 */
+			bss = ath6kl_bss_get(vif->ar,
+						NULL,
+						NULL,
+						vif->ssid,
+						vif->ssid_len,
+						WLAN_CAPABILITY_ESS,
+						WLAN_CAPABILITY_ESS);
+
+			if (bss && bss->channel) {
+#ifdef CFG80211_SAFE_BSS_INFO_ACCESS
+				rcu_read_lock();
+#endif
+				vif->ch_hint = bss->channel->center_freq;
+				memcpy(vif->req_bssid, bss->bssid, ETH_ALEN);
+#ifdef CFG80211_SAFE_BSS_INFO_ACCESS
+				rcu_read_unlock();
+#endif
+			}
+
+			if (bss)
+				ath6kl_bss_put(vif->ar, bss);
+
+			/* Change scan-plan to host order if need. */
+			_change_p2p_scan_plan(vif);
+		}
+	}
+
+done:
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		   "change scan plan, vif %d reset %d type %d numChan %d\n",
+		   vif->fw_vif_idx,
+		   reset,
+		   vif->scan_plan.type,
+		   vif->scan_plan.numChan);
+
+	/* Update to the target */
+	ath6kl_wmi_set_scan_chan_plan(ar->wmi,
+					vif->fw_vif_idx,
+					vif->scan_plan.type,
+					vif->scan_plan.numChan,
+					vif->scan_plan.chanList);
+
+	return;
 }
 
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
@@ -1064,8 +1197,7 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	    (vif->prwise_crypto == WEP_CRYPT)) {
 		struct ath6kl_key *key = NULL;
 
-		if (sme->key_idx < WMI_MIN_KEY_INDEX ||
-		    sme->key_idx > WMI_MAX_KEY_INDEX) {
+		if (sme->key_idx > WMI_MAX_KEY_INDEX) {
 			ath6kl_err("key index %d out of bounds\n",
 				   sme->key_idx);
 			up(&ar->sem);
@@ -1116,6 +1248,8 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	 * timeout (10sec) or supplicant trigger connection timeout (10sec).
 	 */
 	ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx, 0);
+
+	ath6kl_change_scan_plan(vif, false);
 
 	status = ath6kl_wmi_connect_cmd(ar->wmi, vif->fw_vif_idx, vif->nw_type,
 					vif->dot11_auth_mode, vif->auth_mode,
@@ -1234,7 +1368,7 @@ static bool ath6kl_handshake_protect(struct ath6kl_vif *vif, u8 *bssid)
 			spin_lock_bh(&vif->if_lock);
 			set_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 			if (vif->pend_skb)
-				flush_delayed_work(&vif->work_eapol_send);
+				ath6kl_flush_pend_skb(vif);
 			set_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
 			mod_timer(&vif->shprotect_timer,
 				jiffies + ATH6KL_HANDSHAKE_PROC_TIMEOUT);
@@ -1248,7 +1382,7 @@ static bool ath6kl_handshake_protect(struct ath6kl_vif *vif, u8 *bssid)
 		spin_lock_bh(&vif->if_lock);
 		clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 		if (vif->pend_skb)
-			flush_delayed_work(&vif->work_eapol_send);
+			ath6kl_flush_pend_skb(vif);
 		del_timer(&vif->shprotect_timer);
 		spin_unlock_bh(&vif->if_lock);
 		reset_handshake_pro = false;
@@ -1267,6 +1401,9 @@ void ath6kl_cfg80211_connect_result(struct ath6kl_vif *vif,
 				gfp_t gfp)
 {
 	bool need_pending;
+
+	if (status != WLAN_STATUS_SUCCESS)
+		ath6kl_change_scan_plan(vif, true);
 
 	need_pending = ath6kl_p2p_pending_connect_event(vif,
 							bssid,
@@ -1295,6 +1432,8 @@ void ath6kl_cfg80211_disconnected(struct ath6kl_vif *vif,
 				size_t ie_len,
 				gfp_t gfp)
 {
+	ath6kl_change_scan_plan(vif, true);
+
 	ath6kl_p2p_pending_disconnect_event(vif, reason, ie, ie_len, gfp);
 	cfg80211_disconnected(vif->ndev,
 				reason,
@@ -1528,7 +1667,7 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	}
 
 	if (vif->pend_skb)
-		flush_delayed_work(&vif->work_eapol_send);
+		ath6kl_flush_pend_skb(vif);
 
 	/*
 	 * Send a disconnect command to target when a disconnect event is
@@ -1677,7 +1816,8 @@ static int ath6kl_set_probe_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 			     ath6kl_is_wfd_ie(pos)) &&
 			     !ath6kl_p2p_ie_append(vif,
 						P2P_IE_IN_PROBE_REQ))
-				ath6kl_info("Remove Probe's P2P IE\n");
+				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+						"Remove Probe's P2P IE\n");
 			else {
 				memcpy(buf + len, pos, 2 + pos[1]);
 				len += 2 + pos[1];
@@ -1838,7 +1978,7 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 		n_channels = request->n_channels;
 
-		channels = kzalloc(n_channels * sizeof(u16), GFP_KERNEL);
+		channels = kzalloc(n_channels * sizeof(u16) * 2, GFP_KERNEL);
 		if (channels == NULL) {
 			ath6kl_warn("failed to set scan channels, "
 				    "scan all channels");
@@ -1902,6 +2042,29 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 				}
 				n_channels -= skip_chan_num;
 				break;
+			case SCANBAND_TYPE_2_P2PCHAN:
+				ath6kl_dbg(ATH6KL_DBG_INFO,
+					"x2 P2P channels scan, channel list - ");
+				for (i = 0; i < n_channels; i++) {
+					if (!ath6kl_reg_is_p2p_channel(ar,
+					   request->channels[i]->center_freq)) {
+						skip_chan_num++;
+						continue;
+					}
+					channels[i - skip_chan_num] =
+					   request->channels[i]->center_freq;
+					ath6kl_dbg(ATH6KL_DBG_INFO,
+					   "%d ", channels[i - skip_chan_num]);
+				}
+				n_channels -= skip_chan_num;
+				/* Avoid to scan lots of channels. */
+				if (n_channels <= (WMI_MAX_CHANNELS >> 1)) {
+					memcpy(&channels[n_channels],
+							&channels[0],
+						    n_channels * sizeof(u16));
+					n_channels *= 2;
+				}
+				break;
 			default:
 				for (i = 0; i < n_channels; i++)
 					channels[i] =
@@ -1920,9 +2083,11 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -EBUSY;
 	}
 
-	if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-			"%s connect_handshake_protect reject scan\n", __func__);
+	if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) ||
+	    test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag)) {
+		ath6kl_info("EAPOL %s_handshake_protect reject scan\n",
+			(test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag) ?
+			 "rekey" : "connect"));
 		clear_bit(SCANNING, &vif->flags);
 		kfree(channels);
 		up(&ar->sem);
@@ -2127,17 +2292,17 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy,
 	u8 key_type;
 	int ret;
 
-#ifdef PMF_SUPPORT
-	if (params->cipher == WLAN_CIPHER_SUITE_AES_CMAC)
-		return ath6kl_cfg80211_add_mgmt_key(wiphy, ndev, key_index,
-						pairwise, mac_addr, params);
-#endif
-
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
 	if (!params)
 		return -EINVAL;
+
+#ifdef PMF_SUPPORT
+	if (params->cipher == WLAN_CIPHER_SUITE_AES_CMAC)
+		return ath6kl_cfg80211_add_mgmt_key(wiphy, ndev, key_index,
+						pairwise, mac_addr, params);
+#endif
 
 	if (down_interruptible(&ar->sem)) {
 		ath6kl_err("busy, couldn't get access\n");
@@ -2156,7 +2321,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy,
 		return ret;
 	}
 
-	if (key_index < WMI_MIN_KEY_INDEX || key_index > WMI_MAX_KEY_INDEX) {
+	if (key_index > WMI_MAX_KEY_INDEX) {
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 			   "%s: key index %d out of bounds\n", __func__,
 			   key_index);
@@ -2222,7 +2387,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy,
 	if (key_usage & GROUP_USAGE) {
 		if (vif->pend_skb) {
 			ath6kl_err("eapol protect shall be off already\n");
-			flush_delayed_work(&vif->work_eapol_send);
+			ath6kl_flush_pend_skb(vif);
 		}
 
 		spin_lock_bh(&vif->if_lock);
@@ -2304,7 +2469,7 @@ static int ath6kl_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev,
 		return -ERESTARTSYS;
 	}
 
-	if (key_index < WMI_MIN_KEY_INDEX || key_index > WMI_MAX_KEY_INDEX) {
+	if (key_index > WMI_MAX_KEY_INDEX) {
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 			   "%s: key index %d out of bounds\n", __func__,
 			   key_index);
@@ -2348,7 +2513,7 @@ static int ath6kl_cfg80211_get_key(struct wiphy *wiphy, struct net_device *ndev,
 		return -ERESTARTSYS;
 	}
 
-	if (key_index < WMI_MIN_KEY_INDEX || key_index > WMI_MAX_KEY_INDEX) {
+	if (key_index > WMI_MAX_KEY_INDEX) {
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 			   "%s: key index %d out of bounds\n", __func__,
 			   key_index);
@@ -2394,7 +2559,7 @@ static int ath6kl_cfg80211_set_default_key(struct wiphy *wiphy,
 		return -ERESTARTSYS;
 	}
 
-	if (key_index < WMI_MIN_KEY_INDEX || key_index > WMI_MAX_KEY_INDEX) {
+	if (key_index > WMI_MAX_KEY_INDEX) {
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 			   "%s: key index %d out of bounds\n",
 			   __func__, key_index);
@@ -2652,7 +2817,7 @@ static int ath6kl_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 		   __func__, pmgmt, timeout);
 
 	if (test_bit(PS_STICK, &vif->flags)) {
-		ath6kl_info("PS mode already stick (%d).\n",
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "PS mode already stick (%d).\n",
 				vif->last_pwr_mode);
 		return 0;
 	}
@@ -3505,6 +3670,9 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	u16 i;
 	u8 mask[WOW_MASK_SIZE];
 #endif
+	struct in_device *in_dev;
+	struct in_ifaddr *ifa;
+	unsigned char src_ip[4];
 
 	/*if already in wow state just return without error*/
 	if (ar->state == ATH6KL_STATE_WOW)
@@ -3603,6 +3771,28 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	if (ret)
 		return ret;
 #endif /*!CONFIG_ANDROID*/
+
+	/* Setup own IP addr for ARP agent. */
+	in_dev = __in_dev_get_rtnl(vif->ndev);
+	if (in_dev) {
+		ifa = in_dev->ifa_list;
+		if (ifa && ifa->ifa_local) {
+			if (vif->arp_offload_ip_set == 0 ||
+			    vif->arp_offload_ip != ifa->ifa_local) {
+				memcpy(src_ip, &ifa->ifa_local, 4);
+				vif->arp_offload_ip_set = 0;
+				if (!ath6kl_wmi_set_arp_offload_ip_cmd(ar->wmi,
+								src_ip)) {
+					vif->arp_offload_ip_set = 1;
+					vif->arp_offload_ip = ifa->ifa_local;
+					ath6kl_dbg(ATH6KL_DBG_WOWLAN,
+					"%s: enable arp offload %d.%d.%d.%d\n",
+					__func__, src_ip[0], src_ip[1],
+					src_ip[2], src_ip[3]);
+				}
+			}
+		}
+	}
 
 	clear_bit(HOST_SLEEP_MODE_CMD_PROCESSED, &vif->flags);
 
@@ -4162,7 +4352,6 @@ static int ath6kl_set_uapsd(struct wiphy *wiphy, struct net_device *dev,
 static int ath6kl_set_akm_suites(struct wiphy *wiphy, struct net_device *dev,
 				struct cfg80211_connect_params *sme)
 {
-	struct ath6kl_vif *vif = netdev_priv(dev);
 	const u8 *pos, *ies = sme->ie;
 	int ies_len = sme->ie_len;
 	int ret = 0;
@@ -5649,11 +5838,14 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
 	if (vif->auth_mode == WPA2_AUTH_CCKM || vif->auth_mode == WPA2_PSK_AUTH
 	  || vif->auth_mode == WPA_AUTH_CCKM || vif->auth_mode == WPA_PSK_AUTH){
+		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_OFFLOAD_GTK\n");
 		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
 	}
 
-	if (vif->arp_offload_ip_set || wow->any)
+	if (vif->arp_offload_ip_set || wow->any) {
+		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_OFFLOAD_ARP\n");
 		filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
+	}
 
 	if (filter || wow->n_patterns) {
 		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "Set filter: 0x%x ", filter);
@@ -6105,9 +6297,14 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	INIT_LIST_HEAD(&ar->amsdu_rx_buffer_queue);
 	INIT_LIST_HEAD(&ar->vif_list);
 
+	setup_timer(&ar->eapol_shprotect_timer,
+			ath6kl_eapol_shprotect_timer_handler,
+			(unsigned long) ar);
+
 	clear_bit(WMI_ENABLED, &ar->flag);
 	clear_bit(SKIP_SCAN, &ar->flag);
 	clear_bit(DESTROY_IN_PROGRESS, &ar->flag);
+	clear_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
 
 	ar->listen_intvl_t = A_DEFAULT_LISTEN_INTERVAL;
 	ar->listen_intvl_b = 0;
@@ -6203,7 +6400,8 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 		}
 
 		/* Update max. channel support */
-		if (ar->p2p_multichan_concurrent) {
+		if (ar->p2p_multichan_concurrent &&
+				ieee80211_iface_combination != NULL) {
 			ieee80211_iface_combination[0].num_different_channels =
 			ieee80211_iface_combination[0].max_interfaces;
 		}
@@ -6452,7 +6650,7 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 	if (ar->p2p_wise_scan &&
 	    (vif->fw_vif_idx != 0)) {
 		/* Only apply to P2P related interfaces. */
-		vif->scanband_type = SCANBAND_TYPE_P2PCHAN;
+		vif->scanband_type = SCANBAND_TYPE_2_P2PCHAN;
 	} else
 		vif->scanband_type = SCANBAND_TYPE_ALL;
 
@@ -6715,7 +6913,7 @@ void ath6kl_shprotect_timer_handler(unsigned long ptr)
 
 	if (vif->pend_skb) {
 		ath6kl_err("%s, shall not have pend skb\n", __func__);
-		flush_delayed_work(&vif->work_eapol_send);
+		ath6kl_flush_pend_skb(vif);
 	}
 
 	if (ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM) {
@@ -6726,6 +6924,16 @@ void ath6kl_shprotect_timer_handler(unsigned long ptr)
 	}
 }
 
+static void ath6kl_eapol_shprotect_timer_handler(unsigned long ptr)
+{
+	struct ath6kl *ar = (struct ath6kl *)ptr;
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s\n", __func__);
+	clear_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
+	ar->eapol_shprotect_vif = 0;
+
+	return;
+}
 
 #if defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 int ath6kl_android_enable_wow_default(struct ath6kl *ar)

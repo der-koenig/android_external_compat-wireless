@@ -367,4 +367,9 @@ struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
 				bool p2pInPasvCh);
 void ath6kl_reg_deinit(struct ath6kl *ar);
+void ath6kl_reg_bss_info(struct ath6kl *ar,
+			struct ieee80211_mgmt *mgmt,
+			int len,
+			u8 snr,
+			struct ieee80211_channel *channel);
 #endif /* REG_H */

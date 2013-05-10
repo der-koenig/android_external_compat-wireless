@@ -580,15 +580,24 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 						WMI_TIMEOUT/10);
 			WARN_ON(left <= 0);
 
-			/*
-			 * P2P-GO may dissolve P2P-Group immediately when
-			 * P2P-Client disconnect. A larger bmiss time to avoid
-			 * this in noisy environment.
-			 */
-			if (type == NL80211_IFTYPE_P2P_CLIENT)
+			if (type == NL80211_IFTYPE_P2P_CLIENT) {
+				/*
+				 * P2P-GO will dissolve P2P-Group immediately
+				 * when P2P-Client disconnect in Android.
+				 * A larger bmiss time to avoid this in noisy
+				 * environment.
+				 */
 				ath6kl_wmi_set_bmiss_time(ar->wmi,
 							vif->fw_vif_idx,
 							ATH6KL_P2P_BMISS_TIME);
+
+				/* p2p client shall not do normal roam */
+				if (vif->sc_params.scan_ctrl_flags &
+					ROAM_SCAN_CTRL_FLAGS)
+					ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(
+						ar->wmi, vif->fw_vif_idx,
+						0xFFFF, 0, 0, 100);
+			}
 
 			/* WAR: Revert HT CAP, only for AP/P2P-GO cases. */
 			if ((type == NL80211_IFTYPE_AP) ||
@@ -908,9 +917,10 @@ void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar)
 							tmp_pkt,
 							&fw_conn->conn_queue,
 							list) {
-					list_del(&packet->list);
 					if (packet == NULL)
 						continue;
+
+					list_del(&packet->list);
 
 					if (packet->endpoint >= ENDPOINT_MAX)
 						continue;
@@ -1350,12 +1360,13 @@ void ath6kl_p2p_rc_fetch_chan(struct ath6kl *ar)
 {
 	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
 	enum ieee80211_band band;
-	struct wiphy *wiphy = p2p_rc->ar->wiphy;
+	struct wiphy *wiphy = NULL;
 	int i, slot;
 
 	if (!p2p_rc)
 		return;
 
+	wiphy = p2p_rc->ar->wiphy;
 	spin_lock_bh(&p2p_rc->p2p_rc_lock);
 	p2p_rc->chan_record_cnt = 0;
 	for (i = 0; i < ATH6KL_RC_MAX_CHAN_RECORD; i++) {
@@ -1967,14 +1978,6 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 	if (vif->nw_type != INFRA_NETWORK)
 		return;
 
-	if ((vif->ar->p2p_war_p2p_client_awake) &&
-	    (vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT)) {
-		set_bit(PS_STICK, &vif->flags);
-		ath6kl_wmi_powermode_cmd(vif->ar->wmi,
-					vif->fw_vif_idx,
-					MAX_PERF_POWER);
-		return;
-	}
 
 	/* Now, only p2p_war_bad_intel_go need to do something here. */
 	if (!vif->ar->p2p_war_bad_intel_go)
@@ -2023,6 +2026,72 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 			ath6kl_wmi_powermode_cmd(vif->ar->wmi,
 						vif->fw_vif_idx,
 						MAX_PERF_POWER);
+		}
+	}
+
+	return;
+}
+
+
+void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
+			bool mcc,
+			bool call_on_disconnect)
+{
+	struct ath6kl_vif *vif;
+	u8 pwr_mode = REC_POWER;
+
+	/* Not support PS in MCC mode currently. */
+
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (test_bit(CONNECTED, &vif->flags)) {
+			if (mcc) {
+				/* MCC/AnyVIF - Set all VIFs to PS OFF. */
+				set_bit(PS_STICK, &vif->flags);
+				pwr_mode = MAX_PERF_POWER;
+			} else if (vif->wdev.iftype ==
+						NL80211_IFTYPE_P2P_GO) {
+				/* SCC/P2P-GO - Set to PS OFF. */
+				set_bit(PS_STICK, &vif->flags);
+				pwr_mode = MAX_PERF_POWER;
+			} else if (vif->wdev.iftype ==
+						NL80211_IFTYPE_P2P_CLIENT) {
+				/* SCC/P2P-GC - Set to PS OFF if need. */
+				if (ar->p2p_war_p2p_client_awake) {
+					set_bit(PS_STICK, &vif->flags);
+					pwr_mode = MAX_PERF_POWER;
+				} else {
+					/* TODO: For WAR EV119712 case */
+					clear_bit(PS_STICK, &vif->flags);
+					if (vif->wdev.ps == NL80211_PS_ENABLED)
+						pwr_mode = REC_POWER;
+					else
+						pwr_mode = MAX_PERF_POWER;
+				}
+			} else {
+				/* SCC/notP2P-VIF - Back to original PS mode. */
+				clear_bit(PS_STICK, &vif->flags);
+				if (vif->nw_type == AP_NETWORK)
+					pwr_mode = MAX_PERF_POWER;
+				else {	/* Ad-Hoc & STA */
+					if (vif->wdev.ps == NL80211_PS_ENABLED)
+						pwr_mode = REC_POWER;
+					else
+						pwr_mode = MAX_PERF_POWER;
+				}
+			}
+
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"PS vif %d ps %d-%d %s %s => %s\n",
+				vif->fw_vif_idx,
+				vif->last_pwr_mode,
+				vif->wdev.ps,
+				(mcc ? "MCC" : "SCC"),
+				(call_on_disconnect ? "DISCONN" : "CONN"),
+				(pwr_mode == REC_POWER ? "ON" : "OFF"));
+
+			ath6kl_wmi_powermode_cmd(ar->wmi,
+						vif->fw_vif_idx,
+						pwr_mode);
 		}
 	}
 
@@ -2141,7 +2210,7 @@ static inline bool _p2p_flush_pending_connect(struct ath6kl_vif *vif)
 	    (vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) &&
 	    (vif->pending_connect_info)) {
 		ath6kl_info("Flush pending connect work first.\n");
-		flush_delayed_work(&vif->work_pending_connect);
+		ath6kl_flush_pend_skb(vif);
 	}
 
 	return false;

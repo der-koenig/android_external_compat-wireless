@@ -17,7 +17,7 @@
 #ifndef P2P_H
 #define P2P_H
 
-#define ATH6KL_P2P_BMISS_TIME				(15 * 2)
+#define ATH6KL_P2P_BMISS_TIME				(50)
 
 #define ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS		4
 
@@ -325,6 +325,9 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 				u8 assoc_req_len,
 				u8 assoc_resp_len,
 				u8 *assoc_info);
+void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
+			bool mcc,
+			bool call_on_disconnect);
 bool ath6kl_p2p_pending_connect_event(struct ath6kl_vif *vif,
 					const u8 *bssid,
 					const u8 *req_ie,

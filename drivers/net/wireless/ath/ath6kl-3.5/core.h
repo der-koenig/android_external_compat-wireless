@@ -51,7 +51,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.339)
+#define __BUILD_VERSION_ (3.5.0.347)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -284,7 +284,7 @@
 #define ATH6KL_AMSDU_REFILL_THRESHOLD     3
 #define ATH6KL_AMSDU_BUFFER_SIZE     (WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH + 128)
 #define MAX_MSDU_SUBFRAME_PAYLOAD_LEN	1508
-#define MIN_MSDU_SUBFRAME_PAYLOAD_LEN	46
+#define MIN_MSDU_SUBFRAME_PAYLOAD_LEN	36
 
 #define USER_SAVEDKEYS_STAT_INIT     0
 #define USER_SAVEDKEYS_STAT_RUN      1
@@ -359,6 +359,14 @@
 * event in certain platform
 */
 #define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
+
+/*
+ * 1500 ms. = RX EAPOL request +
+ *            supplicant procressing time +
+ *            supplicant TX EAPOL response +
+ *            wait next EAPOL request
+ */
+#define ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE	(msecs_to_jiffies(1500))
 
 /* default roam mode for different situation */
 #if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))
@@ -528,6 +536,9 @@ enum ath6kl_recovery_mode {
 	"ath6k/AR6004/hw1.1/bdata.DB132.bin"
 #define AR6004_HW_1_1_EPPING_FILE             "ath6k/AR6004/hw1.1/epping.bin"
 #define AR6004_HW_1_1_SOFTMAC_FILE            "ath6k/AR6004/hw1.1/softmac.bin"
+#define AR6004_HW_1_1_SOFTMAC_2_FILE            \
+	"ath6k/AR6004/hw1.1/softmac_2.bin"
+
 
 /* AR6004 1.2 definitions */
 #define AR6004_HW_1_2_VERSION                 0x300007e8
@@ -543,6 +554,8 @@ enum ath6kl_recovery_mode {
 	"ath6k/AR6004/hw1.2/bdata.bin"
 #define AR6004_HW_1_2_EPPING_FILE             "ath6k/AR6004/hw1.2/epping.bin"
 #define AR6004_HW_1_2_SOFTMAC_FILE            "ath6k/AR6004/hw1.2/softmac.bin"
+#define AR6004_HW_1_2_SOFTMAC_2_FILE            \
+	"ath6k/AR6004/hw1.2/softmac_2.bin"
 
 /* AR6004 1.3 definitions */
 #define AR6004_HW_1_3_VERSION                 0x31c8088a
@@ -559,6 +572,8 @@ enum ath6kl_recovery_mode {
 	"ath6k/AR6004/hw1.3/bdata.bin"
 #define AR6004_HW_1_3_EPPING_FILE             "ath6k/AR6004/hw1.3/epping.bin"
 #define AR6004_HW_1_3_SOFTMAC_FILE            "ath6k/AR6004/hw1.3/softmac.bin"
+#define AR6004_HW_1_3_SOFTMAC_2_FILE            \
+	"ath6k/AR6004/hw1.3/softmac_2.bin"
 
 /* AR6004 2.0 definitions */
 #define AR6004_HW_2_0_VERSION                 0x31c80958
@@ -574,6 +589,8 @@ enum ath6kl_recovery_mode {
 	"ath6k/AR6004/hw2.0/bdata.bin"
 #define AR6004_HW_2_0_EPPING_FILE             "ath6k/AR6004/hw2.0/epping.bin"
 #define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
+#define AR6004_HW_2_0_SOFTMAC_2_FILE            \
+	"ath6k/AR6004/hw2.0/softmac_2.bin"
 
 /* AR6004 3.0 definitions */
 #define AR6004_HW_3_0_VERSION			0x31C809F8
@@ -589,6 +606,8 @@ enum ath6kl_recovery_mode {
 	"ath6k/AR6004/hw3.0/bdata.bin"
 #define AR6004_HW_3_0_EPPING_FILE             "ath6k/AR6004/hw3.0/epping.bin"
 #define AR6004_HW_3_0_SOFTMAC_FILE            "ath6k/AR6004/hw3.0/softmac.bin"
+#define AR6004_HW_3_0_SOFTMAC_2_FILE            \
+	"ath6k/AR6004/hw3.0/softmac_2.bin"
 
 /* AR6006 1.0 definitions */
 #define AR6006_HW_1_0_VERSION                 0x31c80997
@@ -600,6 +619,8 @@ enum ath6kl_recovery_mode {
 #define AR6006_HW_1_0_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6006/hw1.0/bdata.bin"
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
+#define AR6006_HW_1_0_SOFTMAC_2_FILE            \
+	"ath6k/AR6006/hw1.0/softmac_2.bin"
 
 /* AR6006 1.1 definitions */
 #define AR6006_HW_1_1_VERSION                 0x31c80002
@@ -611,6 +632,8 @@ enum ath6kl_recovery_mode {
 #define AR6006_HW_1_1_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6006/hw1.1/bdata.bin"
 #define AR6006_HW_1_1_SOFTMAC_FILE            "ath6k/AR6006/hw1.1/softmac.bin"
+#define AR6006_HW_1_1_SOFTMAC_2_FILE            \
+	"ath6k/AR6006/hw1.1/softmac_2.bin"
 
 #define AR6004_MAX_64K_FW_SIZE                65536
 
@@ -703,6 +726,7 @@ enum scanband_type {
 	SCANBAND_TYPE_5G,		/* Scan 5GHz channel only */
 	SCANBAND_TYPE_CHAN_ONLY,	/* Scan single channel only */
 	SCANBAND_TYPE_P2PCHAN,		/* Scan P2P channel only */
+	SCANBAND_TYPE_2_P2PCHAN,	/* Scan P2P channel 2 times */
 };
 
 #define ATH6KL_RSN_CAP_NULLCONF		(0xffff)
@@ -724,6 +748,7 @@ enum scanband_type {
 #define ATH6KL_CONF_ENABLE_FLOWCTRL		BIT(5)
 #define ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL	BIT(6)
 #define ATH6KL_CONF_DISABLE_RX_AGGR_DROP	BIT(7)
+#define ATH6KL_CONF_SKB_DUP					BIT(8)
 
 enum wlan_low_pwr_state {
 	WLAN_POWER_STATE_ON,
@@ -1152,6 +1177,18 @@ enum ath6kl_chan_type {
 	ATH6KL_CHAN_TYPE_HT20,
 };
 
+enum scan_plan_type {
+	ATH6KL_SCAN_PLAN_IN_ORDER,
+	ATH6KL_SCAN_PLAN_REVERSE_ORDER,
+	ATH6KL_SCAN_PLAN_HOST_ORDER,
+};
+
+struct ath6kl_scan_plan {
+	enum scan_plan_type type;
+	u8 numChan;
+	u16 chanList[64];	/* WMI_MAX_CHANNELS */
+};
+
 /*
  * Driver's maximum limit, note that some firmwares support only one vif
  * and the runtime (current) limit must be checked from ar->vif_max.
@@ -1298,6 +1335,7 @@ struct ath6kl_vif {
 	struct p2p_ps_info *p2p_ps_info_ctx;
 	enum scanband_type scanband_type;
 	u32 scanband_chan;
+	struct ath6kl_scan_plan scan_plan;
 	struct ap_keepalive_info *ap_keepalive_ctx;
 	struct ap_acl_info *ap_acl_ctx;
 	struct ap_admc_info *ap_admc_ctx;
@@ -1307,6 +1345,7 @@ struct ath6kl_vif {
 	u8 last_pwr_mode;
 	u8 saved_pwr_mode;
 	u8 arp_offload_ip_set;
+	u32 arp_offload_ip;
 	struct delayed_work work_eapol_send;
 	struct sk_buff *pend_skb;
 	spinlock_t pend_skb_lock;
@@ -1353,6 +1392,7 @@ enum ath6kl_dev_state {
 	SKIP_FLOWCTRL_EVENT,
 	DISABLE_SCAN,
 	INTERNAL_REGDB,
+	EAPOL_HANDSHAKE_PROTECT,
 };
 
 enum ath6kl_state {
@@ -1486,6 +1526,7 @@ struct ath6kl {
 		const char *fw_default_board;
 		const char *fw_epping;
 		const char *fw_softmac;
+		const char *fw_softmac_2;
 	} hw;
 
 	u16 conf_flags;
@@ -1511,6 +1552,9 @@ struct ath6kl {
 
 	u8 *fw_softmac;
 	size_t fw_softmac_len;
+
+	u8 *fw_softmac_2;
+	size_t fw_softmac_2_len;
 
 	u8 *fw_ext;
 	size_t fw_ext_len;
@@ -1681,6 +1725,9 @@ struct ath6kl {
 
 #endif
 	struct wmi_green_tx_params green_tx_params;
+
+	struct timer_list eapol_shprotect_timer;
+	u32 eapol_shprotect_vif;			/* vif mask */
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1890,13 +1937,14 @@ void ath6kl_sdio_exit_msm(void);
 #endif
 
 #ifdef ATH6KL_BUS_VOTE
-int ath6kl_hsic_init_msm(void);
+int ath6kl_hsic_init_msm(u8 *has_vreg);
 void ath6kl_hsic_exit_msm(void);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
 void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
+void ath6kl_flush_pend_skb(struct ath6kl_vif *vif);
 
 #if   defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 int ath6kl_android_enable_wow_default(struct ath6kl *ar);

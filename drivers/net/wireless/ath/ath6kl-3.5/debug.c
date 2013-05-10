@@ -1179,6 +1179,7 @@ static ssize_t ath6kl_lrssi_roam_write(struct file *file,
 		return ret;
 
 	ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+			0,
 			ar->low_rssi_roam_params.lrssi_scan_period,
 			ar->low_rssi_roam_params.lrssi_scan_threshold,
 			ar->low_rssi_roam_params.lrssi_roam_threshold,
@@ -5019,6 +5020,98 @@ static const struct file_operations fops_p2p_rc = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for HIF-PIPE RX Queue threshold */
+static ssize_t ath6kl_hif_pipe_rxq_threshold_write(struct file *file,
+		const char __user *user_buf,
+		size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[64];
+	char *sptr, *token;
+	unsigned int len;
+	u32 rxq_threshold = 0;
+
+	if (ar->hif_type != ATH6KL_HIF_TYPE_USB)
+		return -EIO;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+
+	sptr = buf;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou32(token, 0, &rxq_threshold))
+		return -EINVAL;
+
+	ath6kl_hif_pipe_set_rxq_threshold(ar, rxq_threshold);
+
+	return count;
+}
+
+/* debug fs for HIF-PIPE Max. Schedule packages */
+static const struct file_operations fops_hif_pipe_rxq_threshold = {
+	.write = ath6kl_hif_pipe_rxq_threshold_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath6kl_skb_dup_read(struct file *file,
+				      char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[64];
+	unsigned int len;
+
+	len = snprintf(buf, sizeof(buf), "skb_duplicate %s\n",
+			(ar->conf_flags & ATH6KL_CONF_SKB_DUP)
+			? "enabled" : "disabled");
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath6kl_skb_dup_write(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[20];
+	size_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (len > 0 && buf[len - 1] == '\n')
+		buf[len - 1] = '\0';
+
+	if (strcasecmp(buf, "disable") == 0)
+		ar->conf_flags &=
+			~ATH6KL_CONF_SKB_DUP;
+	else if (strcasecmp(buf, "enable") == 0)
+		ar->conf_flags |=
+			ATH6KL_CONF_SKB_DUP;
+	else
+		return -EINVAL;
+
+	return count;
+}
+
+static const struct file_operations fops_skb_dup_operation = {
+	.read = ath6kl_skb_dup_read,
+	.write = ath6kl_skb_dup_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -5230,6 +5323,12 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("p2p_rc", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_p2p_rc);
+
+	debugfs_create_file("hif_rxq_threshold", S_IWUSR,
+			ar->debugfs_phy, ar, &fops_hif_pipe_rxq_threshold);
+
+	debugfs_create_file("skb_dup_enable", S_IRUSR | S_IWUSR,
+				ar->debugfs_phy, ar, &fops_skb_dup_operation);
 
 	return 0;
 }

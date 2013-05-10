@@ -617,6 +617,38 @@ static void ath6kl_reg_apply_regulatory(struct reg_info *reg,
 	}
 }
 
+static void _reg_update_report(struct wiphy *wiphy, const char *alpha2)
+{
+	char remap_alpha2[2];
+	static u32 flip;
+
+#ifdef CONFIG_ATH6KL_REGDB_AS_CFG80211_REGDB
+	/*
+	 * If cfg80211-internal-regdb uses our regdb.c and just pass
+	 * our alpha2 code to cfg80211.
+	 */
+	remap_alpha2[0] = alpha2[0];
+	remap_alpha2[1] = alpha2[1];
+#else
+	/*
+	 * HACK: Here just kick the different alpha2 to force to trigger
+	 *       regdb update to user.
+	 */
+	if (flip++ & 0x1) {
+		remap_alpha2[0] = 'U';
+		remap_alpha2[1] = 'S';
+	} else {
+		remap_alpha2[0] = '0';
+		remap_alpha2[1] = '0';
+	}
+#endif
+
+	/* Update to cfg80211 or CRDA */
+	regulatory_hint(wiphy, remap_alpha2);
+
+	return;
+}
+
 static struct ieee80211_regdomain *ath6kl_reg_update(struct reg_info *reg,
 							u32 reg_code,
 							bool target_update)
@@ -641,7 +673,7 @@ static struct ieee80211_regdomain *ath6kl_reg_update(struct reg_info *reg,
 	ath6kl_reg_chan_flags_update(reg);
 
 	if (target_update && regd)
-		regulatory_hint(reg->wiphy, regd->alpha2);
+		_reg_update_report(reg->wiphy, regd->alpha2);
 
 	/* Notify to update the channel record. */
 	ath6kl_p2p_rc_fetch_chan(reg->ar);
@@ -823,6 +855,59 @@ void ath6kl_reg_deinit(struct ath6kl *ar)
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,
 		   "reg deinit");
+
+	return;
+}
+
+static bool _reg_dump_country_ie(u8 *ies, int ies_len, u8 *alpha2)
+{
+	u8 *pos;
+	bool found = false;
+
+	pos = ies;
+	if (ies && ies_len) {
+		while (pos + 1 < ies + ies_len) {
+			if (pos + 2 + pos[1] > ies + ies_len)
+				break;
+			if (pos[0] == WLAN_EID_COUNTRY) {
+				found = true;
+				memcpy(alpha2, (pos + 2), 2);
+				break;
+			}
+			pos += 2 + pos[1];
+		}
+	}
+
+	return found;
+}
+
+void ath6kl_reg_bss_info(struct ath6kl *ar,
+			struct ieee80211_mgmt *mgmt,
+			int len,
+			u8 snr,
+			struct ieee80211_channel *channel)
+{
+	if (!ath6kl_reg_is_init_done(ar)) {
+		char alpha[2];
+		bool found = false;
+
+		if ((mgmt->frame_control == IEEE80211_STYPE_BEACON) ||
+		    (mgmt->frame_control == IEEE80211_STYPE_PROBE_RESP))
+			found = _reg_dump_country_ie(mgmt->u.beacon.variable,
+							(len - 36),
+							(u8 *)alpha);
+
+		ath6kl_dbg(ATH6KL_DBG_REGDB,
+			   "reg bssinfo BSSID %02x:%02x:%02x:%02x:%02x:%02x "
+			   "fc %02x freq %d snr %3d %c%c\n",
+			   mgmt->bssid[0], mgmt->bssid[1], mgmt->bssid[2],
+			   mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5],
+			   mgmt->frame_control,
+			   (channel ? channel->center_freq : 0),
+			   snr,
+			   (found ? alpha[0] : ' '),
+			   (found ? alpha[1] : ' '));
+	}
 
 	return;
 }

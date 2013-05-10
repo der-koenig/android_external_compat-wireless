@@ -102,6 +102,7 @@ struct ath6kl_usb_pipe {
 };
 
 #define ATH6KL_USB_PIPE_FLAG_TX    (1 << 0)
+#define ATH6KL_USB_PIPE_FLAG_RX    (1 << 1)
 
 /* usb device object */
 struct ath6kl_usb {
@@ -118,6 +119,7 @@ struct ath6kl_usb {
 	struct notifier_block reboot_notifier;  /* default mode before reboot */
 	u32 max_sche_tx;
 	u32 max_sche_rx;
+	u32 rxq_threshold;
 };
 
 /* usb urb object */
@@ -151,6 +153,8 @@ struct ath6kl_urb_context {
 #define ATH6KL_USB_CTRL_DIAG_CC_WRITE              1
 #define ATH6KL_USB_CTRL_DIAG_CC_WARM_RESET         2
 
+#define HIF_USB_RX_QUEUE_THRESHOLD              64
+
 /* Enable it by default */
 #define HIF_USB_MAX_SCHE_PKT				(64)
 
@@ -174,6 +178,13 @@ struct ath6kl_usb_ctrl_diag_resp_read {
 	(sizeof(struct ath6kl_usb_ctrl_diag_cmd_write))
 #define USB_CTRL_MAX_DIAG_RESP_SIZE	\
 	(sizeof(struct ath6kl_usb_ctrl_diag_resp_read))
+
+#ifdef ATH6KL_BUS_VOTE
+u8 ath6kl_platform_has_vreg;
+struct semaphore usb_probe_sem;
+
+#define USB_PROBE_WAIT_TIMEOUT           2000
+#endif
 
 #ifdef ATHTST_SUPPORT
 struct hif_product_info_t {
@@ -540,6 +551,8 @@ static int ath6kl_usb_setup_pipe_resources(struct ath6kl_usb *device)
 
 		if (!ATH6KL_USB_IS_DIR_IN(pipe->ep_address))
 			pipe->flags |= ATH6KL_USB_PIPE_FLAG_TX;
+		else
+			pipe->flags |= ATH6KL_USB_PIPE_FLAG_RX;
 
 		status = ath6kl_usb_alloc_pipe_resources(pipe, urbcount);
 		if (status != 0)
@@ -796,7 +809,9 @@ cleanup_recv_urb:
 	ath6kl_usb_cleanup_recv_urb(urb_context);
 
 	if (status == 0 || urb->status == -EPROTO) {
-		if (pipe->urb_cnt >= pipe->urb_cnt_thresh) {
+		if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
+				skb_queue_len(&pipe->io_comp_queue) <
+				pipe->ar_usb->rxq_threshold) {
 			/* our free urbs are piling up, post more transfers */
 			ath6kl_usb_post_recv_transfers(pipe,
 						    ATH6KL_USB_RX_BUFFER_SIZE);
@@ -1069,6 +1084,12 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 		}
 	}
 
+	if (pipe->flags & ATH6KL_USB_PIPE_FLAG_RX &&
+		pipe->urb_cnt >= pipe->urb_cnt_thresh) {
+		/* our free urbs are piling up, post more transfers */
+		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
+	}
+
 	clear_bit(WORKER_LOCK_BIT, &pipe->worker_lock);
 
 	if (tx > pipe_st->num_max_tx)
@@ -1175,6 +1196,7 @@ static struct ath6kl_usb *ath6kl_usb_create(struct usb_interface *interface)
 
 	ar_usb->max_sche_tx =
 	ar_usb->max_sche_rx = HIF_USB_MAX_SCHE_PKT;
+	ar_usb->rxq_threshold = HIF_USB_RX_QUEUE_THRESHOLD;
 
 	status = ath6kl_usb_setup_pipe_resources(ar_usb);
 
@@ -2151,6 +2173,18 @@ static void ath6kl_usb_cleanup_scatter(struct ath6kl *ar)
 	return;
 }
 
+static int ath6kl_usb_set_rxq_threshold(struct ath6kl *ar, u32 rxq_threshold)
+{
+	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+
+	ar_usb->rxq_threshold = rxq_threshold;
+
+	ath6kl_dbg(ATH6KL_DBG_USB,
+		"rxq_threshold = %d\n", ar_usb->rxq_threshold);
+
+	return 0;
+}
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 
 static void ath6kl_usb_early_suspend(struct ath6kl *ar)
@@ -2234,7 +2268,16 @@ int ath6kl_usb_diag_warm_reset(struct ath6kl *ar)
 
 	address = ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_reset_flag_valid));
 	ath6kl_usb_diag_read32(ar, address, &data);
+
+#ifdef ATH6KL_BUS_VOTE
+	if (ath6kl_platform_has_vreg == 0)
+		data = 0x12345678;
+	else
+		data = 0;
+#else
 	data |= 0x12345678;
+#endif
+
 	ath6kl_usb_diag_write32(ar, address, data);
 
 	address = ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_reset_flag));
@@ -2287,6 +2330,7 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.auto_pm_turnoff = usb_auto_pm_turnoff,
 	.auto_pm_get_usage_cnt = usb_debugfs_get_pm_usage_cnt,
 #endif
+	.pipe_set_rxq_threshold = ath6kl_usb_set_rxq_threshold,
 };
 
 #ifdef ATHTST_SUPPORT
@@ -2382,6 +2426,10 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		goto err_core_free;
 	}
 
+#ifdef ATH6KL_BUS_VOTE
+	up(&usb_probe_sem);
+#endif
+
 	return ret;
 
 err_core_free:
@@ -2390,6 +2438,10 @@ err_usb_destroy:
 	ath6kl_usb_destroy(ar_usb);
 err_usb_put:
 	usb_put_dev(dev);
+
+#ifdef ATH6KL_BUS_VOTE
+	up(&usb_probe_sem);
+#endif
 
 	return ret;
 }
@@ -2507,8 +2559,7 @@ static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 	we call pm_resume to make usb continue to work
 	*/
 	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
-		ath6kl_dbg(ATH6KL_DBG_USB,
-		"ath6kl_usb_pm_reset_resume\n");
+		ath6kl_info("ath6kl_usb_pm_reset_resume\n");
 		ath6kl_usb_pm_resume(intf);
 	} else {
 		if (usb_get_intfdata(intf))
@@ -2576,11 +2627,24 @@ static int ath6kl_usb_init(void)
 	atomic_set(&ath6kl_usb_unload_state, ATH6KL_USB_UNLOAD_STATE_NULL);
 	usb_register_notify(&ath6kl_usb_dev_nb);
 
+#ifdef ATH6KL_BUS_VOTE
+	sema_init(&usb_probe_sem, 1);
+	down(&usb_probe_sem);
+#endif
+
 	usb_register(&ath6kl_usb_driver);
 
 #ifdef ATH6KL_BUS_VOTE
-	if (ath6kl_hsic_init_msm() != 0)
+	if (ath6kl_hsic_init_msm(&ath6kl_platform_has_vreg) != 0)
 		ath6kl_err("%s ath6kl_hsic_init_msm failed\n", __func__);
+
+	if (ath6kl_platform_has_vreg) {
+		/* Waiting for usb probe callback called */
+		if (down_timeout(&usb_probe_sem,
+			msecs_to_jiffies(USB_PROBE_WAIT_TIMEOUT)) != 0) {
+			ath6kl_info("can't wait for usb probe done\n");
+		}
+	}
 #endif
 
 	return 0;

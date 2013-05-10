@@ -284,4 +284,12 @@ static inline int ath6kl_hif_auto_pm_get_usage_cnt(struct ath6kl *ar)
 }
 #endif
 
+static inline u16 ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,
+		u32 rxq_threshold)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set RX queue threshold\n");
+
+	return ar->hif_ops->pipe_set_rxq_threshold(ar, rxq_threshold);
+}
+
 #endif

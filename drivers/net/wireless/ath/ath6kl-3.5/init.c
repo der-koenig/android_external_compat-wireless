@@ -51,6 +51,7 @@ unsigned int ath6kl_ath0_name;
 #ifdef CE_SUPPORT
 unsigned int ath6kl_ce_flags = 1;
 #endif
+unsigned int ath6kl_regdb = 1;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -93,6 +94,7 @@ char *fwdatapath;
 module_param(fwdatapath, charp, 0644);
 #endif
 module_param(starving_prevention, uint, 0644);
+module_param(ath6kl_regdb, uint, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -191,6 +193,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board = AR6004_HW_1_1_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping	  = AR6004_HW_1_1_EPPING_FILE,
 		.fw_softmac	  = AR6004_HW_1_1_SOFTMAC_FILE,
+		.fw_softmac_2	  = AR6004_HW_1_1_SOFTMAC_2_FILE,
 	},
 	{
 		.id				= AR6004_HW_1_2_VERSION,
@@ -218,6 +221,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board	= AR6004_HW_1_2_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping		= AR6004_HW_1_2_EPPING_FILE,
 		.fw_softmac		= AR6004_HW_1_2_SOFTMAC_FILE,
+		.fw_softmac_2		= AR6004_HW_1_2_SOFTMAC_2_FILE,
 	},
 	{
 		.id				= AR6004_HW_1_3_VERSION,
@@ -248,6 +252,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board	= AR6004_HW_1_3_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping		= AR6004_HW_1_3_EPPING_FILE,
 		.fw_softmac		= AR6004_HW_1_3_SOFTMAC_FILE,
+		.fw_softmac_2		= AR6004_HW_1_3_SOFTMAC_2_FILE,
 	},
 	{
 		.id				= AR6004_HW_1_3_VERSION,
@@ -275,6 +280,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board	= AR6004_HW_1_3_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping		= AR6004_HW_1_3_EPPING_FILE,
 		.fw_softmac		= AR6004_HW_1_3_SOFTMAC_FILE,
+		.fw_softmac_2		= AR6004_HW_1_3_SOFTMAC_2_FILE,
 	},
 	{
 		.id				= AR6004_HW_2_0_VERSION,
@@ -301,6 +307,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board	= AR6004_HW_2_0_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping		= AR6004_HW_2_0_EPPING_FILE,
 		.fw_softmac		= AR6004_HW_2_0_SOFTMAC_FILE,
+		.fw_softmac_2		= AR6004_HW_2_0_SOFTMAC_2_FILE,
 	},
 	{
 		.id				= AR6004_HW_3_0_VERSION,
@@ -326,6 +333,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board	= AR6004_HW_3_0_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping		= AR6004_HW_3_0_EPPING_FILE,
 		.fw_softmac		= AR6004_HW_3_0_SOFTMAC_FILE,
+		.fw_softmac_2		= AR6004_HW_3_0_SOFTMAC_2_FILE,
 	},
 	{
 		.id				= AR6006_HW_1_0_VERSION,
@@ -349,6 +357,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board	= AR6006_HW_1_0_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping		= AR6006_HW_1_0_EPPING_FILE,
 		.fw_softmac		= AR6006_HW_1_0_SOFTMAC_FILE,
+		.fw_softmac_2		= AR6006_HW_1_0_SOFTMAC_2_FILE,
 	},
 	{
 		.id				= AR6006_HW_1_1_VERSION,
@@ -372,6 +381,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_default_board	= AR6006_HW_1_1_DEFAULT_BOARD_DATA_FILE,
 		.fw_epping		= AR6006_HW_1_1_EPPING_FILE,
 		.fw_softmac		= AR6006_HW_1_1_SOFTMAC_FILE,
+		.fw_softmac_2		= AR6006_HW_1_1_SOFTMAC_2_FILE,
 	},
 };
 
@@ -684,10 +694,12 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 				vif->fw_vif_idx);
 	}
 
-	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
+	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE &&
+		(vif->wdev.iftype == NL80211_IFTYPE_STATION ||
+		vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT))
 		vif->sc_params.scan_ctrl_flags |= ROAM_SCAN_CTRL_FLAGS;
 
-#ifdef CE_SUPPORT
+#if defined(CE_SUPPORT) || defined(CE_2_SUPPORT)
 	/* avoid association reject by AP not found */
 	vif->sc_params.maxact_chdwell_time = 60;
 	vif->sc_params.maxact_scan_per_ssid = 2;
@@ -705,6 +717,13 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	memcpy(&vif->sc_params_default, &vif->sc_params,
 			sizeof(struct wmi_scan_params_cmd));
+
+	/*
+	 * Default is in-order but will be changed in CONNECT/DISCONNECT
+	 * case by case.
+	 */
+	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
+	vif->scan_plan.numChan = 0;
 }
 
 /*
@@ -948,13 +967,15 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
-		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
+
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_DIAGNOSTIC))
 		param = 0;
-	else if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
-		param = 2;
-	else /* sdio */
-		param = 3;
+	else{
+		if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
+			param = 2;
+		else /* sdio */
+			param = 3;
+	}
 
 	if (ath6kl_bmi_write(ar,
 		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_pktlog_num_buffers)),
@@ -989,10 +1010,9 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	if (ar->p2p_concurrent && !ar->p2p_dedicate)
 		param |= HI_OPTION_DISABLE_P2P_DEDICATE;
 
-#ifndef CONFIG_ANDROID
-	if (ar->version.target_ver == AR6004_HW_1_3_VERSION)
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_RTT))
 		param |= HI_OPTION_DISABLE_RTT;
-#endif
+
 
 #ifdef ATH6KL_SUPPORT_WLAN_HB
 	/* set WLAN HB mode */
@@ -1100,6 +1120,8 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 {
 	ath6kl_hif_power_off(ar);
 
+	del_timer(&ar->eapol_shprotect_timer);
+
 	destroy_workqueue(ar->ath6kl_wq);
 
 	if (ar->p2p_flowctrl_ctx)
@@ -1129,6 +1151,7 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	kfree(ar->fw_patch);
 	kfree(ar->fw_testscript);
 	kfree(ar->fw_softmac);
+	kfree(ar->fw_softmac_2);
 
 	ath6kl_deinit_ieee80211_hw(ar);
 
@@ -1313,6 +1336,49 @@ static bool check_device_tree(struct ath6kl *ar)
 }
 #endif /* CONFIG_OF */
 
+#ifdef CONFIG_ANDROID
+static void ath6kl_replace_with_softmac_2(struct ath6kl *ar)
+{
+#define PREFIX_MAC_LEN 3
+	int i;
+	u16 *p;
+	u32 sum = 0;
+	u8 default_mac[ETH_ALEN] = {0x00, 0x03, 0x7f, 0x12, 0x34, 0x56};
+	size_t remain_mac_len = ETH_ALEN - PREFIX_MAC_LEN;
+
+	if (ar->fw_board == NULL || ar->fw_softmac_2 == NULL)
+		return;
+
+	if (ar->fw_softmac_2_len < remain_mac_len) {
+		ath6kl_warn("softmac_2.bin less than %d bytes, "
+			"ignore softmac_2.bin\n", (int) remain_mac_len);
+		return;
+	}
+
+	/* set checksum filed in the board data to zero */
+	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
+	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
+
+	/* replace the mac address with softmac */
+	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET],
+		default_mac, PREFIX_MAC_LEN);
+	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET+PREFIX_MAC_LEN],
+		ar->fw_softmac_2+(ar->fw_softmac_2_len-remain_mac_len),
+		remain_mac_len);
+
+	p = (u16 *) ar->fw_board;
+
+	/* calculate check sum */
+	for (i = 0; i < (ar->fw_board_len / 2); i++)
+		sum ^= *p++;
+
+	sum = ~sum;
+
+	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
+	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
+}
+#endif
+
 static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 {
 	int i, ret;
@@ -1442,9 +1508,18 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 			    &ar->fw_softmac_len);
 
 		/* softmac bin file exists */
-		if (ret == 0)
+		if (ret == 0) {
 			ath6kl_replace_with_softmac(ar);
+			return 0;
+		}
+#ifdef CONFIG_ANDROID
+		ret = ath6kl_get_fw(ar, ar->hw.fw_softmac_2, &ar->fw_softmac_2,
+			    &ar->fw_softmac_2_len);
 
+		/* softmac_2 bin file exists */
+		if (ret == 0)
+			ath6kl_replace_with_softmac_2(ar);
+#endif
 		/* managed to get proper board file */
 		return 0;
 	}
@@ -2966,7 +3041,8 @@ int ath6kl_core_init(struct ath6kl *ar)
 	}
 
 	/* Always use internal-regdb by default. */
-	set_bit(INTERNAL_REGDB, &ar->flag);
+	if (ath6kl_regdb)
+		set_bit(INTERNAL_REGDB, &ar->flag);
 
 	ret = ath6kl_register_ieee80211_hw(ar);
 	if (ret)
@@ -3195,7 +3271,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	bool discon_issued;
 
 	if (vif->pend_skb)
-		flush_delayed_work(&vif->work_eapol_send);
+		ath6kl_flush_pend_skb(vif);
 
 	netif_stop_queue(vif->ndev);
 

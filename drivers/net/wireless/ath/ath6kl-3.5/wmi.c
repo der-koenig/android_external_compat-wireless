@@ -1239,6 +1239,7 @@ static int ath6kl_wmi_ready_event_rx(struct wmi *wmi, u8 *datap, int len)
  * in dBm.
  */
 int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
+	u8 fw_vif_idx,
 	u16  lowrssi_scan_period,
 	u16  lowrssi_scan_threshold,
 	u16  lowrssi_roam_threshold,
@@ -1262,7 +1263,7 @@ int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
 		cpu_to_le16(lowrssi_roam_threshold);
 	cmd->info.params.roam_rssi_floor = roam_rssi_floor;
 
-	ret = ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ROAM_CTRL_CMDID,
+	ret = ath6kl_wmi_cmd_send(wmi, fw_vif_idx, skb, WMI_SET_ROAM_CTRL_CMDID,
 				  NO_SYNC_WMIFLAG);
 	return ret;
 
@@ -1641,6 +1642,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 #endif
 	ath6kl_p2p_rc_bss_info(vif, bih->snr, channel);
 	ath6kl_htcoex_bss_info(vif, mgmt, 24 + len, channel);
+	ath6kl_reg_bss_info(vif->ar, mgmt, 24 + len, bih->snr, channel);
 
 	bss = cfg80211_inform_bss_frame(ar->wiphy, channel, mgmt,
 					24 + len,
@@ -1903,6 +1905,12 @@ static int ath6kl_wmi_ce_set_scan_done_event_rx(struct ath6kl_vif *vif,
 					u8 *datap, int len)
 {
 	ath6kl_tgt_ce_set_scan_done_event(vif, datap, len);
+	return 0;
+}
+static int ath6kl_wmi_csa_event_rx(struct ath6kl_vif *vif,
+					u8 *datap, int len)
+{
+	ath6kl_tgt_ce_csa_event_rx(vif, datap, len);
 	return 0;
 }
 #endif
@@ -4718,6 +4726,12 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_ANTDIVSTAT_CMDID\n");
 		ret =  ath6kl_wmi_antdivstate_event_rx(vif, datap, len);
 		break;
+#ifdef CE_SUPPORT	
+	case WMI_CSA_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_CSA_EVENTID\n");
+		ret = ath6kl_wmi_csa_event_rx(vif, datap, len);
+		break;
+#endif
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
 		ret = -EINVAL;
@@ -5866,11 +5880,50 @@ int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon)
 		return -ENOMEM;
 
 	ath6kl_dbg(ATH6KL_DBG_WMI,
-			"bmiss_time:  %d\n", if_idx);
+			"bmiss_time: numBeacon %d\n", numBeacon);
 
 	cmd = (struct wmi_bmiss_time_cmd *)skb->data;
 	cmd->numBeacons = numBeacon;
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_BMISS_TIME_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_set_scan_chan_plan(struct wmi *wmi, u8 if_idx,
+					u8 type, u8 numChan, u16 *chanList)
+{
+	struct sk_buff *skb;
+	struct wmi_scan_chan_plan_cmd *cmd;
+	int i;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd) +
+				     (sizeof(u16) * numChan));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"scan_plan vif %d type %d numChan %d\n",
+			if_idx, type, numChan);
+
+	cmd = (struct wmi_scan_chan_plan_cmd *)skb->data;
+
+	if (type == ATH6KL_SCAN_PLAN_IN_ORDER)
+		cmd->type = WMI_SCAN_PLAN_IN_ORDER;
+	else if (type == ATH6KL_SCAN_PLAN_REVERSE_ORDER)
+		cmd->type = WMI_SCAN_PLAN_REVERSE_ORDER;
+	else if (type == ATH6KL_SCAN_PLAN_HOST_ORDER)
+		cmd->type = WMI_SCAN_PLAN_HOST_ORDER;
+	else
+		WARN_ON(1);
+
+	if (cmd->type == WMI_SCAN_PLAN_HOST_ORDER) {
+		cmd->numChannels = numChan;
+		for (i = 0; i < cmd->numChannels; i++)
+			cmd->channellist[i] = cpu_to_le16(chanList[i]);
+	} else
+		cmd->numChannels = 0;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
+				WMI_SET_SCAN_CHAN_PLAN_CMDID,
 				NO_SYNC_WMIFLAG);
 }

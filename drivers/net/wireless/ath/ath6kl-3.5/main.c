@@ -104,8 +104,7 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 
 	spin_lock_bh(&sta->lock);
 	memcpy(sta->mac, mac, ETH_ALEN);
-	if (ielen <= ATH6KL_MAX_IE)
-		memcpy(sta->wpa_ie, wpaie, ielen);
+	memcpy(sta->wpa_ie, wpaie, ielen);
 	sta->aid = aid;
 	sta->keymgmt = keymgmt;
 	sta->ucipher = ucipher;
@@ -884,9 +883,6 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 			    cpu_to_le32(RESET_CONTROL_MBOX_RST);
 
 	switch (target_type) {
-	case TARGET_TYPE_AR6003:
-		address = AR6003_RESET_CONTROL_ADDRESS;
-		break;
 	case TARGET_TYPE_AR6004:
 		address = AR6004_RESET_CONTROL_ADDRESS;
 		break;
@@ -918,25 +914,7 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 
 	ath6kl_info("notify firmware crash to user %p\n", ar);
 
-#ifdef CONFIG_ANDROID	/* Only for specific Android-JB */
-	if (1) {
-		u8 *buf;
-		int len;
-
-		len = 26;
-		buf = kzalloc(len, GFP_ATOMIC);
-		if (buf == NULL)
-			return;
-
-		/* hint */
-		buf[24] = 34;
-		cfg80211_send_unprot_disassoc(vif->ndev,
-						buf,
-						len);
-
-		kfree(buf);
-	}
-#endif
+	/* TODO */
 
 	return;
 }
