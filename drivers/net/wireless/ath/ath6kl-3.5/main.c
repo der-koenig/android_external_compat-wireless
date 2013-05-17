@@ -543,6 +543,169 @@ void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn)
 	return;
 }
 
+struct bss_post_proc *ath6kl_bss_post_proc_init(struct ath6kl_vif *vif)
+{
+	struct bss_post_proc *post_proc;
+
+	post_proc = kzalloc(sizeof(struct bss_post_proc), GFP_KERNEL);
+	if (!post_proc) {
+		ath6kl_err("failed to alloc memory for post_proc\n");
+		return NULL;
+	}
+
+	post_proc->vif = vif;
+	post_proc->flags = 0;
+	spin_lock_init(&post_proc->bss_info_lock);
+	INIT_LIST_HEAD(&post_proc->bss_info_list);
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		   "bss_proc init (vif %d)\n",
+		   vif->fw_vif_idx);
+
+	return post_proc;
+}
+
+static void bss_proc_post_flush(struct bss_post_proc *post_proc)
+{
+	struct bss_info_entry *bss_info, *tmp;
+
+	spin_lock(&post_proc->bss_info_lock);
+
+	list_for_each_entry_safe(bss_info,
+				tmp,
+				&post_proc->bss_info_list,
+				list) {
+		list_del(&bss_info->list);
+		kfree(bss_info->mgmt);
+		kfree(bss_info);
+	}
+
+	spin_unlock(&post_proc->bss_info_lock);
+
+	return;
+}
+
+void ath6kl_bss_post_proc_deinit(struct ath6kl_vif *vif)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+
+	if (post_proc) {
+		bss_proc_post_flush(post_proc);
+
+		kfree(post_proc);
+	}
+
+	vif->bss_post_proc_ctx = NULL;
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		   "bss_proc deinit (vif %d)\n",
+		   vif->fw_vif_idx);
+
+	return;
+}
+
+void ath6kl_bss_post_proc_bss_scan_start(struct ath6kl_vif *vif)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+
+	if (!post_proc)
+		return;
+
+	/* Always flush old bss_info before start a new scan. */
+	bss_proc_post_flush(post_proc);
+	post_proc->flags |= ATH6KL_BSS_POST_PROC_SCAN_ONGOING;
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+			"bss_proc scan_start\n");
+
+	return;
+}
+
+int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+	struct bss_info_entry *bss_info, *tmp;
+	struct cfg80211_bss *bss;
+	int cnt = 0;
+
+	if (!post_proc)
+		return 0;
+
+	post_proc->flags &= ~ATH6KL_BSS_POST_PROC_SCAN_ONGOING;
+
+	list_for_each_entry_safe(bss_info,
+				tmp,
+				&post_proc->bss_info_list,
+				list) {
+		cnt++;
+		bss = cfg80211_inform_bss_frame(vif->ar->wiphy,
+						bss_info->channel,
+						bss_info->mgmt,
+						bss_info->len,
+						bss_info->signal,
+						GFP_ATOMIC);
+		if (bss)
+			ath6kl_bss_put(vif->ar, bss);
+	}
+
+	bss_proc_post_flush(post_proc);
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+			"bss_proc scan_comp, cnt %d\n", cnt);
+
+	return 0;
+}
+
+void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
+				struct ieee80211_mgmt *mgmt,
+				int len,
+				s32 snr,
+				struct ieee80211_channel *channel)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+	struct bss_info_entry *bss_info;
+
+	if (!post_proc)
+		return;
+
+	if (!(post_proc->flags & ATH6KL_BSS_POST_PROC_SCAN_ONGOING))
+		return;
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		   "bss_proc bssinfo (vif %d) BSSID "
+		   "%02x:%02x:%02x:%02x:%02x:%02x FC %04x\n",
+		   vif->fw_vif_idx,
+		   mgmt->bssid[0], mgmt->bssid[1], mgmt->bssid[2],
+		   mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5],
+		   mgmt->frame_control);
+
+	bss_info = kzalloc(sizeof(struct bss_info_entry), GFP_KERNEL);
+	if (!bss_info) {
+		ath6kl_err("failed to alloc memory for bss_info\n");
+		return;
+	}
+
+	bss_info->mgmt = kmalloc(len, GFP_KERNEL);
+	if (!bss_info->mgmt) {
+		kfree(bss_info);
+		ath6kl_err("failed to alloc memory for bss_info->mgmt\n");
+		return;
+	}
+
+	/* Add BSS info. */
+	bss_info->channel = channel;
+	bss_info->signal = snr;
+	memcpy((u8 *)(bss_info->mgmt), (u8 *)mgmt, len);
+	bss_info->len = len;
+
+	spin_lock(&post_proc->bss_info_lock);
+	list_add_tail(&bss_info->list, &post_proc->bss_info_list);
+	spin_unlock(&post_proc->bss_info_lock);
+
+
+	return;
+}
+
 enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 {
 	struct ath6kl *ar = devt;
@@ -554,7 +717,7 @@ static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	enum cookie_type cookie_type,
 	u32 cookie_num)
 {
-	u32 i, mem_size;
+	u32 i, j, mem_size;
 
 	WARN_ON(!cookie_num);
 
@@ -576,7 +739,18 @@ static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	for (i = 0; i < cookie_num; i++) {
 		/* Assign the parent then insert to free queue */
 		cookie_pool->cookie_mem[i].cookie_pool = cookie_pool;
-		ath6kl_free_cookie(ar, &cookie_pool->cookie_mem[i]);
+		cookie_pool->cookie_mem[i].htc_pkt =
+			kzalloc(sizeof(struct htc_packet), GFP_ATOMIC);
+		if (cookie_pool->cookie_mem[i].htc_pkt)
+			ath6kl_free_cookie(ar, &cookie_pool->cookie_mem[i]);
+		else {
+			ath6kl_err("unable to allocate htc_pkt\n");
+
+			for (j = 0 ; j < i ; j++)
+				kfree(cookie_pool->cookie_mem[j].htc_pkt);
+			kfree(cookie_pool->cookie_mem);
+			return -ENOMEM;
+		}
 	}
 
 	/* Reset stats */
@@ -594,6 +768,8 @@ static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
 	struct ath6kl_cookie_pool *cookie_pool)
 {
+	int i;
+
 	if (cookie_pool->cookie_num != cookie_pool->cookie_count)
 		ath6kl_err("Cookie unmber unsync, type %d num %d, %d\n",
 				cookie_pool->cookie_type,
@@ -606,6 +782,9 @@ static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
 
 	cookie_pool->cookie_list = NULL;
 	cookie_pool->cookie_count = 0;
+
+	for (i = 0; i < cookie_pool->cookie_num; i++)
+		kfree(cookie_pool->cookie_mem[i].htc_pkt);
 
 	kfree(cookie_pool->cookie_mem);
 	cookie_pool->cookie_mem = NULL;
@@ -1183,6 +1362,7 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	ath6kl_acs_scan_complete_event(vif, aborted);
 #endif
 
+	ath6kl_bss_post_proc_bss_complete_event(vif);
 	ath6kl_p2p_rc_scan_complete_event(vif, aborted);
 
 	if (ath6kl_htcoex_scan_complete_event(vif, aborted) ==
@@ -1860,6 +2040,8 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 			vif->scanband_type = SCANBAND_TYPE_5G;
 		else if (scanband_type == ANDROID_SETBAND_2G)
 			vif->scanband_type = SCANBAND_TYPE_2G;
+		else if (scanband_type == ANDROID_SETBAND_NO_DFS)
+			vif->scanband_type = SCANBAND_TYPE_IGNORE_DFS;
 		else if ((scanband_type >= 2412) && (scanband_type <= 5825)) {
 			vif->scanband_type = SCANBAND_TYPE_CHAN_ONLY;
 			vif->scanband_chan = scanband_type;
@@ -1939,7 +2121,8 @@ static int ath6kl_ioctl_p2p_dev_addr(struct ath6kl_vif *vif,
 
 static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 				char *user_cmd,
-				u8 *buf)
+				u8 *buf,
+				int len)
 {
 	char result[20];
 	u16 rc_2g, rc_5g, rc_all;
@@ -1948,6 +2131,10 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 	/* GET::P2P_BEST_CHANNEL */
 
 	rc_2g = rc_5g = rc_all = 0;
+
+	if ((strlen(buf) > 16) &&
+		strstr(buf, "0"))
+		goto done;
 
 	/*
 	 * Current wpa_supplicant only uses best channel for P2P purpose.
@@ -1962,6 +2149,7 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 				&rc_5g,
 				&rc_all);
 
+done:
 	if (ret == 0) {
 		memset(result, 0, 20);
 		snprintf(result, 20,
@@ -2083,7 +2271,8 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 				else if (strstr(user_cmd, "P2P_BEST_CHANNEL"))
 					ret = ath6kl_ioctl_p2p_best_chan(vif,
 							user_cmd,
-							android_cmd.buf);
+							android_cmd.buf,
+							android_cmd.used_len);
 				else if (strstr(user_cmd, "ACL "))
 					ret = ath6kl_ioctl_ap_acl(vif,
 						(user_cmd + 4),

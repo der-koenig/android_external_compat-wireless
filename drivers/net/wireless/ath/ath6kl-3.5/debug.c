@@ -3544,6 +3544,261 @@ static const struct file_operations fops_antdiv_state_read = {
 	.llseek = default_llseek,
 };
 
+
+struct pattern_hdr {
+	u8	preamble[4];
+	u16	duration;
+	u8	seqno;
+	u8	schedule;
+	u16	pktlen;
+	u16	chksum;
+} __packed;
+
+int readpatternfile(char *path, u8* buf, int len)
+{
+	struct file *fp = NULL;
+	mm_segment_t pre_fd;
+	int filelen = 0;
+
+	path[strlen(path)-1] = '\0';
+
+	fp = filp_open((const char *)path, O_RDONLY, 0);
+
+	pre_fd = get_fs();
+	set_fs(KERNEL_DS);
+	if (fp && !IS_ERR(fp))	{
+		if (fp->f_op && fp->f_op->read)	{
+			fp->f_op->read(fp, buf, len, &fp->f_pos);
+			filelen = fp->f_dentry->d_inode->i_size;
+		}
+		filp_close(fp, 0);
+	}
+	set_fs(pre_fd);
+	return filelen;
+}
+
+static ssize_t ath6kl_patterngen_write(struct file *file,
+				     const char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	struct ath6kl_cookie *cookie = NULL;
+	enum htc_endpoint_id eid = ENDPOINT_UNUSED;
+	int ret;
+
+	u8 pattern_idx = 0;
+	u16 pattern_duration = 0;
+	u8 *pattern_buf = NULL;
+	u16 pattern_len;
+	struct sk_buff *skb = NULL;
+
+	u32 map_no = 0;
+	u16 htc_tag = ATH6KL_DATA_PKT_TAG;
+	u8 ac = 99 ; /* initialize to unmapped ac */
+	bool chk_adhoc_ps_mapping = false;
+	u32 wmi_data_flags = 0;
+
+	/* save user command */
+	u8 buf[512];
+	struct pattern_hdr PHdr;
+	unsigned int len = 0;
+	char *sptr, *token;
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[len] = '\0';
+	sptr = buf;
+
+	/* get pattern Idx */
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou8(token, 0, &pattern_idx))
+		return -EINVAL;
+	if (pattern_idx > 6)
+		return -EINVAL;
+	/* get pattern duration */
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou16(token, 0, &pattern_duration))
+		return -EINVAL;
+	/* get pattern path */
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	pattern_buf = kmalloc(1024, GFP_ATOMIC);
+	if (!pattern_buf)
+		return -ENOMEM;
+
+	pattern_len = readpatternfile(token, pattern_buf, 1024);
+
+	if (!pattern_len || pattern_len > 1024)
+		return -EINVAL;
+
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return -EIO;
+
+	/* If target is not associated */
+	if (!test_bit(CONNECTED, &vif->flags))
+		return -EINVAL;
+
+	if (!test_bit(WMI_READY, &ar->flag) &&
+	    !test_bit(TESTMODE_EPPING, &ar->flag)) {
+		goto fail_tx;
+	}
+
+	/*form SKB*/
+	skb = alloc_skb(pattern_len, GFP_KERNEL);
+	if (!skb)
+		goto fail_tx;
+	memcpy(skb->data, pattern_buf, pattern_len);
+	skb->len = pattern_len;
+
+	if (test_bit(WMI_ENABLED, &ar->flag)) {
+		if (skb_headroom(skb) < vif->needed_headroom) {
+			struct sk_buff *tmp_skb = ath6kl_buf_alloc(skb->len);
+
+			if (tmp_skb == NULL) {
+				vif->net_stats.tx_dropped++;
+				goto fail_tx;
+			}
+
+			skb_put(tmp_skb, skb->len);
+			memcpy(tmp_skb->data, skb->data, skb->len);
+			kfree_skb(skb);
+			skb = tmp_skb;
+		}
+
+		PHdr.preamble[0] = 0xDE;
+		PHdr.preamble[1] = 0xAD;
+		PHdr.preamble[2] = 0xBE;
+		PHdr.preamble[3] = 0xEF;
+		PHdr.seqno = pattern_idx;
+		PHdr.pktlen = pattern_len;
+		PHdr.duration = (pattern_duration)*500;
+		PHdr.schedule = 0;
+		PHdr.chksum = 0;
+
+		if (ath6kl_wmi_data_hdr_add(ar->wmi, skb, DATA_MSGTYPE,
+			wmi_data_flags, 0,
+			WMI_META_VERSION_2, (void *)&PHdr,
+			vif->fw_vif_idx)) {
+			ath6kl_err("wmi_data_hdr_add failed\n");
+			goto fail_tx;
+		}
+
+		memcpy(skb->data+6, &PHdr, sizeof(PHdr));
+
+		if ((vif->nw_type == ADHOC_NETWORK) &&
+		     ar->ibss_ps_enable && test_bit(CONNECTED, &vif->flags))
+			chk_adhoc_ps_mapping = true;
+		else {
+			/* get the stream mapping */
+			ret = ath6kl_wmi_implicit_create_pstream(ar->wmi,
+					vif->fw_vif_idx, skb,
+					0, test_bit(WMM_ENABLED, &vif->flags),
+					&ac, &htc_tag);
+			if (ret)
+				goto fail_tx;
+		}
+	} else
+		goto fail_tx;
+
+
+	spin_lock_bh(&ar->lock);
+
+	eid = ar->ac2ep_map[ac];
+
+	if (eid == 0 || eid == ENDPOINT_UNUSED) {
+		if ((ac == WMM_NUM_AC)) {
+			/* for epping testing, the last AC maps to the control
+			 * endpoint
+			 */
+			eid = ar->ctrl_ep;
+		} else {
+			ath6kl_err("eid %d is not mapped!\n", eid);
+			spin_unlock_bh(&ar->lock);
+			goto fail_tx;
+		}
+	}
+
+	/* allocate resource for this packet */
+	if (htc_tag == ATH6KL_DATA_PKT_TAG)
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
+	else
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
+
+	if (!cookie) {
+		spin_unlock_bh(&ar->lock);
+		goto fail_tx;
+	}
+
+	/* update counts while the lock is held */
+	ar->tx_pending[eid]++;
+	ar->total_tx_data_pend++;
+
+	spin_unlock_bh(&ar->lock);
+
+	if (!IS_ALIGNED((unsigned long) skb->data - HTC_HDR_LENGTH, 4) &&
+	    skb_cloned(skb)) {
+		/*
+		 * We will touch (move the buffer data to align it. Since the
+		 * skb buffer is cloned and not only the header is changed, we
+		 * have to copy it to allow the changes. Since we are copying
+		 * the data here, we may as well align it by reserving suitable
+		 * headroom to avoid the memmove in ath6kl_htc_tx_buf_align().
+		 */
+		struct sk_buff *nskb;
+
+		nskb = skb_copy_expand(skb, HTC_HDR_LENGTH, 0, GFP_ATOMIC);
+		if (nskb == NULL)
+			goto fail_tx;
+		kfree_skb(skb);
+		skb = nskb;
+	}
+
+	cookie->skb = skb;
+	cookie->map_no = map_no;
+	set_htc_pkt_info(cookie->htc_pkt, cookie, skb->data, skb->len,
+			 eid, htc_tag);
+	cookie->htc_pkt->skb = skb;
+
+	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
+
+	/*
+	 * HTC interface is asynchronous, if this fails, cleanup will
+	 * happen in the ath6kl_tx_complete callback.
+	 */
+	ath6kl_htc_tx(ar->htc_target, cookie->htc_pkt);
+
+	kfree(pattern_buf);
+
+	return count;
+
+fail_tx:
+	if (skb)
+		dev_kfree_skb(skb);
+
+	kfree(pattern_buf);
+
+	vif->net_stats.tx_dropped++;
+	vif->net_stats.tx_aborted_errors++;
+
+	return -EINVAL;
+}
+
+
+static const struct file_operations fops_pattern_gen = {
+	.write = ath6kl_patterngen_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath6kl_p2p_flowctrl_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
@@ -5112,6 +5367,49 @@ static const struct file_operations fops_skb_dup_operation = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for DTIM extend */
+static ssize_t ath6kl_dtim_ext_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	int ret;
+
+	ret = kstrtou8_from_user(user_buf, count, 0,
+			&ar->dtim_ext);
+
+	if (ret)
+		return ret;
+
+	if (ath6kl_wmi_set_dtim_ext(ar->wmi, ar->dtim_ext))
+		return -EIO;
+
+	return count;
+}
+
+static ssize_t ath6kl_dtim_ext_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u8 buf[32];
+	unsigned int len = 0;
+
+	len = scnprintf(buf, sizeof(buf), "DTIM Ext: %d\n",
+			ar->dtim_ext);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+/* debug fs for DTIM extend */
+static const struct file_operations fops_dtim_ext = {
+	.read = ath6kl_dtim_ext_read,
+	.write = ath6kl_dtim_ext_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -5321,6 +5619,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("antdivstat", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_antdiv_state_read);
 
+	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR,
+				ar->debugfs_phy, ar, &fops_pattern_gen);
+
 	debugfs_create_file("p2p_rc", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_p2p_rc);
 
@@ -5329,6 +5630,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("skb_dup_enable", S_IRUSR | S_IWUSR,
 				ar->debugfs_phy, ar, &fops_skb_dup_operation);
+
+	debugfs_create_file("dtim_ext", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_dtim_ext);
 
 	return 0;
 }

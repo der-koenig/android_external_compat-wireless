@@ -118,9 +118,11 @@ static void htcoex_scan_start(unsigned long arg)
 
 	BUG_ON(!vif);
 
+	ar = vif->ar;
 	if ((vif->nw_type != INFRA_NETWORK) ||
 		!test_bit(CONNECTED, &vif->flags) ||
-		vif->scan_req)
+		vif->scan_req ||
+		test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag))
 		goto resche;
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
@@ -128,7 +130,6 @@ static void htcoex_scan_start(unsigned long arg)
 		   vif,
 		   coex->num_scan);
 
-	ar = vif->ar;
 	if (!vif->usr_bss_filter) {
 		clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
 		ret = ath6kl_wmi_bssfilter_cmd(

@@ -457,24 +457,24 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 
 	cookie->skb = skb;
 	cookie->map_no = 0;
-	set_htc_pkt_info(&cookie->htc_pkt, cookie, skb->data, skb->len,
+	set_htc_pkt_info(cookie->htc_pkt, cookie, skb->data, skb->len,
 			 eid, ATH6KL_CONTROL_PKT_TAG);
-	cookie->htc_pkt.skb = skb;
+	cookie->htc_pkt->skb = skb;
 
 	/* P2P Flowctrl */
 	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
-		cookie->htc_pkt.connid = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
-		cookie->htc_pkt.recycle_count = 0;
+		cookie->htc_pkt->connid = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
+		cookie->htc_pkt->recycle_count = 0;
 	}
 
 	/*null data's vif since it is not applied */
-	cookie->htc_pkt.vif = NULL;
+	cookie->htc_pkt->vif = NULL;
 
 	/*
 	 * This interface is asynchronous, if there is an error, cleanup
 	 * will happen in the TX completion callback.
 	 */
-	ath6kl_htc_tx(ar->htc_target, &cookie->htc_pkt);
+	ath6kl_htc_tx(ar->htc_target, cookie->htc_pkt);
 
 	return 0;
 
@@ -682,18 +682,18 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 
 	cookie->skb = skb;
 	cookie->map_no = map_no;
-	set_htc_pkt_info(&cookie->htc_pkt, cookie, skb->data, skb->len,
+	set_htc_pkt_info(cookie->htc_pkt, cookie, skb->data, skb->len,
 			 eid, htc_tag);
-	cookie->htc_pkt.skb = skb;
+	cookie->htc_pkt->skb = skb;
 
 	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "tx ",
 			skb->data, skb->len);
 
 	/* P2P Flowctrl */
 	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
-		cookie->htc_pkt.connid =
+		cookie->htc_pkt->connid =
 			ath6kl_p2p_flowctrl_get_conn_id(vif, skb);
-		cookie->htc_pkt.recycle_count = 0;
+		cookie->htc_pkt->recycle_count = 0;
 		ret = ath6kl_p2p_flowctrl_tx_schedule_pkt(ar, (void *)cookie);
 		if (ret == 0)		/* Queue it */
 			return 0;
@@ -701,7 +701,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 			goto fail_tx;
 	}
 
-	cookie->htc_pkt.vif = vif;
+	cookie->htc_pkt->vif = vif;
 
 	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
 
@@ -709,7 +709,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	 * HTC interface is asynchronous, if this fails, cleanup will
 	 * happen in the ath6kl_tx_complete callback.
 	 */
-	ath6kl_htc_tx(ar->htc_target, &cookie->htc_pkt);
+	ath6kl_htc_tx(ar->htc_target, cookie->htc_pkt);
 
 	return 0;
 
@@ -1067,7 +1067,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 			vif->net_stats.tx_errors++;
 
 			if (status != -ENOSPC && status != -ECANCELED)
-				ath6kl_warn("tx complete error: %d\n", status);
+				ath6kl_debug("tx complete error: %d\n", status);
 
 			ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
 				   "%s: skb=0x%p data=0x%p len=0x%x eid=%d %s\n",
@@ -2769,9 +2769,9 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 
 	cookie->skb = skb;
 	cookie->map_no = 0;
-	set_htc_pkt_info(&cookie->htc_pkt, cookie, skb->data, skb->len,
+	set_htc_pkt_info(cookie->htc_pkt, cookie, skb->data, skb->len,
 			 eid, ATH6KL_DATA_PKT_TAG);
-	cookie->htc_pkt.skb = skb;
+	cookie->htc_pkt->skb = skb;
 
 	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "aggr-tx ",
 			skb->data, skb->len);
@@ -2780,9 +2780,9 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
 		int ret;
 
-		cookie->htc_pkt.connid =
+		cookie->htc_pkt->connid =
 			ath6kl_p2p_flowctrl_get_conn_id(vif, skb);
-		cookie->htc_pkt.recycle_count = 0;
+		cookie->htc_pkt->recycle_count = 0;
 		ret = ath6kl_p2p_flowctrl_tx_schedule_pkt(ar, (void *)cookie);
 		if (ret == 0)		/* Queue it */
 			return 0;
@@ -2790,7 +2790,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 			goto fail_tx;
 	}
 
-	cookie->htc_pkt.vif = vif;
+	cookie->htc_pkt->vif = vif;
 
 	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
 
@@ -2798,7 +2798,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 	 * HTC interface is asynchronous, if this fails, cleanup will
 	 * happen in the ath6kl_tx_complete callback.
 	 */
-	ath6kl_htc_tx(ar->htc_target, &cookie->htc_pkt);
+	ath6kl_htc_tx(ar->htc_target, cookie->htc_pkt);
 
 	return 0;
 

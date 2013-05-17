@@ -967,7 +967,15 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-
+#ifdef CE_SUPPORT
+	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
+		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
+		param = 0;
+	else if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
+		param = 2;
+	else /* sdio */
+		param = 3;
+#else
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_DIAGNOSTIC))
 		param = 0;
 	else{
@@ -976,7 +984,7 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		else /* sdio */
 			param = 3;
 	}
-
+#endif
 	if (ath6kl_bmi_write(ar,
 		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_pktlog_num_buffers)),
 		(u8 *)&param, 4) != 0) {
@@ -3165,6 +3173,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ar->green_tx_params.force_back_off =
 		ATH6KL_GTX_FORCE_BACKOFF;
 
+	/* init dtim ext params */
+	ar->dtim_ext = 1;
+
 	ret = ath6kl_init_hw_start(ar);
 	if (ret) {
 		ath6kl_err("Failed to start hardware: %d\n", ret);
@@ -3219,6 +3230,11 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ath6kl_info("Enable Firmware crash notiry.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
+
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_SKB_DUP))
+		ar->conf_flags |= ATH6KL_CONF_SKB_DUP;
+	else
+		ath6kl_info(" skb copy disable\n");
 
 	return ret;
 

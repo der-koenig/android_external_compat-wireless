@@ -818,6 +818,30 @@ bool ath6kl_reg_is_p2p_channel(struct ath6kl *ar, u32 freq)
 #undef _REG_CHAN_P2P_NOT_ALLOWED
 }
 
+bool ath6kl_reg_is_dfs_channel(struct ath6kl *ar, u32 freq)
+{
+	struct wiphy *wiphy = ar->wiphy;
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_channel *chan;
+	int i;
+
+	if (freq < 4000)
+		return false;
+
+	sband = wiphy->bands[NL80211_BAND_5GHZ];
+	for (i = 0; i < sband->n_channels; i++) {
+		chan = &sband->channels[i];
+		if (chan->center_freq == freq) {
+			if (chan->flags & IEEE80211_CHAN_RADAR)
+				return true;
+			else
+				return false;
+		}
+	}
+
+	return false;
+}
+
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
 				bool p2pInPasvCh)

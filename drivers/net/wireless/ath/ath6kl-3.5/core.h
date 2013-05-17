@@ -51,7 +51,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.347)
+#define __BUILD_VERSION_ (3.5.0.353)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -87,6 +87,8 @@
 	 ATH6KL_MODULEP2P_P2P_WISE_SCAN)
 #endif
 
+/* ce and not ce are seperate */
+#ifndef CE_SUPPORT
 #ifdef CONFIG_ANDROID
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
@@ -102,6 +104,13 @@
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
 	 0)
+#endif
+#else
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
+	ATH6KL_MODULE_DISABLE_SKB_DUP |			\
+	0)
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
@@ -460,6 +469,7 @@ struct ath6kl_ioctl_cmd {
 #define ANDROID_SETBAND_ALL		0
 #define ANDROID_SETBAND_5G		1
 #define ANDROID_SETBAND_2G		2
+#define ANDROID_SETBAND_NO_DFS		3
 
 struct ath6kl_android_wifi_priv_cmd {
 	char *buf;
@@ -695,7 +705,11 @@ enum ath6kl_recovery_mode {
 #define AGGR_TX_PROG_NS_THRESH		250
 #define AGGR_TX_PROG_NS_FACTOR		4
 #define AGGR_TX_PROG_CHECK_INTVAL	(1 * HZ)
+#ifdef CONFIG_ANDROID
+#define AGGR_TX_PROG_HS_MAX_NUM		18
+#else
 #define AGGR_TX_PROG_HS_MAX_NUM		22
+#endif
 #define AGGR_TX_PROG_HS_TIMEOUT		8	/* in ms */
 
 #define AGGR_GET_TXTID(_p, _x)           (&(_p->tx_tid[(_x)]))
@@ -727,6 +741,7 @@ enum scanband_type {
 	SCANBAND_TYPE_CHAN_ONLY,	/* Scan single channel only */
 	SCANBAND_TYPE_P2PCHAN,		/* Scan P2P channel only */
 	SCANBAND_TYPE_2_P2PCHAN,	/* Scan P2P channel 2 times */
+	SCANBAND_TYPE_IGNORE_DFS,	/* Scan all supported channel but DFS */
 };
 
 #define ATH6KL_RSN_CAP_NULLCONF		(0xffff)
@@ -904,7 +919,7 @@ struct ath6kl_cookie {
 	struct ath6kl_cookie_pool *cookie_pool;
 	struct sk_buff *skb;
 	u32 map_no;
-	struct htc_packet htc_pkt;
+	struct htc_packet *htc_pkt;
 	struct ath6kl_cookie *arc_list_next;
 };
 
@@ -1257,6 +1272,24 @@ struct WMI_AP_ACL {
 };
 #endif
 
+struct bss_info_entry {
+	struct list_head list;
+
+	s32 signal;
+	struct ieee80211_channel *channel;
+	struct ieee80211_mgmt *mgmt;
+	size_t len;
+};
+
+#define ATH6KL_BSS_POST_PROC_SCAN_ONGOING	(1 << 0)
+
+struct bss_post_proc {
+	struct ath6kl_vif *vif;
+	u32 flags;
+	spinlock_t bss_info_lock;
+	struct list_head bss_info_list;
+};
+
 struct ath6kl_vif {
 	struct list_head list;
 	struct wireless_dev wdev;
@@ -1369,6 +1402,7 @@ struct ath6kl_vif {
 	struct delayed_work work_pending_connect;
 	struct p2p_pending_connect_info *pending_connect_info;
 
+	struct bss_post_proc *bss_post_proc_ctx;
 };
 
 #define WOW_LIST_ID		0
@@ -1728,6 +1762,9 @@ struct ath6kl {
 
 	struct timer_list eapol_shprotect_timer;
 	u32 eapol_shprotect_vif;			/* vif mask */
+
+	/* Force wakeup interval = DTIM * dtim_ext */
+	u8 dtim_ext;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1930,6 +1967,16 @@ int ath6kl_ps_queue_enqueue_data(struct ath6kl_ps_buf_head *psq,
 void ath6kl_ps_queue_age_handler(unsigned long ptr);
 void ath6kl_ps_queue_age_start(struct ath6kl_sta *conn);
 void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn);
+
+struct bss_post_proc *ath6kl_bss_post_proc_init(struct ath6kl_vif *vif);
+void ath6kl_bss_post_proc_deinit(struct ath6kl_vif *vif);
+void ath6kl_bss_post_proc_bss_scan_start(struct ath6kl_vif *vif);
+int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif);
+void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
+				struct ieee80211_mgmt *mgmt,
+				int len,
+				s32 snr,
+				struct ieee80211_channel *channel);
 
 #ifdef CONFIG_ANDROID_8960_SDIO
 void ath6kl_sdio_init_msm(void);

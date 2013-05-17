@@ -951,7 +951,7 @@ int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	struct ath6kl_cookie *cookie = (struct ath6kl_cookie *)pkt;
-	int connId = cookie->htc_pkt.connid;
+	int connId = cookie->htc_pkt->connid;
 	int ret = 0;
 
 	WARN_ON(!p2p_flowctrl);
@@ -966,12 +966,12 @@ int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
 	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	fw_conn = &p2p_flowctrl->fw_conn_list[connId];
 	if (!_check_can_send(ar, fw_conn)) {
-		if (cookie->htc_pkt.info.tx.tag !=
+		if (cookie->htc_pkt->info.tx.tag !=
 			ATH6KL_PRI_DATA_PKT_TAG) {
-			list_add_tail(&cookie->htc_pkt.list,
+			list_add_tail(&cookie->htc_pkt->list,
 				&fw_conn->conn_queue);
 		} else {
-			list_add(&cookie->htc_pkt.list,
+			list_add(&cookie->htc_pkt->list,
 				&fw_conn->re_queue);
 			fw_conn->sche_re_tx++;
 		}
@@ -981,12 +981,12 @@ int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
 		goto result;
 	} else if (!list_empty(&fw_conn->conn_queue) ||
 				!list_empty(&fw_conn->re_queue)) {
-		if (cookie->htc_pkt.info.tx.tag !=
+		if (cookie->htc_pkt->info.tx.tag !=
 			ATH6KL_PRI_DATA_PKT_TAG) {
-			list_add_tail(&cookie->htc_pkt.list,
+			list_add_tail(&cookie->htc_pkt->list,
 				&fw_conn->conn_queue);
 		} else {
-			list_add(&cookie->htc_pkt.list, &fw_conn->re_queue);
+			list_add(&cookie->htc_pkt->list, &fw_conn->re_queue);
 			fw_conn->sche_re_tx++;
 		}
 
@@ -1314,8 +1314,7 @@ struct ath6kl_p2p_rc_info *ath6kl_p2p_rc_init(struct ath6kl *ar)
 	}
 
 	p2p_rc->ar = ar;
-	p2p_rc->flags = ATH6KL_RC_FLAGS_HIGH_CHAN |
-			ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN;
+	p2p_rc->flags = ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN;
 	spin_lock_init(&p2p_rc->p2p_rc_lock);
 	p2p_rc->snr_compensation = P2P_RC_DEF_SNR_COMP;
 

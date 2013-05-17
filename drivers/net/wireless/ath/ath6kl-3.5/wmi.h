@@ -753,6 +753,7 @@ enum wmi_cmd_id {
 	WMI_SET_CHAIN_MASK_CMDID,
 
 	WMI_SET_SCAN_CHAN_PLAN_CMDID,
+	WMI_SET_DTIM_EXT_CMDID,
 /* merge from olca mainline for align command id - end */
 
 	WMI_SET_CREDIT_BYPASS_CMDID,
@@ -3218,6 +3219,10 @@ struct wmi_scan_chan_plan_cmd {
 	__le16 channellist[1];
 } __packed;
 
+struct wmi_set_dtim_ext_cmd {
+	u8 dtim_ext;
+} __packed;
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
@@ -3518,4 +3523,5 @@ int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon);
 
 int ath6kl_wmi_set_scan_chan_plan(struct wmi *wmi, u8 if_idx,
 					u8 type, u8 numChan, u16 *chanList);
+int ath6kl_wmi_set_dtim_ext(struct wmi *wmi, u8 dtim_ext);
 #endif /* WMI_H */

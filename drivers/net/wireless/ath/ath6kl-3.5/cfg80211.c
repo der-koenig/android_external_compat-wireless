@@ -2065,6 +2065,22 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 					n_channels *= 2;
 				}
 				break;
+			case SCANBAND_TYPE_IGNORE_DFS:
+				ath6kl_dbg(ATH6KL_DBG_INFO,
+				    "No DFS channels scan, channel list - ");
+				for (i = 0; i < n_channels; i++) {
+					if (ath6kl_reg_is_dfs_channel(ar,
+					   request->channels[i]->center_freq)) {
+						skip_chan_num++;
+						continue;
+					}
+					channels[i - skip_chan_num] =
+					   request->channels[i]->center_freq;
+					ath6kl_dbg(ATH6KL_DBG_INFO,
+					   "%d ", channels[i - skip_chan_num]);
+				}
+				n_channels -= skip_chan_num;
+				break;
 			default:
 				for (i = 0; i < n_channels; i++)
 					channels[i] =
@@ -2133,6 +2149,7 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	kfree(channels);
 
+	ath6kl_bss_post_proc_bss_scan_start(vif);
 	ath6kl_p2p_rc_scan_start(vif);
 
 	up(&ar->sem);
@@ -6044,7 +6061,8 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 		printk(KERN_WARNING "ath6kl: failed to disable scan "
 		       "during suspend\n");
 
-	ath6kl_cfg80211_scan_complete_event(vif, true);
+	if (test_bit(SCANNING, &vif->flags))
+		ath6kl_cfg80211_scan_complete_event(vif, true);
 
 	return;
 }
@@ -6582,6 +6600,12 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+	vif->bss_post_proc_ctx = ath6kl_bss_post_proc_init(vif);
+	if (!vif->bss_post_proc_ctx) {
+		ath6kl_err("failed to initialize bss_post_proc\n");
+		return -ENOMEM;
+	}
+
 #ifdef CONFIG_ANDROID
 	/*Enable htcoex for wlan0 in Android. Scan period is 60s*/
 	if ((vif->fw_vif_idx == 0) &&
@@ -6686,6 +6710,8 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 
 	ath6kl_htcoex_deinit(vif);
 
+	ath6kl_bss_post_proc_deinit(vif);
+
 	ath6kl_p2p_ps_deinit(vif);
 
 	ath6kl_ap_keepalive_deinit(vif);
@@ -6775,6 +6801,7 @@ err:
 		aggr_module_destroy_conn(vif->sta_list[i].aggr_conn_cntxt);
 	aggr_module_destroy(vif->aggr_cntxt);
 	ath6kl_htcoex_deinit(vif);
+	ath6kl_bss_post_proc_deinit(vif);
 	ath6kl_p2p_ps_deinit(vif);
 	ath6kl_ap_keepalive_deinit(vif);
 	ath6kl_ap_acl_deinit(vif);

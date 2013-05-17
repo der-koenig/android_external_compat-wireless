@@ -47,7 +47,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* enable max. fw vif */
 	ATH6KL_MODULE_P2P_MAX_FW_VIF	= BIT(8),
 
-	/* hole */
+	/* Disable skb_copy when clone/duplicate*/
+	ATH6KL_MODULE_DISABLE_SKB_DUP	= BIT(9),
 
 	/* enable usb remote wakeup support */
 	ATH6KL_MODULE_ENABLE_USB_REMOTE_WKUP = BIT(10),
@@ -90,7 +91,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* disable wmi sync mechanism */
 	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
 
-	/* workaround for EV119712/CR468120 */
+	/* workaround for EV119712/CR468120/CR479897 */
 	ATH6KL_MODULE_WAR_BAD_P2P_GO = BIT(24),
 
 	/* Config AP keep-alive from supplicant */
@@ -205,6 +206,8 @@ int ath6kl_printk(const char *level, const char *fmt, ...);
 	ath6kl_printk(KERN_ERR, fmt, ##__VA_ARGS__)
 #define ath6kl_warn(fmt, ...)					\
 	ath6kl_printk(KERN_WARNING, fmt, ##__VA_ARGS__)
+#define ath6kl_debug(fmt, ...)				\
+	printk(KERN_DEBUG fmt, ##__VA_ARGS__)
 
 #define AR_DBG_LVL_CHECK(mask)	(debug_mask & mask)
 
