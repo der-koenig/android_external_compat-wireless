@@ -967,15 +967,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-#ifdef CE_SUPPORT
-	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
-		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
-		param = 0;
-	else if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
-		param = 2;
-	else /* sdio */
-		param = 3;
-#else
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_DIAGNOSTIC))
 		param = 0;
 	else{
@@ -984,7 +975,7 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		else /* sdio */
 			param = 3;
 	}
-#endif
+
 	if (ath6kl_bmi_write(ar,
 		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_pktlog_num_buffers)),
 		(u8 *)&param, 4) != 0) {

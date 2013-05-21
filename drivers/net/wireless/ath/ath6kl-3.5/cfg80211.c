@@ -7038,16 +7038,15 @@ bool ath6kl_android_need_wow_suspend(struct ath6kl *ar)
 		return true;
 #endif
 
-	/*If p2p-GO or softAP interface is connected, we don't do Wow suspend.
+	/*If p2p-GO or softAP interface, we don't do Wow suspend.
 	  *Otherwise, if one of the interfaces is connected, we do WoW
 	  *to save power.
 	  */
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if (vif) {
-			/*if p2p-GO or softAP is connect, don't do wow*/
-			if (test_bit(CONNECTED, &vif->flags) &&
-			    (vif->nw_type == AP_NETWORK))
+			/*if p2p-GO or softAP interface, don't do wow*/
+			if (vif->nw_type == AP_NETWORK)
 				return false;
 			else if (test_bit(CONNECTED, &vif->flags))
 				isConnected = true;

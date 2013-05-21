@@ -3403,21 +3403,27 @@ static ssize_t ath6kl_txseries_write(struct file *file,
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
 	u64 tx_series;
-	int ret;
+	int ret, i;
 
-	vif = ath6kl_vif_first(ar);
-	if (!vif)
-		return -EIO;
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
 
-	ret = kstrtou64_from_user(user_buf, count, 0, &tx_series);
-	if (ret)
-		return ret;
+		if (vif) {
 
-	ar->debug.set_tx_series = tx_series;
+			ret = kstrtou64_from_user(user_buf, count, 0,
+						&tx_series);
+			if (ret)
+				return ret;
 
-	if (ath6kl_wmi_set_tx_select_rates_on_all_mode(ar->wmi, vif->fw_vif_idx,
+			ar->debug.set_tx_series = tx_series;
+
+			if (ath6kl_wmi_set_tx_select_rates_on_all_mode(
+							ar->wmi,
+							vif->fw_vif_idx,
 							tx_series))
-		return -EIO;
+				return -EIO;
+		}
+	}
 
 	return count;
 }
