@@ -57,7 +57,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.357)
+#define __BUILD_VERSION_ (3.5.0.358)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -441,6 +441,9 @@ struct ath6kl_fw_ie {
 
 /* hole, please reserved */
 #define ATH6KL_IOCTL_STANDARD15		(SIOCDEVPRIVATE+15)
+
+/* used by btfilter */
+#define ATH6KL_IOCTL_WEXT_PRIV6		(SIOCIWFIRSTPRIV+6)
 
 /* ATH6KL_IOCTL_EXTENDED - extended ioctl */
 #define ATH6KL_IOCTL_WEXT_PRIV26	(SIOCIWFIRSTPRIV+26)
@@ -1255,15 +1258,20 @@ enum ath6kl_vif_state {
 struct athr_cmd {
 	int     cmd;        /* CMD Type */
 	int     data[4];    /* CMD Data */
+	int     list[16];   /* CMD LIST Data */
 };
 
 #define ATHR_WLAN_SCAN_BAND             1
 #define ATHR_WLAN_FIND_BEST_CHANNEL     2
+#define ATHR_WLAN_ACS_LIST              3
 
 #define ATHR_CMD_SCANBAND_ALL           0   /* Scan all supported channel */
 #define ATHR_CMD_SCANBAND_2G            1   /* Scan 2GHz channel only */
 #define ATHR_CMD_SCANBAND_5G            2   /* Scan 5GHz channel only */
 #define ATHR_CMD_SCANBAND_CHAN_ONLY     3   /* Scan single channel only */
+
+#define ATHR_CMD_ACS_2G_LIST            1   /* Scan 2GHz channel only */
+#define ATHR_CMD_ACS_5G_LIST            2   /* Scan 5GHz channel only */
 #endif
 
 #ifdef ACL_SUPPORT
@@ -1391,8 +1399,11 @@ struct ath6kl_vif {
 
 	int needed_headroom;
 #ifdef CE_SUPPORT
-	u8	scan_band;
-	u32	scan_chan;
+	u8 scan_band;
+	u32 scan_chan;
+
+	u8 p2p_acs_2g_list[16];
+	u8 p2p_acs_5g_list[16];
 #endif
 
 #ifdef ACL_SUPPORT

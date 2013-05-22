@@ -2453,6 +2453,22 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 			req->u.data.length + 1)	? -EFAULT : 0;
 }
 
+static int ath6kl_ioctl_get_if_freq(struct net_device *dev,
+				struct ifreq *rq,
+				int cmd)
+{
+	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct iwreq *req = (struct iwreq *)(rq);
+	u16 freq;
+
+	if (vif->bss_ch == 0) {
+		return -EINVAL;
+	} else {
+		freq = vif->bss_ch;
+		return copy_to_user(req->u.data.pointer, &freq, sizeof(freq));
+	}
+}
+
 int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
@@ -2495,6 +2511,9 @@ case IEEE80211_IOCTL_KICKMAC:
 	case ATH6KL_IOCTL_STANDARD13:	/* TX99 */
 #endif
 		ret = ath6kl_ioctl_standard(dev, rq, cmd);
+		break;
+	case ATH6KL_IOCTL_WEXT_PRIV6:
+		ret = ath6kl_ioctl_get_if_freq(dev, rq, cmd);
 		break;
 	case ATH6KL_IOCTL_WEXT_PRIV26:	/* endpoint loopback purpose */
 		get_user(cmd, (int *)rq->ifr_data);
