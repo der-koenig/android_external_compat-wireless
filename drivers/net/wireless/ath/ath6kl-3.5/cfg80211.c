@@ -6708,6 +6708,10 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 
 	aggr_module_destroy(vif->aggr_cntxt);
 
+#ifdef ACS_SUPPORT
+	ath6kl_acs_deinit(vif);
+#endif
+
 	ath6kl_htcoex_deinit(vif);
 
 	ath6kl_bss_post_proc_deinit(vif);

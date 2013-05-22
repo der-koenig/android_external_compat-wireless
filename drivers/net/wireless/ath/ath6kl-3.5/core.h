@@ -17,6 +17,12 @@
 #ifndef CORE_H
 #define CORE_H
 
+#ifdef CE_SUPPORT
+#ifdef CONFIG_ANDROID
+#undef CONFIG_ANDROID
+#endif
+#endif
+
 #include <linux/etherdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/firmware.h>
@@ -51,7 +57,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.355)
+#define __BUILD_VERSION_ (3.5.0.357)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 

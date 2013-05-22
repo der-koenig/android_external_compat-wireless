@@ -957,7 +957,8 @@ int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
 	WARN_ON(!p2p_flowctrl);
 
 	if (connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID) {
-		ath6kl_err("p2p_flowctrl fail, NULL connId, just send??\n");
+		ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"p2p_flowctrl fail, NULL connId, just send??\n");
 
 		return 1;	/* Just send it */
 		/*return -1;*/	/* Drop it */
