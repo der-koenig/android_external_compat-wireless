@@ -754,6 +754,7 @@ enum wmi_cmd_id {
 
 	WMI_SET_SCAN_CHAN_PLAN_CMDID,
 	WMI_SET_DTIM_EXT_CMDID,
+	WMI_GET_CTL,
 /* merge from olca mainline for align command id - end */
 
 	WMI_SET_CREDIT_BYPASS_CMDID,
@@ -1585,6 +1586,7 @@ enum wmi_event_id {
 	WMI_ACL_REJECT_EVENTID,
 	WMI_GET_WIDIMODE_EVENTID,/* 0x902C */
 	WMI_CSA_EVENTID,
+	WMI_GET_CTL_EVENTID,
 };
 
 struct wmi_ready_event_2 {
@@ -1683,9 +1685,9 @@ enum wmi_bi_ftype {
 	PROBEREQ_FTYPE,
 };
 
-#define DEF_SCAN_FOR_ROAM_INTVL			7
+#define DEF_SCAN_FOR_ROAM_INTVL			2
 #define WMI_ROAM_LRSSI_SCAN_PERIOD		(15 * 1000)	/* secs */
-#define WMI_ROAM_LRSSI_ROAM_THRESHOLD	30	/* rssi */
+#define WMI_ROAM_LRSSI_ROAM_THRESHOLD	29	/* rssi */
 #define WMI_ROAM_LRSSI_SCAN_THRESHOLD (WMI_ROAM_LRSSI_ROAM_THRESHOLD + \
 	DEF_SCAN_FOR_ROAM_INTVL)	/* rssi */
 #define WMI_ROAM_LRSSI_ROAM_FLOOR		60	/* rssi */
@@ -3341,7 +3343,8 @@ int ath6kl_wmi_del_wow_pattern_cmd(struct wmi *wmi, u8 if_idx,
 				   u16 list_id, u16 filter_id);
 int ath6kl_wmi_add_wow_ext_pattern_cmd(struct wmi *wmi, u8 if_idx,
 				   u8 list_id, u8 filter_size,
-				   u8 filter_id, u8 *filter, u8 *mask);
+				   u8 filter_id, u8 filter_offset,
+				   u8 *filter, u8 *mask);
 int ath6kl_wmi_del_all_wow_ext_patterns_cmd(struct wmi *wmi, u8 if_idx,
 				__le16 filter_list_id);
 int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,

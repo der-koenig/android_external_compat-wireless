@@ -57,7 +57,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.358)
+#define __BUILD_VERSION_ (3.5.0.359)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1782,6 +1782,9 @@ struct ath6kl {
 
 	/* Force wakeup interval = DTIM * dtim_ext */
 	u8 dtim_ext;
+
+	/* set if wow pattern set by debug_fs */
+	bool get_wow_pattern;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)

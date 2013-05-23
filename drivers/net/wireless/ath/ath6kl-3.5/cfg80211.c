@@ -3703,74 +3703,84 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		return -EIO;
 
 #if (!defined(CONFIG_ANDROID) && !defined(USB_AUTO_SUSPEND))
-
-	/* Clear existing WOW patterns */
-	for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
-		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
-					       WOW_LIST_ID, i);
-	/* Configure new WOW patterns */
-	for (i = 0; i < wow->n_patterns; i++) {
-
-		if (ath6kl_wow_ext) {
-			ret = ath6kl_wmi_add_wow_ext_pattern_cmd(ar->wmi,
-				vif->fw_vif_idx, WOW_LIST_ID,
-				wow->patterns[i].pattern_len,
-				i,
-				wow->patterns[i].pattern,
-				wow->patterns[i].mask);
-			/* filter for wow ext pattern */
-			filter |= WOW_FILTER_OPTION_PATTERNS;
-		} else {
-			/*
-			 * Convert given nl80211 specific mask value to
-			 * equivalent driver specific mask value and send it
-			 * to the chip along with patterns. For example,
-			 * If the mask value defined in struct cfg80211_wowlan
-			 * is 0xA (equivalent binary is 1010), then equivalent
-			 * driver specific mask value is "0xFF 0x00 0xFF 0x00".
-			 */
-			memset(&mask, 0, sizeof(mask));
-			for (pos = 0; pos < wow->patterns[i].pattern_len;
-			pos++) {
-				if (wow->patterns[i].mask[pos / 8] &
-				(0x1 << (pos % 8)))
-					mask[pos] = 0xFF;
-			}
-			/*
-			 * Note: Pattern's offset is not passed as part of
-			 * wowlan parameter from CFG layer. So it's always
-			 * passed as ZERO to the firmware. It means, given
-			 * WOW patterns are always matched from the first byte
-			 * of received pkt in the firmware.
-			 */
-			ret = ath6kl_wmi_add_wow_pattern_cmd(ar->wmi,
+	if (!ar->get_wow_pattern) {
+		/* Clear existing WOW patterns */
+		for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
+			ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
+							   WOW_LIST_ID, i);
+		/* Configure new WOW patterns */
+		for (i = 0; i < wow->n_patterns; i++) {
+			if (ath6kl_wow_ext) {
+				ret = ath6kl_wmi_add_wow_ext_pattern_cmd(
+					ar->wmi,
+					vif->fw_vif_idx, WOW_LIST_ID,
+					wow->patterns[i].pattern_len,
+					i,
+					0,
+					wow->patterns[i].pattern,
+					wow->patterns[i].mask);
+				/* filter for wow ext pattern */
+				filter |= WOW_FILTER_OPTION_PATTERNS;
+			} else {
+				/*
+				 * Convert given nl80211 specific mask value to
+				 * equivalent driver specific mask value
+				 * and send it to the chip along with patterns.
+				 * For example, if the mask value defined
+				 * in struct cfg80211_wowlan is 0xA
+				 * (equivalent binary is 1010), then equivalent
+				 * driver specific mask value is
+				 * "0xFF 0x00 0xFF 0x00".
+				 */
+				memset(&mask, 0, sizeof(mask));
+				for (pos = 0;
+					pos < wow->patterns[i].pattern_len;
+					pos++) {
+					if (wow->patterns[i].mask[pos / 8] &
+					(0x1 << (pos % 8)))
+						mask[pos] = 0xFF;
+				}
+				/*
+				 * Note: Pattern's offset is not passed
+				 * as part of wowlan parameter from CFG layer.
+				 * So it's always passed as ZERO to
+				 * the firmware.
+				 * It means, given WOW patterns are always
+				 * matched from the first byte
+				 * of received pkt in the firmware.
+				 */
+				ret = ath6kl_wmi_add_wow_pattern_cmd(ar->wmi,
 						vif->fw_vif_idx, WOW_LIST_ID,
 						wow->patterns[i].pattern_len,
 						0 /* pattern offset */,
 						wow->patterns[i].pattern, mask);
+			}
+			if (ret)
+				return ret;
 		}
-		if (ret)
-			return ret;
+	} else
+		filter |= WOW_FILTER_OPTION_PATTERNS;
+
+	if (wow) {
+		if (wow->disconnect || wow->any)
+			filter |= WOW_FILTER_OPTION_NWK_DISASSOC;
+
+		if (wow->magic_pkt || wow->any)
+			filter |= WOW_FILTER_OPTION_MAGIC_PACKET;
+
+		if (wow->gtk_rekey_failure || wow->any) {
+			filter |= (WOW_FILTER_OPTION_EAP_REQ |
+					WOW_FILTER_OPTION_8021X_4WAYHS |
+					WOW_FILTER_OPTION_GTK_ERROR |
+					WOW_FILTER_OPTION_OFFLOAD_GTK);
+		}
+
+		if (wow->eap_identity_req || wow->any)
+			filter |= WOW_FILTER_OPTION_EAP_REQ;
+
+		if (wow->four_way_handshake || wow->any)
+			filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
 	}
-
-	if (wow->disconnect || wow->any)
-		filter |= WOW_FILTER_OPTION_NWK_DISASSOC;
-
-	if (wow->magic_pkt || wow->any)
-		filter |= WOW_FILTER_OPTION_MAGIC_PACKET;
-
-	if (wow->gtk_rekey_failure || wow->any) {
-		filter |= (WOW_FILTER_OPTION_EAP_REQ |
-				WOW_FILTER_OPTION_8021X_4WAYHS |
-				WOW_FILTER_OPTION_GTK_ERROR |
-				WOW_FILTER_OPTION_OFFLOAD_GTK);
-	}
-
-	if (wow->eap_identity_req || wow->any)
-		filter |= WOW_FILTER_OPTION_EAP_REQ;
-
-	if (wow->four_way_handshake || wow->any)
-		filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
 
 	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
 	if (vif->auth_mode == WPA2_AUTH_CCKM || vif->auth_mode == WPA2_PSK_AUTH
@@ -3778,15 +3788,17 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
 	}
 
-	if (vif->arp_offload_ip_set || wow->any)
+	if (vif->arp_offload_ip_set || (wow && wow->any))
 		filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
 
-	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
-					  ATH6KL_WOW_MODE_ENABLE,
-					  filter,
-					  WOW_HOST_REQ_DELAY);
-	if (ret)
-		return ret;
+	if (filter) {
+		ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
+						  ATH6KL_WOW_MODE_ENABLE,
+						  filter,
+						  WOW_HOST_REQ_DELAY);
+		if (ret)
+			return ret;
+	}
 #endif /*!CONFIG_ANDROID*/
 
 	/* Setup own IP addr for ARP agent. */
@@ -3815,6 +3827,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						 ATH6KL_HOST_MODE_ASLEEP);
+
 	if (ret)
 		return ret;
 
@@ -3824,11 +3837,11 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 	if (left == 0) {
 		ath6kl_warn("timeout, didn't get host sleep cmd "
-			    "processed event\n");
+				"processed event\n");
 		ret = -ETIMEDOUT;
 	} else if (left < 0) {
 		ath6kl_warn("error while waiting for host sleep cmd "
-			    "processed event %d\n", left);
+				"processed event %d\n", left);
 		ret = left;
 	}
 
@@ -3843,6 +3856,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 			ret = left;
 		}
 	}
+
 #ifdef CONFIG_ANDROID
 	if (ret)
 		ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
@@ -3998,6 +4012,11 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 			    struct cfg80211_wowlan *wow)
 {
 	int ret;
+	u32 need_suspend_vif = 0;
+	/* make sure no AP mode at any vif*/
+	if (ath6kl_cfg80211_need_suspend(ar, &need_suspend_vif)
+		&& ar->get_wow_pattern == true)
+		mode = ATH6KL_CFG_SUSPEND_WOW;
 
 	switch (mode) {
 	case ATH6KL_CFG_SUSPEND_WOW:
@@ -4006,7 +4025,6 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 
 		/* Flush all non control pkts in TX path */
 		ath6kl_tx_data_cleanup(ar);
-
 #ifdef USB_AUTO_SUSPEND
 		ar->state = ATH6KL_STATE_PRE_SUSPEND;
 #endif
@@ -5761,7 +5779,7 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 		goto FAIL;
 	}
 
-	if (WARN_ON(!wow))
+	if (!ar->get_wow_pattern && WARN_ON(!wow))
 		goto FAIL;
 
 	/* Reset wakeup delay time to 2 secs for sdio, keep 5 secs for
@@ -5775,81 +5793,93 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 		host_req_delay = 2000;
 
 	/* Clear existing WOW patterns */
-	for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
-		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
-					       WOW_LIST_ID, i);
+	if (!ar->get_wow_pattern) {
+		for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
+			ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
+							   WOW_LIST_ID, i);
 
-	/* Configure new WOW patterns */
-	for (i = 0; i < wow->n_patterns; i++) {
+		/* Configure new WOW patterns */
+		for (i = 0; i < wow->n_patterns; i++) {
 
-		if (ath6kl_wow_ext) {
-			ret = ath6kl_wmi_add_wow_ext_pattern_cmd(ar->wmi,
+			if (ath6kl_wow_ext) {
+				ret = ath6kl_wmi_add_wow_ext_pattern_cmd(
+						ar->wmi,
 						vif->fw_vif_idx, WOW_LIST_ID,
 						wow->patterns[i].pattern_len,
 						i,
+						0,
 						wow->patterns[i].pattern,
 						wow->patterns[i].mask);
-			/* filter for wow ext pattern */
-			filter |= WOW_FILTER_OPTION_PATTERNS;
-		} else {
-			/*
-			 * Convert given nl80211 specific mask value to
-			 * equivalent driver specific mask value and send
-			 * it to the chip along with patterns. For example,
-			 * If the mask value defined in struct cfg80211_wowlan
-			 * is 0xA (equivalent binary is 1010), then equivalent
-			 * driver specific mask value is "0xFF 0x00 0xFF 0x00".
-			 */
-			memset(&mask, 0, sizeof(mask));
-			for (pos = 0; pos < wow->patterns[i].pattern_len;
-				pos++) {
-				if (wow->patterns[i].mask[pos / 8] &
-					(0x1 << (pos % 8)))
-					mask[pos] = 0xFF;
-			}
-			/*
-			 * Note: Pattern's offset is not passed as part of
-			 * wowlan parameter from CFG layer. So it's always
-			 * passed as ZERO to the firmware. It means, given
-			 * WOW patterns are always matched from the first
-			 * byte of received pkt in the firmware.
-			 */
-			ret = ath6kl_wmi_add_wow_pattern_cmd(ar->wmi,
+				/* filter for wow ext pattern */
+				filter |= WOW_FILTER_OPTION_PATTERNS;
+			} else {
+				/*
+				 * Convert given nl80211 specific mask value to
+				 * equivalent driver specific mask value
+				 * and send it to the chip along with patterns.
+				 * For example, if the mask value defined
+				 * in struct cfg80211_wowlan is 0xA
+				 * (equivalent binary is 1010), then equivalent
+				 * driver specific mask value is
+				 * "0xFF 0x00 0xFF 0x00".
+				 */
+				memset(&mask, 0, sizeof(mask));
+				for (pos = 0;
+					pos < wow->patterns[i].pattern_len;
+					pos++) {
+					if (wow->patterns[i].mask[pos / 8] &
+						(0x1 << (pos % 8)))
+						mask[pos] = 0xFF;
+				}
+				/*
+				 * Note: Pattern's offset is not passed
+				 * as part of wowlan parameter from CFG layer.
+				 * So it's always passed as ZERO to
+				 * the firmware.
+				 * It means, given WOW patterns are always
+				 * matched from the first byte
+				 * of received pkt in the firmware.
+				 */
+				ret = ath6kl_wmi_add_wow_pattern_cmd(ar->wmi,
 						vif->fw_vif_idx, WOW_LIST_ID,
 						wow->patterns[i].pattern_len,
 						0 /* pattern offset */,
 						wow->patterns[i].pattern, mask);
+			}
+			if (ret)
+				return ret;
 		}
-		if (ret)
-			return ret;
-	}
+	} else
+		filter |= WOW_FILTER_OPTION_PATTERNS;
 
-	if (wow->disconnect || wow->any) {
-		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_NWK_DISASSOC\n");
-		filter |= WOW_FILTER_OPTION_NWK_DISASSOC;
-	}
+	if (wow) {
+		if (wow->disconnect || wow->any) {
+			ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_NWK_DISASSOC\n");
+			filter |= WOW_FILTER_OPTION_NWK_DISASSOC;
+		}
 
-	if (wow->magic_pkt || wow->any) {
-		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_MAGIC_PACKET\n");
-		filter |= WOW_FILTER_OPTION_MAGIC_PACKET;
-	}
-	if (wow->gtk_rekey_failure || wow->any) {
-		ath6kl_dbg(ATH6KL_DBG_WOWLAN,
-			"filter: WOW_FILTER_OPTION_OFFLOAD_GTK/GTK_ERROR\n");
-		filter |= (WOW_FILTER_OPTION_EAP_REQ |
-					WOW_FILTER_OPTION_8021X_4WAYHS |
-					WOW_FILTER_OPTION_GTK_ERROR |
-					WOW_FILTER_OPTION_OFFLOAD_GTK);
-	}
-	if (wow->eap_identity_req || wow->any) {
-		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_EAP_REQ\n");
-		filter |= WOW_FILTER_OPTION_EAP_REQ;
+		if (wow->magic_pkt || wow->any) {
+			ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_MAGIC_PACKET\n");
+			filter |= WOW_FILTER_OPTION_MAGIC_PACKET;
+		}
+		if (wow->gtk_rekey_failure || wow->any) {
+			ath6kl_dbg(ATH6KL_DBG_WOWLAN,
+				"filter: WOW_FILTER_OPTION_OFFLOAD_GTK/GTK_ERROR\n");
+			filter |= (WOW_FILTER_OPTION_EAP_REQ |
+						WOW_FILTER_OPTION_8021X_4WAYHS |
+						WOW_FILTER_OPTION_GTK_ERROR |
+						WOW_FILTER_OPTION_OFFLOAD_GTK);
+		}
+		if (wow->eap_identity_req || wow->any) {
+			ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_EAP_REQ\n");
+			filter |= WOW_FILTER_OPTION_EAP_REQ;
 
-	}
+		}
 
-	if (wow->four_way_handshake || wow->any) {
-		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_8021X_4WAYHS\n");
-		filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
+		if (wow->four_way_handshake || wow->any) {
+			ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_8021X_4WAYHS\n");
+			filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
+		}
 	}
 
 	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
@@ -5864,7 +5894,7 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 		filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
 	}
 
-	if (filter || wow->n_patterns) {
+	if (filter || (wow && wow->n_patterns)) {
 		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "Set filter: 0x%x ", filter);
 		ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						ATH6KL_WOW_MODE_ENABLE,

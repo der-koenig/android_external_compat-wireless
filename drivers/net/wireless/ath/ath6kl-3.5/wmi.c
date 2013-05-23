@@ -1918,6 +1918,12 @@ static int ath6kl_wmi_csa_event_rx(struct ath6kl_vif *vif,
 	ath6kl_tgt_ce_csa_event_rx(vif, datap, len);
 	return 0;
 }
+static int ath6kl_wmi_ce_get_ctl_event_rx(struct ath6kl_vif *vif,
+					u8 *datap, int len)
+{
+	ath6kl_tgt_ce_get_ctl_event(vif, datap, len);
+	return 0;
+}
 #endif
 
 static u8 ath6kl_wmi_get_upper_threshold(s16 rssi,
@@ -4745,6 +4751,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_CSA_EVENTID\n");
 		ret = ath6kl_wmi_csa_event_rx(vif, datap, len);
 		break;
+	case WMI_GET_CTL_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_CTL_EVENTID\n");
+		ret = ath6kl_wmi_ce_get_ctl_event_rx(vif, datap, len);
+		break;
 #endif
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
@@ -5094,7 +5104,8 @@ int ath6kl_wmi_set_apsd_buffered_traffic_cmd(struct wmi *wmi, u8 if_idx,
 
 int ath6kl_wmi_add_wow_ext_pattern_cmd(struct wmi *wmi, u8 if_idx,
 				   u8 list_id, u8 filter_size,
-				   u8 filter_id, u8 *filter, u8 *mask)
+				   u8 filter_id, u8 filter_offset,
+				   u8 *filter, u8 *mask)
 {
 	struct sk_buff *skb;
 	struct wmi_add_wow_ext_pattern_cmd *cmd;
@@ -5122,7 +5133,7 @@ int ath6kl_wmi_add_wow_ext_pattern_cmd(struct wmi *wmi, u8 if_idx,
 
 	cmd->filter_list_id = list_id;
 	cmd->filter_id = filter_id;
-	cmd->filter_offset = 0;
+	cmd->filter_offset = filter_offset;
 	cmd->filter_size = filter_size;
 
 	ath6kl_dbg(ATH6KL_DBG_WOWLAN, "Adding wow pattern\n");
