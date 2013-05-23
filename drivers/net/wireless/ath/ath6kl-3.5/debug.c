@@ -3832,6 +3832,11 @@ static ssize_t ath6kl_wowpattern_write(struct file *file,
 	buf[len] = '\0';
 	sptr = buf;
 
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return -EIO;
+
+
 	/* get pattern Idx */
 	token = strsep(&sptr, " ");
 	if (!token)
@@ -3840,10 +3845,18 @@ static ssize_t ath6kl_wowpattern_write(struct file *file,
 		return -EINVAL;
 	if (pattern_idx > 16)
 		return -EINVAL;
-	/* get pattern duration */
+
+	/* get pattern offset */
 	token = strsep(&sptr, " ");
-	if (!token)
-		return -EINVAL;
+
+	/* delete wow pattern if no futher argument */
+	if (!token) {
+		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi,
+								vif->fw_vif_idx,
+								WOW_LIST_ID,
+								pattern_idx);
+		return count;
+	}
 	if (kstrtou8(token, 0, &pattern_offset))
 		return -EINVAL;
 	/* get pattern path */
@@ -3855,10 +3868,6 @@ static ssize_t ath6kl_wowpattern_write(struct file *file,
 
 	if (!pattern_len || pattern_len > 128)
 		return -EINVAL;
-
-	vif = ath6kl_vif_first(ar);
-	if (!vif)
-		return -EIO;
 
 	/* Reset wakeup delay time to 2 secs for sdio, keep 5 secs for
 	 * usb now
@@ -3878,9 +3887,9 @@ static ssize_t ath6kl_wowpattern_write(struct file *file,
 		pattern_mask[mask_idx] = (1 << (pattern_len % 8)) - 1;
 
 	ath6kl_wmi_del_wow_pattern_cmd(ar->wmi,
-								vif->fw_vif_idx,
-								WOW_LIST_ID,
-								pattern_idx);
+							vif->fw_vif_idx,
+							WOW_LIST_ID,
+							pattern_idx);
 
 	ret = ath6kl_wmi_add_wow_ext_pattern_cmd(ar->wmi,
 							vif->fw_vif_idx,

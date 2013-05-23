@@ -16,6 +16,7 @@
  */
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
+#include <linux/vmalloc.h>
 #ifndef CE_OLD_KERNEL_SUPPORT_2_6_23
 #include <linux/of.h>
 #include <linux/interrupt.h>
