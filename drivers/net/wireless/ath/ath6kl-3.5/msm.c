@@ -640,17 +640,10 @@ static int ath6kl_sdio_probe(struct platform_device *pdev)
 		ret = ath6kl_platform_power(pdata, 1);
 		if (ret == 0) {
 			mdelay(50);
-#ifdef CONFIG_MMC_MSM_SDC3_POLLING
 			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
 			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
 			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
 			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
-#else
-			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
-			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
-			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
-			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
-#endif
 			mdelay(500);
 		}
 	}
@@ -678,17 +671,10 @@ static int ath6kl_sdio_remove(struct platform_device *pdev)
 			ath6kl_platform_power(pdata, 0);
 			regulator_put(pdata->wifi_chip_pwd->reg);
 			mdelay(50);
-#ifdef CONFIG_MMC_MSM_SDC3_POLLING
 			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
 			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
 			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
 			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
-#else
-			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
-			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
-			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
-			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
-#endif
 			mdelay(500);
 	}
 
