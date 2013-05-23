@@ -1458,7 +1458,7 @@ static int __init ath6kl_sdio_init(void)
 {
 	int ret;
 
-#ifdef CONFIG_ANDROID_8960_SDIO
+#ifdef CONFIG_ANDROID
 	ath6kl_sdio_init_msm();
 #endif
 	ret = sdio_register_driver(&ath6kl_sdio_driver);
@@ -1471,7 +1471,7 @@ static int __init ath6kl_sdio_init(void)
 static void __exit ath6kl_sdio_exit(void)
 {
 	sdio_unregister_driver(&ath6kl_sdio_driver);
-#ifdef CONFIG_ANDROID_8960_SDIO
+#ifdef CONFIG_ANDROID
 	ath6kl_sdio_exit_msm();
 #endif
 }

@@ -1143,14 +1143,14 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	ath6kl_reg_deinit(ar);
 
-	kfree(ar->fw_board);
-	kfree(ar->fw_otp);
-	kfree(ar->fw);
-	kfree(ar->fw_ext);
-	kfree(ar->fw_patch);
-	kfree(ar->fw_testscript);
-	kfree(ar->fw_softmac);
-	kfree(ar->fw_softmac_2);
+	vfree(ar->fw_board);
+	vfree(ar->fw_otp);
+	vfree(ar->fw);
+	vfree(ar->fw_ext);
+	vfree(ar->fw_patch);
+	vfree(ar->fw_testscript);
+	vfree(ar->fw_softmac);
+	vfree(ar->fw_softmac_2);
 
 	ath6kl_deinit_ieee80211_hw(ar);
 
@@ -1281,10 +1281,12 @@ fail:
 		return ret;
 
 	*fw_len = fw_entry->size;
-	*fw = kmemdup(fw_entry->data, fw_entry->size, GFP_KERNEL);
+	*fw = vmalloc(fw_entry->size);
 
 	if (*fw == NULL)
 		ret = -ENOMEM;
+
+	memcpy(*fw, fw_entry->data, fw_entry->size);
 
 	release_firmware(fw_entry);
 

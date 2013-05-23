@@ -57,7 +57,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.359)
+#define __BUILD_VERSION_ (3.5.0.360)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1998,7 +1998,7 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 				s32 snr,
 				struct ieee80211_channel *channel);
 
-#ifdef CONFIG_ANDROID_8960_SDIO
+#ifdef CONFIG_ANDROID
 void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
 #endif

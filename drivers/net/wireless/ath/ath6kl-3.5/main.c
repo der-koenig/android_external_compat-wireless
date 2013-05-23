@@ -2512,9 +2512,11 @@ case IEEE80211_IOCTL_KICKMAC:
 #endif
 		ret = ath6kl_ioctl_standard(dev, rq, cmd);
 		break;
+#ifndef CE_SUPPORT
 	case ATH6KL_IOCTL_WEXT_PRIV6:
 		ret = ath6kl_ioctl_get_if_freq(dev, rq, cmd);
 		break;
+#endif
 	case ATH6KL_IOCTL_WEXT_PRIV26:	/* endpoint loopback purpose */
 		get_user(cmd, (int *)rq->ifr_data);
 		userdata = (char *)(((unsigned int *)rq->ifr_data)+1);

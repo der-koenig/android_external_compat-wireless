@@ -220,6 +220,7 @@ static u32 bus_perf_client;
 static struct msm_bus_scale_pdata *ath6kl_bus_scale_pdata;
 
 u8 *platform_has_vreg;
+#endif
 
 #define VDD_MAX_VOLTAGE         3300000
 #define VDD_MIN_VOLTAGE         3000000
@@ -470,6 +471,7 @@ chip_pwd_fail:
 	return rc;
 }
 
+#ifdef ATH6KL_BUS_VOTE
 static int ath6kl_hsic_bind(int bind)
 {
 	char buf[16];
@@ -602,6 +604,142 @@ int ath6kl_hsic_init_msm(u8 *has_vreg)
 void ath6kl_hsic_exit_msm(void)
 {
 	platform_driver_unregister(&ath6kl_hsic_device);
+}
+#else
+
+struct semaphore wifi_control_sem;
+
+static int ath6kl_sdio_probe(struct platform_device *pdev)
+{
+	struct ath6kl_platform_data *pdata = NULL;
+	struct device *dev = &pdev->dev;
+	int ret = 0;
+	int length;
+	char buf[3];
+
+	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
+
+	if (!pdata) {
+		ath6kl_err("%s: Could not allocate memory for platform data\n",
+				__func__);
+		up(&wifi_control_sem);
+		return -ENOMEM;
+	}
+
+	if (ath6kl_dt_parse_vreg_info(dev, &pdata->wifi_chip_pwd,
+			"qca,wifi-chip-pwd") != 0) {
+			ath6kl_err("%s: parse vreg info error\n", __func__);
+			goto err;
+	}
+
+	pdata->pdev = pdev;
+	platform_set_drvdata(pdev, pdata);
+	gpdata = pdata;
+
+	if (pdata->wifi_chip_pwd != NULL) {
+		ret = ath6kl_platform_power(pdata, 1);
+		if (ret == 0) {
+			mdelay(50);
+#ifdef CONFIG_MMC_MSM_SDC3_POLLING
+			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
+			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
+#else
+			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
+			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
+#endif
+			mdelay(500);
+		}
+	}
+
+	up(&wifi_control_sem);
+	return ret;
+
+err:
+	if (pdata != NULL)
+		devm_kfree(dev, pdata);
+
+	up(&wifi_control_sem);
+	return -EINVAL;
+}
+
+static int ath6kl_sdio_remove(struct platform_device *pdev)
+{
+	char buf[3];
+	int length;
+	struct ath6kl_platform_data *pdata = platform_get_drvdata(pdev);
+
+	if (pdata->wifi_chip_pwd != NULL &&
+			!IS_ERR(pdata->wifi_chip_pwd->reg))  {
+
+			ath6kl_platform_power(pdata, 0);
+			regulator_put(pdata->wifi_chip_pwd->reg);
+			mdelay(50);
+#ifdef CONFIG_MMC_MSM_SDC3_POLLING
+			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
+			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.3/polling", NULL, buf, length);
+#else
+			length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
+			length = snprintf(buf, sizeof(buf), "%d\n", 0 ? 1 : 0);
+			android_readwrite_file("/sys/devices/msm_sdcc.4/polling", NULL, buf, length);
+#endif
+			mdelay(500);
+	}
+
+	up(&wifi_control_sem);
+	return 0;
+}
+
+static const struct of_device_id ath6kl_sdio_dt_match[] = {
+	{ .compatible = "qca,ar6004-sdio",},
+	{}
+};
+
+MODULE_DEVICE_TABLE(of, ath6kl_sdio_dt_match);
+
+static struct platform_driver ath6kl_sdio_device = {
+	.probe  = ath6kl_sdio_probe,
+	.remove = ath6kl_sdio_remove,
+	.driver = {
+		.name   = "ath6kl_sdio",
+		.of_match_table = ath6kl_sdio_dt_match,
+	}
+};
+
+void ath6kl_sdio_init_msm(void)
+{
+	int ret;
+
+	sema_init(&wifi_control_sem, 1);
+	down(&wifi_control_sem);
+
+	ret = platform_driver_register(&ath6kl_sdio_device);
+
+	/* Waiting callback after platform_driver_register */
+	if (down_timeout(&wifi_control_sem,  msecs_to_jiffies(5000)) != 0) {
+		ret = -EINVAL;
+		printk(KERN_INFO "platform_driver_register timeout\n");
+		return;
+	}
+
+	return;
+}
+
+void ath6kl_sdio_exit_msm(void)
+{
+	platform_driver_unregister(&ath6kl_sdio_device);
+
+	/* Waiting callback after platform_driver_register */
+	if (down_timeout(&wifi_control_sem,  msecs_to_jiffies(5000)) != 0) {
+		printk(KERN_INFO "platform_driver_unregister timeout\n");
+		return;
+	}
 }
 
 #endif /* #ifdef ATH6KL_BUS_VOTE */
