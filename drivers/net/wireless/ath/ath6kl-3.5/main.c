@@ -2027,12 +2027,13 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 				int len)
 {
 	int ret = 0, scanband_type = 0;
+	int i, f = 0;
 	u8 not_allow_ch;
 
 	/* SET::SETBAND {band} */
 	if (len > 1) {
 		ret = 0;
-		sscanf(user_cmd, "%d", &scanband_type);
+		sscanf(user_cmd, "%d %d", &scanband_type, &f);
 
 		if (scanband_type == ANDROID_SETBAND_ALL)
 			vif->scanband_type = SCANBAND_TYPE_ALL;
@@ -2042,7 +2043,24 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 			vif->scanband_type = SCANBAND_TYPE_2G;
 		else if (scanband_type == ANDROID_SETBAND_NO_DFS)
 			vif->scanband_type = SCANBAND_TYPE_IGNORE_DFS;
-		else if ((scanband_type >= 2412) && (scanband_type <= 5825)) {
+		else if (scanband_type == ANDROID_SETBAND_NO_CH) {
+			vif->scanband_type = SCANBAND_TYPE_IGNORE_CH;
+			if (f == 1) {	/* reset */
+				memset(vif->scanband_ignore_chan,
+					0,
+					sizeof(u16) * 64);
+			} else {
+				for (i = 0; i < 64; i++) {
+					if (vif->scanband_ignore_chan[i] == f)
+						break;
+					else if (!vif->scanband_ignore_chan[i])
+						break;
+				}
+
+				if (i < 64)
+					vif->scanband_ignore_chan[i] = f;
+			}
+		} else if ((scanband_type >= 2412) && (scanband_type <= 5825)) {
 			vif->scanband_type = SCANBAND_TYPE_CHAN_ONLY;
 			vif->scanband_chan = scanband_type;
 		} else
@@ -2223,6 +2241,20 @@ static int ath6kl_ioctl_ap_acl(struct ath6kl_vif *vif,
 	return ret;
 }
 
+bool ath6kl_ioctl_ready(struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	if (!test_bit(WMI_READY, &ar->flag)) {
+		ath6kl_err("wmi is not ready\n");
+		return false;
+	}
+	if (!test_bit(WLAN_ENABLED, &vif->flags)) {
+		ath6kl_err("wlan disabled\n");
+		return false;
+	}
+	return true;
+}
+
 static int ath6kl_ioctl_standard(struct net_device *dev,
 				struct ifreq *rq, int cmd)
 {
@@ -2338,8 +2370,18 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					btcoex_cmd.cmd_len))
 				ret = -EIO;
 			else {
+				if (!ath6kl_ioctl_ready(vif))
+					return -EIO;
+
+				if (down_interruptible(&vif->ar->sem)) {
+					ath6kl_err("busy, couldn't get access\n");
+					return -ERESTARTSYS;
+				}
+
 				ret = ath6kl_wmi_send_btcoex_cmd(vif->ar,
 					(u8 *)user_cmd, btcoex_cmd.cmd_len);
+
+				up(&vif->ar->sem);
 			}
 			kfree(user_cmd);
 		}

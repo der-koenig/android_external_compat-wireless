@@ -561,16 +561,12 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	connect.ep_cb.rx_refill = ath6kl_rx_refill;
 	connect.ep_cb.tx_full = ath6kl_tx_queue_full;
 
-	/*
-	 * Set the max queue depth so that our ath6kl_tx_queue_full handler
-	 * gets called.
-	*/
-	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH;
 	connect.ep_cb.rx_refill_thresh = ATH6KL_MAX_RX_BUFFERS / 4;
 	if (!connect.ep_cb.rx_refill_thresh)
 		connect.ep_cb.rx_refill_thresh++;
 
 	/* connect to control service */
+	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH_CTRL;
 	connect.svc_id = WMI_CONTROL_SVC;
 	if (ath6kl_connectservice(ar, &connect, "WMI CONTROL"))
 		return -EIO;
@@ -600,6 +596,11 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	connect.conn_flags &= ~HTC_CONN_FLGS_THRESH_MASK;
 	connect.conn_flags |= HTC_CONN_FLGS_THRESH_LVL_HALF;
 
+	/*
+	 * Set the max queue depth so that our ath6kl_tx_queue_full handler
+	 * gets called.
+	 */
+	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH;
 	connect.svc_id = WMI_DATA_BE_SVC;
 
 	if (ath6kl_connectservice(ar, &connect, "WMI DATA BE"))

@@ -604,6 +604,40 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	} else
 		goto fail_tx;
 
+#ifdef CONFIG_ANDROID
+	if (test_bit(CONNECTED, &vif->flags) &&
+	    (skb->protocol == cpu_to_be16(ETH_P_PAE))) {
+		struct ath6kl_vif *tmp;
+		int i;
+
+		/*
+		 * To avoid scan let EAPOL frame lost or timeout and
+		 * here preempt scan for a while when transmit EAPOL
+		 * frame.
+		 */
+		set_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
+		ar->eapol_shprotect_vif |= (1 << vif->fw_vif_idx);
+
+		mod_timer(&ar->eapol_shprotect_timer,
+			jiffies + ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE);
+
+		for (i = 0; i < ar->vif_max; i++) {
+			tmp = ath6kl_get_vif_by_index(ar, i);
+			if (tmp && tmp->scan_req) {
+				ath6kl_info("tEAPOL on-going, vif %d\n",
+					tmp->fw_vif_idx);
+
+				del_timer(&tmp->vifscan_timer);
+				ath6kl_wmi_abort_scan_cmd(ar->wmi,
+						tmp->fw_vif_idx);
+				cfg80211_scan_done(tmp->scan_req, true);
+				tmp->scan_req = NULL;
+				clear_bit(SCANNING, &tmp->flags);
+			}
+		}
+	}
+#endif
+
 	/* TX A-MSDU */
 	if ((test_bit(AMSDU_ENABLED, &vif->flags)) &&
 		(!bypass_tx_aggr) &&
@@ -1066,7 +1100,12 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 			vif->net_stats.tx_errors++;
 
-			if (status != -ENOSPC && status != -ECANCELED)
+			if (status == -ETXTBSY)
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
+					"wmi/tx deepsleep syspend\n");
+			else if (status != -ENOSPC &&
+				status != -ECANCELED &&
+				status != -ENOMEM)
 				ath6kl_debug("tx complete error: %d\n", status);
 
 			ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
@@ -1313,7 +1352,7 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 			for (i = 0; i < ar->vif_max; i++) {
 				tmp = ath6kl_get_vif_by_index(ar, i);
 				if (tmp && tmp->scan_req) {
-					ath6kl_info("EAPOL on-going, vif %d\n",
+					ath6kl_info("rEAPOL on-going, vif %d\n",
 						tmp->fw_vif_idx);
 
 					del_timer(&tmp->vifscan_timer);
@@ -2733,8 +2772,8 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 
 	skb = amsdu_skb;
 	aggr_tx_reset_aggr(txtid, false, timer_stop);
-	if (!timer_stop)
-		aggr_tx_progressive(txtid, true);
+	aggr_tx_progressive(txtid, !timer_stop);
+
 	spin_unlock_bh(&txtid->lock);
 
 	spin_lock_bh(&ar->lock);

@@ -43,10 +43,8 @@ bool ath6kl_btcoex_cfg80211_ready(struct ath6kl_vif *vif)
 	if (!__ath6kl_btcoex_cfg80211_ready(vif->ar))
 		return false;
 
-	if (!test_bit(WLAN_ENABLED, &vif->flags)) {
-		ath6kl_err("wlan disabled\n");
+	if (!test_bit(WLAN_ENABLED, &vif->flags))
 		return false;
-	}
 
 	return true;
 }

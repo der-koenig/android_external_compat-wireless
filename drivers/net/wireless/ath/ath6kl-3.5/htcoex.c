@@ -373,7 +373,7 @@ void ath6kl_htcoex_deinit(struct ath6kl_vif *vif)
 
 	if (coex) {
 		if (coex->flags & ATH6KL_HTCOEX_FLAGS_START) {
-			del_timer(&coex->scan_timer);
+			del_timer_sync(&coex->scan_timer);
 			htcoex_clear_scan_channels(vif);
 		}
 		htcoex_flush_bss_info(coex);

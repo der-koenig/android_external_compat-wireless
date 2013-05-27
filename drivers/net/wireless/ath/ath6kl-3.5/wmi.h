@@ -753,11 +753,14 @@ enum wmi_cmd_id {
 	WMI_SET_CHAIN_MASK_CMDID,
 
 	WMI_SET_SCAN_CHAN_PLAN_CMDID,
-	WMI_SET_DTIM_EXT_CMDID,
+	WMI_SET_MCC_EVENT_MODE_CMDID,
 	WMI_GET_CTL,
-/* merge from olca mainline for align command id - end */
 
-	WMI_SET_CREDIT_BYPASS_CMDID,
+/* merge from olca mainline for align command id - end
+ * private commands shall grow back from 0xFFFE
+ */
+	WMI_SET_DTIM_EXT_CMDID = 0xFFFD,
+	WMI_SET_CREDIT_BYPASS_CMDID = 0xFFFE,
 };
 
 enum wmi_mgmt_frame_type {
@@ -1587,6 +1590,11 @@ enum wmi_event_id {
 	WMI_GET_WIDIMODE_EVENTID,/* 0x902C */
 	WMI_CSA_EVENTID,
 	WMI_GET_CTL_EVENTID,
+
+/* merge from olca mainline for align command id - end
+ * private commands shall grow back from 0xFFFE
+ */
+	WMI_EVENTID_LAST = 0xFFFE,
 };
 
 struct wmi_ready_event_2 {
