@@ -20,10 +20,6 @@
 #include "debug.h"
 #ifdef CONFIG_ANDROID
 #include <mach/socinfo.h>
-
-#ifndef machine_is_apq8064_dma
-#define machine_is_apq8064_dma() 0
-#endif
 #endif
 
 #define BDATA_ANTCONF_OFFSET	4069

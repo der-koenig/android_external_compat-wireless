@@ -33,6 +33,7 @@
 #ifdef CONFIG_ANDROID
 #ifdef CONFIG_HAS_WAKELOCK
 #include <linux/wakelock.h>
+#include <asm/mach-types.h>
 #endif
 #endif
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -57,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.364)
+#define __BUILD_VERSION_ (3.5.0.369)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -203,6 +204,10 @@
  * need to remove QCA's cfg80211 implementations.
  */
 #undef ATH6KL_SUPPORT_NL80211_QCA
+#endif
+
+#ifndef machine_is_apq8064_dma
+#define machine_is_apq8064_dma() 0
 #endif
 #endif
 
@@ -372,12 +377,18 @@
 #define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
 
 /*
- * 1500 ms. = RX EAPOL request +
+ * 1250 ms. = RX EAPOL +
+ *            ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE +
  *            supplicant procressing time +
- *            supplicant TX EAPOL response +
- *            wait next EAPOL request
+ *            TX EAPOL +
+ *            wait next RX EAPOL
+ * or,
+ *          = TX EAPOL +
+ *            peer's supplicant procressing time +
+ *            RX EAPOL +
+ *            wait next TX EAPOL
  */
-#define ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE	(msecs_to_jiffies(1500))
+#define ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE	(msecs_to_jiffies(1250))
 
 /* default roam mode for different situation */
 #if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))
@@ -2001,6 +2012,7 @@ void ath6kl_sdio_exit_msm(void);
 #ifdef ATH6KL_BUS_VOTE
 int ath6kl_hsic_init_msm(u8 *has_vreg);
 void ath6kl_hsic_exit_msm(void);
+int ath6kl_hsic_bind(int bind);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);

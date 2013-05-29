@@ -62,7 +62,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* Disable USB Auto-suspend */
 	ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND = BIT(13),
 
-	/* hole */
+	/* Enable single chain in wow */
+	ATH6KL_MODULE_ENABLE_WOW_SINGLE_CHAIN = BIT(14),
 
 	/* offload AP keep-alive to supplicant */
 	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15),

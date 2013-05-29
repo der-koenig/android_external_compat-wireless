@@ -356,6 +356,9 @@ struct host_interest {
 /* Enable SB specific function */
 #define HI_OPTION_ENABLE_SB_SPECIFIC      0x4000000
 
+/* Enable single chain in wow */
+#define HI_OPTION_WOW_SINGLE_CHAIN		0x8000000
+
 /*Enable/Disable Wifi Heart Beat Feature*/
 #define HI_OPTION_ENABLE_WLAN_HB              0x10000000
 

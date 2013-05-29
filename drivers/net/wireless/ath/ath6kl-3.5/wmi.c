@@ -1238,7 +1238,7 @@ static int ath6kl_wmi_ready_event_rx(struct wmi *wmi, u8 *datap, int len)
  * WMI_SET_LRSSI_SCAN_PARAMS. Subtract 96 from RSSI to get the signal level
  * in dBm.
  */
-int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
+int ath6kl_wmi_set_roam_ctrl_cmd(struct wmi *wmi,
 	u8 fw_vif_idx,
 	u16  lowrssi_scan_period,
 	u16  lowrssi_scan_threshold,
@@ -2616,6 +2616,9 @@ int ath6kl_wmi_powermode_cmd(struct wmi *wmi, u8 if_idx, u8 pwr_mode)
 	struct wmi_power_mode_cmd *cmd;
 	struct ath6kl_vif *vif;
 	int ret;
+
+	if ((pwr_mode != REC_POWER) && (pwr_mode != MAX_PERF_POWER))
+		return -EINVAL;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
 	if (!skb)

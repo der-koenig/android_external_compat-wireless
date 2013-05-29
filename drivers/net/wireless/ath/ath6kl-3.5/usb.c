@@ -2018,7 +2018,11 @@ static int ath6kl_usb_power_on(struct ath6kl *ar)
 	if (test_bit(USB_REMOTE_WKUP, &ar->flag) ||
 	    BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
 		struct ath6kl_usb *ar_usb = (struct ath6kl_usb *)ar->hif_priv;
-		usb_reset_device(ar_usb->udev);
+
+#ifdef CONFIG_ANDROID
+		if (!machine_is_apq8064_dma())
+#endif
+			usb_reset_device(ar_usb->udev);
 	}
 
 	hif_start(ar);
@@ -2415,7 +2419,9 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	spin_lock_init(&ar->usb_pm_lock);
 	INIT_LIST_HEAD(&ar->usb_pm_skb_queue.list);
 	pm_runtime_set_autosuspend_delay(&dev->dev, 2000);
-	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM))
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM) &&
+		!(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_ENABLE) ||
+		ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING)))
 		usb_enable_autosuspend(dev);
 	ar->auto_pm_cnt = 0;
 #endif
@@ -2635,6 +2641,11 @@ static int ath6kl_usb_init(void)
 	usb_register(&ath6kl_usb_driver);
 
 #ifdef ATH6KL_BUS_VOTE
+#ifdef CONFIG_ANDROID
+	if (machine_is_apq8064_dma())
+		ath6kl_platform_has_vreg = 1;
+#endif
+
 	if (ath6kl_hsic_init_msm(&ath6kl_platform_has_vreg) != 0)
 		ath6kl_err("%s ath6kl_hsic_init_msm failed\n", __func__);
 
@@ -2647,6 +2658,10 @@ static int ath6kl_usb_init(void)
 	}
 #endif
 
+#ifdef ATH6KL_BUS_VOTE
+	if (machine_is_apq8064_dma())
+		ath6kl_hsic_bind(1);
+#endif
 	return 0;
 }
 
@@ -2670,6 +2685,12 @@ finish:
 #ifdef ATH6KL_BUS_VOTE
 	ath6kl_hsic_exit_msm();
 #endif
+
+#ifdef ATH6KL_BUS_VOTE
+	if (machine_is_apq8064_dma())
+		ath6kl_hsic_bind(0);
+#endif
+
 }
 #else
 static int ath6kl_usb_init(void)

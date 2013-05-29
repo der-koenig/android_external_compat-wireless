@@ -594,7 +594,7 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 				/* p2p client shall not do normal roam */
 				if (vif->sc_params.scan_ctrl_flags &
 					ROAM_SCAN_CTRL_FLAGS)
-					ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(
+					ath6kl_wmi_set_roam_ctrl_cmd(
 						ar->wmi, vif->fw_vif_idx,
 						0xFFFF, 0, 0, 100);
 			}

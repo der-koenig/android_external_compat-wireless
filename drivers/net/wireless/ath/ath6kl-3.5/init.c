@@ -1020,6 +1020,10 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	param |= HI_OPTION_ENABLE_WLAN_HB;
 #endif
 
+	/* Enable single chain in wow */
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_WOW_SINGLE_CHAIN))
+		param |= HI_OPTION_WOW_SINGLE_CHAIN;
+
 	/* Set firmware to support MCC */
 	if (ar->p2p_concurrent)
 		param |= HI_OPTION_MCC_ENABLE ;
@@ -1241,7 +1245,7 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 
 	fp = openFile(full_patch, O_RDONLY, 0);
 	if (fp != NULL) {
-		temp_buf = kmalloc(total_len, GFP_KERNEL);
+		temp_buf = vmalloc(total_len);
 		if (temp_buf != NULL) {
 			memset(buf, 0, MAX_BUFFER_SIZE);
 			ret = readFile(fp, buf, MAX_BUFFER_SIZE);
@@ -1263,13 +1267,16 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 	if (status == 0) {
 		if (temp_buf != NULL) {
 			*fw_len = total_len;
-			*fw = kmemdup(temp_buf, total_len, GFP_KERNEL);
+			*fw = vmalloc(total_len);
+
 			if (*fw == NULL)
 				status = -ENOMEM;
+			else
+				memcpy(*fw, temp_buf, total_len);
 		}
 	}
 	if (temp_buf != NULL)
-		kfree(temp_buf);
+		vfree(temp_buf);
 fail:
 	set_fs(oldfs);
 #undef MAX_BUFFER_SIZE

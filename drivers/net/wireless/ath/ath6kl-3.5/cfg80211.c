@@ -727,14 +727,14 @@ void ath6kl_judge_roam_parameter(
 
 DONE:
 	if (lrssi_scan_enable) {
-		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+		ath6kl_wmi_set_roam_ctrl_cmd(ar->wmi,
 				0,
 				ar->low_rssi_roam_params.lrssi_scan_period,
 				ar->low_rssi_roam_params.lrssi_scan_threshold,
 				ar->low_rssi_roam_params.lrssi_roam_threshold,
 				ar->low_rssi_roam_params.roam_rssi_floor);
 	} else {
-		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+		ath6kl_wmi_set_roam_ctrl_cmd(ar->wmi,
 			0, 0xFFFF, 0, 0, 100);
 	}
 
@@ -6669,18 +6669,18 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+#ifdef CONFIG_ANDROID
+	/* Enable htcoex for wlan0 in Android. Scan period is 60s */
+	if ((vif->fw_vif_idx == 0) &&
+	    (vif->ar->target_subtype & TARGET_SUBTYPE_HT40))
+		ath6kl_htcoex_config(vif, ATH6KL_HTCOEX_SCAN_PERIOD, 0);
+
+	/* WAR: CR480066 */
 	vif->bss_post_proc_ctx = ath6kl_bss_post_proc_init(vif);
 	if (!vif->bss_post_proc_ctx) {
 		ath6kl_err("failed to initialize bss_post_proc\n");
 		return -ENOMEM;
 	}
-
-#ifdef CONFIG_ANDROID
-	/*Enable htcoex for wlan0 in Android. Scan period is 60s*/
-	if ((vif->fw_vif_idx == 0) &&
-	    (vif->ar->target_subtype & TARGET_SUBTYPE_HT40))
-		ath6kl_htcoex_config(vif,
-			ATH6KL_HTCOEX_SCAN_PERIOD, 0);
 #endif
 
 	vif->p2p_ps_info_ctx = ath6kl_p2p_ps_init(vif);
@@ -6747,6 +6747,7 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 	} else
 		vif->scanband_type = SCANBAND_TYPE_ALL;
 
+	vif->saved_pwr_mode =
 	vif->last_pwr_mode = REC_POWER;
 
 	return 0;

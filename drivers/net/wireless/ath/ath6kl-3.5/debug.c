@@ -1178,7 +1178,7 @@ static ssize_t ath6kl_lrssi_roam_write(struct file *file,
 	if (ret)
 		return ret;
 
-	ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+	ath6kl_wmi_set_roam_ctrl_cmd(ar->wmi,
 			0,
 			ar->low_rssi_roam_params.lrssi_scan_period,
 			ar->low_rssi_roam_params.lrssi_scan_threshold,
