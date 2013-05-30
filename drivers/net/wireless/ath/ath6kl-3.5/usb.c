@@ -1471,7 +1471,10 @@ void usb_auto_pm_turnon(struct ath6kl *ar)
 {
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM))
-		usb_enable_autosuspend(device->udev);
+#ifdef CONFIG_ANDROID
+		if (!machine_is_apq8064_dma())
+#endif
+			usb_enable_autosuspend(device->udev);
 }
 
 
@@ -2421,8 +2424,14 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	pm_runtime_set_autosuspend_delay(&dev->dev, 2000);
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM) &&
 		!(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_ENABLE) ||
-		ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING)))
-		usb_enable_autosuspend(dev);
+		ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING))) {
+#ifdef CONFIG_ANDROID
+		if (machine_is_apq8064_dma())
+			usb_disable_autosuspend(ar_usb->udev);
+		else
+#endif
+			usb_enable_autosuspend(dev);
+	}
 	ar->auto_pm_cnt = 0;
 #endif
 	ath6kl_htc_pipe_attach(ar);
@@ -2642,8 +2651,10 @@ static int ath6kl_usb_init(void)
 
 #ifdef ATH6KL_BUS_VOTE
 #ifdef CONFIG_ANDROID
-	if (machine_is_apq8064_dma())
+	if (machine_is_apq8064_dma()) {
 		ath6kl_platform_has_vreg = 1;
+		ath6kl_hsic_bind(1);
+	}
 #endif
 
 	if (ath6kl_hsic_init_msm(&ath6kl_platform_has_vreg) != 0)
@@ -2658,10 +2669,6 @@ static int ath6kl_usb_init(void)
 	}
 #endif
 
-#ifdef ATH6KL_BUS_VOTE
-	if (machine_is_apq8064_dma())
-		ath6kl_hsic_bind(1);
-#endif
 	return 0;
 }
 
