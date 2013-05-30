@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.369)
+#define __BUILD_VERSION_ (3.5.0.372)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1716,6 +1716,8 @@ struct ath6kl {
 		u8 force_passive;
 		u16 bgscan_int;
 		enum wmi_roam_mode roam_mode;
+#define ROAM_NULL_5G_BIAS	(255)
+		u8 roam_5g_bias;
 
 		struct smps_param {
 			u8 flags;

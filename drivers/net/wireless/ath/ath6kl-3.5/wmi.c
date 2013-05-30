@@ -1309,6 +1309,26 @@ int ath6kl_wmi_set_roam_mode_cmd(struct wmi *wmi, enum wmi_roam_mode mode)
 				   NO_SYNC_WMIFLAG);
 }
 
+int ath6kl_wmi_set_roam_5g_bias_cmd(struct wmi *wmi, u8 bias_5g)
+{
+	struct sk_buff *skb;
+	struct roam_ctrl_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct roam_ctrl_cmd *) skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info.bias5G = bias_5g;
+	cmd->roam_ctrl = WMI_SET_HOST_5G_BIAS;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "set roam 5g bias %d\n", bias_5g);
+	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ROAM_CTRL_CMDID,
+				   NO_SYNC_WMIFLAG);
+}
+
 static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				       struct ath6kl_vif *vif)
 {

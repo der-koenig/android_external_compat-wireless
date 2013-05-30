@@ -3228,6 +3228,22 @@ int ath6kl_core_init(struct ath6kl *ar)
 		}
 	}
 
+#ifdef CE_SUPPORT
+	/* set power saving off as default for wlan0
+	 * (target side default is PS on)
+	*/
+	{
+		struct ath6kl_vif *vif_first;
+		vif_first = ath6kl_vif_first(ar);
+		u8 pwr_mode;
+		pwr_mode = MAX_PERF_POWER;
+		if (ath6kl_wmi_powermode_cmd(ar->wmi, vif_first->fw_vif_idx,
+			pwr_mode) != 0)
+			vif_first->wdev.ps = NL80211_PS_ENABLED;
+		else
+			vif_first->wdev.ps = NL80211_PS_DISABLED;
+	}
+#endif
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY)) {
 		ath6kl_info("Enable Firmware crash notiry.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;

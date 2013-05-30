@@ -1575,6 +1575,48 @@ static const struct file_operations fops_roam_mode = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath6kl_roam_5g_bias_read(struct file *file,
+	char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u8 buf[32];
+	unsigned int len = 0;
+
+	len = scnprintf(buf, sizeof(buf), "roam 5g bias: %d\n",
+		ar->debug.roam_5g_bias);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath6kl_roam_5g_bias_write(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	int ret;
+	u8 bias_5g;
+
+	ret = kstrtou8_from_user(user_buf, count, 0, &bias_5g);
+	if (ret)
+		return ret;
+
+	ar->debug.roam_5g_bias = bias_5g;
+
+	ret = ath6kl_wmi_set_roam_5g_bias_cmd(ar->wmi, bias_5g);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static const struct file_operations fops_roam_5g_bias = {
+	.read = ath6kl_roam_5g_bias_read,
+	.write = ath6kl_roam_5g_bias_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath6kl_debug_set_keepalive(struct ath6kl *ar, u8 keepalive)
 {
 	ar->debug.keepalive = keepalive;
@@ -5601,6 +5643,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("roam_mode", S_IWUSR, ar->debugfs_phy, ar,
 			    &fops_roam_mode);
+
+	debugfs_create_file("roam_5g_bias", S_IWUSR, ar->debugfs_phy, ar,
+			    &fops_roam_5g_bias);
 
 	debugfs_create_file("keepalive", S_IRUSR | S_IWUSR, ar->debugfs_phy, ar,
 			    &fops_keepalive);
