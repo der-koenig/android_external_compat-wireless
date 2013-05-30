@@ -78,7 +78,6 @@ ccflags-y += -include include/linux/ieee80211.h
 ccflags-y += -include include/linux/nl80211.h
 ccflags-y += -include include/net/cfg80211.h
 ccflags-y += -include include/linux/compat-2.6.h
-ccflags-y += -include ../../$(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/linux/version.h
 endif
 
 ifeq ($(BUILD_ATH_ETH_ALX), 1)
