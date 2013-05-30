@@ -51,6 +51,10 @@ ifeq ($(call is-board-platform,msm8974),true)
 export HAVE_BUS_VOTE=1
 endif
 
+ifeq ($(call is-board-platform,msm8960),true)
+export HAVE_BUS_VOTE=1
+endif
+
 ifeq ($(BOARD_HAS_CFG80211_KERNEL3_4), true)
 export HAVE_CFG80211=0
 export HAVE_CFG80211_KERNEL3_4=1
