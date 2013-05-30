@@ -13,18 +13,20 @@ export HAVE_CFG80211=1
 KBUILD_OPTIONS += CONFIG_ATH6KL_SDIO=m CONFIG_CFG80211=m
 
 include $(CLEAR_VARS)
-LOCAL_ARM_MODE           := arm
-LOCAL_MODULE             := cfg80211.ko
-LOCAL_MODULE_TAGS        := debug
-LOCAL_MODULE_PATH        := $(TARGET_OUT)/lib/modules
+LOCAL_ARM_MODE            := arm
+LOCAL_MODULE              := cfg80211.ko
+LOCAL_MODULE_TAGS         := debug
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(TARGET_OUT)/lib/modules
 include $(DLKM_DIR)/AndroidKernelModule.mk
 
 include $(CLEAR_VARS)
-LOCAL_ARM_MODE           := arm
-LOCAL_MODULE             := ath6kl_sdio.ko
-LOCAL_MODULE_KBUILD_NAME := wlan.ko
-LOCAL_MODULE_TAGS        := debug
-LOCAL_MODULE_PATH        := $(TARGET_OUT)/lib/modules
+LOCAL_ARM_MODE            := arm
+LOCAL_MODULE              := ath6kl_sdio.ko
+LOCAL_MODULE_KBUILD_NAME  := wlan.ko
+LOCAL_MODULE_TAGS         := debug
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(TARGET_OUT)/lib/modules
 include $(DLKM_DIR)/AndroidKernelModule.mk
 endif
 
