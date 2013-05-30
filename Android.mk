@@ -10,6 +10,8 @@ ifeq ($(BOARD_HAS_ATH_WLAN), true)
 export BUILD_ATH6KL_VER_32=1
 export HAVE_CFG80211=1
 
+KBUILD_OPTIONS += CONFIG_ATH6KL_SDIO=m CONFIG_CFG80211=m
+
 include $(CLEAR_VARS)
 LOCAL_MODULE             := cfg80211.ko
 LOCAL_MODULE_TAGS        := debug
