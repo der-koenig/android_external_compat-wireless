@@ -741,6 +741,11 @@ int ath6kl_reg_target_notify(struct ath6kl *ar, u32 reg_code)
 
 	BUG_ON(!reg);
 
+	if ((reg_code & ATH6KL_REG_CODE_MASK) == NULL_REG_CODE) {
+		ath6kl_err("reg unknown code 0x%x, ignore it\n", reg_code);
+		return -EINVAL;
+	}
+
 	if (reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB)
 		regd = ath6kl_reg_update(reg, reg_code, true);
 	else {

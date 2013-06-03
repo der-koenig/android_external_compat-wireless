@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.374)
+#define __BUILD_VERSION_ (3.5.0.375)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -97,22 +97,15 @@
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
 	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
-	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
-	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
-	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
 	 0)
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
-	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
-	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
-	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
 	 0)
 #endif
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
-	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
 	ATH6KL_MODULE_DISABLE_SKB_DUP |			\
 	0)
 #endif
@@ -1138,6 +1131,8 @@ struct target_stats {
 	u32 arp_received;
 	u32 arp_matched;
 	u32 arp_replied;
+
+	struct timeval update_time;
 };
 
 struct ath6kl_mbox_info {
@@ -1421,6 +1416,9 @@ struct ath6kl_vif {
 	int best_chan[4];
 #endif
 	struct wmi_ant_div_stat ant_div_stat;
+	struct wmi_ani_stat ani_stat;
+	u8 ani_enable;
+	u8 ani_pollcnt;
 
 	struct delayed_work work_pending_connect;
 	struct p2p_pending_connect_info *pending_connect_info;

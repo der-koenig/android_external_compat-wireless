@@ -748,6 +748,8 @@ enum wmi_cmd_id {
 	WMI_SET_ANTDIVCFG_CMDID, /* F0CC */
 	WMI_GET_ANTDIVSTAT_CMDID,
 
+	WMI_GET_ANISTAT_CMDID,
+
 	WMI_SET_SEAMLESS_MCC_SCC_SWITCH_FREQ_CMDID,
 
 	WMI_SET_CHAIN_MASK_CMDID,
@@ -2266,6 +2268,32 @@ struct wmi_ant_div_stat {
 	u8	fast_div_bias;
 } __packed;
 
+/* WMI_ANI_STAT */
+struct wmi_ani_stat {
+	u8	enable;
+	u8	rssi;
+	u8	pollcnt;
+	u8	noiseImmunityLevel;
+	u8	spurImmunityLevel;
+	u8	firstepLevel;
+	u8	ofdmWeakSigDetectOff;
+	u8	cckWeakSigThreshold;
+	u32	listenTime;
+	u32	ofdmTrigHigh;
+	u32	ofdmTrigLow;
+	u32	cckTrigHigh;
+	u32	cckTrigLow;
+	u32	rssiThrLow;
+	u32	rssiThrHigh;
+	u32	cycleCount;
+	u32	ofdmPhyErrCount;
+	u32	cckPhyErrCount;
+	u32	ofdmPhyErrBase;
+	u32	cckPhyErrBase;
+	u32	rxFrameCount;
+	u32	txFrameCount;
+} __packed;
+
 #define WMI_MAX_PMKID_CACHE   8
 #define MAX_PMKID_LIST_SIZE   (sizeof(__le32) + WMI_MAX_PMKID_CACHE * \
 				(sizeof(struct wmi_pmkid) + ETH_ALEN))
@@ -3533,6 +3561,11 @@ int ath6kl_wmi_antdivstate_debug_event_rx(struct ath6kl_vif *vif,
 	u8 *datap, int len);
 int ath6kl_antdiv_stat_debug(struct ath6kl *ar, u8 *buf, int buf_len);
 
+int ath6kl_wmi_anistate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len);
+
+int ath6kl_wmi_anistate_debug_event_rx(struct ath6kl_vif *vif,
+	u8 *datap, int len);
+int ath6kl_ani_stat_debug(struct ath6kl *ar, u8 *buf, int buf_len);
 int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon);
 
 int ath6kl_wmi_set_scan_chan_plan(struct wmi *wmi, u8 if_idx,

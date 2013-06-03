@@ -249,6 +249,9 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				/* use BDR parameter for A2DP EDR slave case */
 				a2dp_config->a2dp_flags |= cpu_to_le32(
 					BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
+
+				pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
+					BTCOEX_A2DP_BDR_MIN_BURST_CNT);
 			}
 			pspoll_config->a2dp_wlan_max_dur =
 				BTCOEX_A2DP_WLAN_MAX_DUR;

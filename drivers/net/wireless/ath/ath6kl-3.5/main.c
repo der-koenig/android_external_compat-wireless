@@ -1578,6 +1578,7 @@ static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 	stats->wow_evt_discarded +=
 		le16_to_cpu(tgt_stats->wow_stats.wow_evt_discarded);
 
+	do_gettimeofday(&stats->update_time);
 }
 
 static void ath6kl_add_le32(__le32 *var, __le32 val)

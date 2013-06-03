@@ -3592,6 +3592,125 @@ static const struct file_operations fops_antdiv_state_read = {
 	.llseek = default_llseek,
 };
 
+int ath6kl_ani_stat(struct ath6kl_vif *vif,
+			     u8 *buf, int buf_len)
+{
+	int len = 0;
+
+	if ((vif->ani_enable == vif->ani_stat.enable) &&
+		(vif->ani_pollcnt == vif->ani_stat.pollcnt)) {
+		len += snprintf(buf + len, buf_len - len,
+			"\n ANI : No Change... (en = %d, pollcnt = %d)\n",
+			vif->ani_enable,
+			vif->ani_stat.pollcnt);
+	} else {
+		len += snprintf(buf + len, buf_len - len,
+			"\n ANI : %s",
+			vif->ani_stat.enable ? "ON" : "OFF");
+		len += snprintf(buf + len, buf_len - len,
+			"\n RSSI : %d",
+			vif->ani_stat.rssi);
+		len += snprintf(buf + len, buf_len - len,
+			"\n Poll Count : %d",
+			vif->ani_stat.pollcnt);
+		len += snprintf(buf + len, buf_len - len,
+			"\n noiseImmunityLevel : %d",
+			vif->ani_stat.noiseImmunityLevel);
+		len += snprintf(buf + len, buf_len - len,
+			"\n spurImmunityLevel : %d",
+			vif->ani_stat.spurImmunityLevel);
+		len += snprintf(buf + len, buf_len - len,
+			"\n firstepLevel : %d",
+			vif->ani_stat.firstepLevel);
+		len += snprintf(buf + len, buf_len - len,
+			"\n ofdmWeakSigDetectOff : %s",
+			vif->ani_stat.ofdmWeakSigDetectOff ? "ON" : "OFF");
+		len += snprintf(buf + len, buf_len - len,
+			"\n cckWeakSigThreshold : %s",
+			vif->ani_stat.cckWeakSigThreshold ? "HIGH" : "LOW");
+
+		len += snprintf(buf + len, buf_len - len,
+			"\n listenTime : %d",
+			vif->ani_stat.listenTime);
+		len += snprintf(buf + len, buf_len - len,
+			"\n ofdmTrigHigh : %d",
+			vif->ani_stat.ofdmTrigHigh);
+		len += snprintf(buf + len, buf_len - len,
+			"\n ofdmTrigLow : %d",
+			vif->ani_stat.ofdmTrigLow);
+		len += snprintf(buf + len, buf_len - len,
+			"\n cckTrigHigh : %d",
+			vif->ani_stat.cckTrigHigh);
+		len += snprintf(buf + len, buf_len - len,
+			"\n cckTrigLow : %d",
+			vif->ani_stat.cckTrigLow);
+		len += snprintf(buf + len, buf_len - len,
+			"\n rssiThrLow : %d",
+			vif->ani_stat.rssiThrLow);
+		len += snprintf(buf + len, buf_len - len,
+			"\n rssiThrHigh : %d",
+			vif->ani_stat.rssiThrHigh);
+		len += snprintf(buf + len, buf_len - len,
+			"\n cycleCount : 0x%x",
+			vif->ani_stat.cycleCount);
+		len += snprintf(buf + len, buf_len - len,
+			"\n ofdmPhyErrCount : %d",
+			vif->ani_stat.ofdmPhyErrCount);
+		len += snprintf(buf + len, buf_len - len,
+			"\n cckPhyErrCount : %d",
+			vif->ani_stat.cckPhyErrCount);
+		len += snprintf(buf + len, buf_len - len,
+			"\n ofdmPhyErrBase : %d",
+			vif->ani_stat.ofdmPhyErrBase);
+		len += snprintf(buf + len, buf_len - len,
+			"\n cckPhyErrBase : %d",
+			vif->ani_stat.cckPhyErrBase);
+		len += snprintf(buf + len, buf_len - len,
+			"\n rxFrameCount : %d",
+			vif->ani_stat.rxFrameCount);
+		len += snprintf(buf + len, buf_len - len,
+			"\n txFrameCount : %d\n",
+			vif->ani_stat.txFrameCount);
+
+		vif->ani_enable = vif->ani_stat.enable;
+		vif->ani_pollcnt = vif->ani_stat.pollcnt;
+	}
+
+	return len;
+}
+
+static ssize_t ath6kl_anistat_read(struct file *file,
+				     char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(4096)
+	struct ath6kl *ar = file->private_data;
+	u8 *buf;
+	unsigned int len;
+	ssize_t ret_cnt;
+	struct ath6kl_vif *vif;
+	vif = ath6kl_vif_first(ar);
+
+	/* should always get value by ath6kl_vif_first */
+	if (!vif)
+		return -EIO;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+	len = ath6kl_ani_stat(vif, buf, _BUF_SIZE);
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+static const struct file_operations fops_ani_state_read = {
+	.read = ath6kl_anistat_read,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
 
 struct pattern_hdr {
 	u8	preamble[4];
@@ -5791,6 +5910,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("antdivstat", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_antdiv_state_read);
+
+	debugfs_create_file("anistat", S_IRUSR,
+				ar->debugfs_phy, ar, &fops_ani_state_read);
 
 	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR,
 				ar->debugfs_phy, ar, &fops_pattern_gen);

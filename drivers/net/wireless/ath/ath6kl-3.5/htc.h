@@ -589,6 +589,9 @@ struct ath6kl_htc_ops {
 		bool change);
 	int (*change_credit_bypass)(struct htc_target *target,
 		u8 traffic_class);
+#ifdef USB_AUTO_SUSPEND
+	bool (*skip_usb_mark_busy)(struct ath6kl *ar, struct sk_buff *skb);
+#endif
 };
 
 struct ath6kl_device;

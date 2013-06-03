@@ -92,8 +92,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* disable wmi sync mechanism */
 	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
 
-	/* workaround for EV119712/CR468120/CR479897 */
-	ATH6KL_MODULE_WAR_BAD_P2P_GO = BIT(24),
+	/* hole */
 
 	/* Config AP keep-alive from supplicant */
 	ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP	= BIT(25),

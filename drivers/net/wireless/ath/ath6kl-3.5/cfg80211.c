@@ -3467,6 +3467,23 @@ static int ath6kl_get_station(struct wiphy *wiphy, struct net_device *dev,
 			return -ENOENT;
 	}
 
+#ifdef USB_AUTO_SUSPEND
+	/* skip to update FW statistics in 1min when wow suspend */
+	if (ar->state == ATH6KL_STATE_WOW) {
+		struct timeval cur_time;
+		long diff_time;
+
+		do_gettimeofday(&cur_time);
+		if (cur_time.tv_sec >= vif->target_stats.update_time.tv_sec) {
+			diff_time = cur_time.tv_sec
+				- vif->target_stats.update_time.tv_sec;
+
+			if (diff_time <= 60)
+				goto skip_fw_stats;
+		}
+	}
+#endif
+
 	if (down_interruptible(&ar->sem))
 		return -EBUSY;
 
@@ -3489,6 +3506,10 @@ static int ath6kl_get_station(struct wiphy *wiphy, struct net_device *dev,
 		return -ETIMEDOUT;
 	else if (left < 0)
 		return left;
+
+#ifdef USB_AUTO_SUSPEND
+skip_fw_stats:
+#endif
 
 	if (vif->nw_type == AP_NETWORK) {
 		struct wmi_ap_mode_stat *ap = &vif->ap_stats;
@@ -6249,15 +6270,9 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 	else
 		ar->p2p_frame_not_report = false;
 
-	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_WAR_BAD_P2P_GO)) {
-		ar->p2p_war_bad_intel_go = true;
-		ar->p2p_war_bad_broadcom_go = true;
-		ar->p2p_war_p2p_client_awake = true;
-	} else {
-		ar->p2p_war_bad_intel_go = false;
-		ar->p2p_war_bad_broadcom_go = false;
-		ar->p2p_war_p2p_client_awake = false;
-	}
+	ar->p2p_war_bad_intel_go = true;
+	ar->p2p_war_bad_broadcom_go = true;
+	ar->p2p_war_p2p_client_awake = true;
 
 	ar->p2p_ie_not_append = P2P_IE_IN_PROBE_REQ;
 

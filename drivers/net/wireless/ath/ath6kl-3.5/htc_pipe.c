@@ -2506,6 +2506,57 @@ int ath6kl_htc_pipe_change_credit_bypass(struct htc_target *target,
 	return 0;
 }
 
+#ifdef USB_AUTO_SUSPEND
+bool ath6kl_htc_pipe_skip_usb_mark_busy(struct ath6kl *ar, struct sk_buff *skb)
+{
+	struct htc_frame_hdr *htc_hdr;
+	struct wmi_data_hdr *dhdr;
+	bool is_amsdu, ret = false;
+	u8 dot11_hdr = 0, pad_before_data_start;
+	u16 pull_hdr = 0;
+
+	htc_hdr = (struct htc_frame_hdr *)skb->data;
+
+	if (htc_hdr->eid != ar->ctrl_ep) {
+		pull_hdr += HTC_HDR_LENGTH;
+
+		dhdr = (struct wmi_data_hdr *)(skb->data + pull_hdr);
+		is_amsdu = wmi_data_hdr_is_amsdu(dhdr) ? true : false;
+		dot11_hdr = wmi_data_hdr_get_dot11(dhdr);
+		pad_before_data_start =	(le16_to_cpu(dhdr->info3)
+					>> WMI_DATA_HDR_PAD_BEFORE_DATA_SHIFT)
+					& WMI_DATA_HDR_PAD_BEFORE_DATA_MASK;
+		pull_hdr += sizeof(struct wmi_data_hdr);
+		pull_hdr += pad_before_data_start;
+
+		if (dot11_hdr) {
+			struct ieee80211_hdr_3addr wh;
+			memcpy((u8 *) &wh, (skb->data + pull_hdr),
+				sizeof(struct ieee80211_hdr_3addr));
+
+			switch ((le16_to_cpu(wh.frame_control)) &
+				(IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS)) {
+			case 0:
+			case IEEE80211_FCTL_FROMDS:
+				if (is_multicast_ether_addr(wh.addr1))
+					ret = true;
+				break;
+			case IEEE80211_FCTL_TODS:
+				if (is_multicast_ether_addr(wh.addr3))
+					ret = true;
+				break;
+			}
+		} else if (!is_amsdu) {
+			struct ethhdr *datap =
+				(struct ethhdr *)(skb->data + pull_hdr);
+			if (is_multicast_ether_addr(datap->h_dest))
+				ret = true;
+		}
+	}
+	return ret;
+}
+#endif
+
 static const struct ath6kl_htc_ops ath6kl_htc_pipe_ops = {
 	.create = ath6kl_htc_pipe_create,
 	.wait_target = ath6kl_htc_pipe_wait_target,
@@ -2524,6 +2575,9 @@ static const struct ath6kl_htc_ops ath6kl_htc_pipe_ops = {
 	.stop_netif_queue_full = ath6kl_htc_pipe_stop_netif_queue_full,
 	.indicate_wmm_schedule_change = ath6kl_htc_pipe_wmm_schedule_change,
 	.change_credit_bypass = ath6kl_htc_pipe_change_credit_bypass,
+#ifdef USB_AUTO_SUSPEND
+	.skip_usb_mark_busy = ath6kl_htc_pipe_skip_usb_mark_busy,
+#endif
 };
 
 void ath6kl_htc_pipe_attach(struct ath6kl *ar)

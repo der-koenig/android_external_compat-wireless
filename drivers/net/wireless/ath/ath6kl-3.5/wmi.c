@@ -4769,6 +4769,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_ANTDIVSTAT_CMDID\n");
 		ret =  ath6kl_wmi_antdivstate_event_rx(vif, datap, len);
 		break;
+	case WMI_GET_ANISTAT_CMDID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_ANISTAT_CMDID\n");
+		ret =  ath6kl_wmi_anistate_event_rx(vif, datap, len);
+		break;
 #ifdef CE_SUPPORT
 	case WMI_CSA_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_CSA_EVENTID\n");
@@ -5911,6 +5915,12 @@ int ath6kl_wmi_set_ap_num_sta_cmd(struct wmi *wmi, u8 if_idx, u8 sta_nums)
 int ath6kl_wmi_antdivstate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len)
 {
 	memcpy(&vif->ant_div_stat, datap, sizeof(struct wmi_ant_div_stat));
+	return 0;
+}
+
+int ath6kl_wmi_anistate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len)
+{
+	memcpy(&vif->ani_stat, datap, sizeof(struct wmi_ani_stat));
 	return 0;
 }
 

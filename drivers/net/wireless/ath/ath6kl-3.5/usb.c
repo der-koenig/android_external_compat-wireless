@@ -1046,7 +1046,16 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 	while ((buf = skb_dequeue(&pipe->io_comp_queue))) {
 
 #ifdef USB_AUTO_SUSPEND
+		/* to check if need to postpone auto pm timeout */
+		if (pipe->flags & ATH6KL_USB_PIPE_FLAG_RX) {
+			if (ar->htc_ops->skip_usb_mark_busy != NULL) {
+				if (ar->htc_ops->skip_usb_mark_busy(ar, buf))
+					goto skip_mark_busy;
+			}
+		}
 		usb_mark_last_busy(device->udev);
+
+skip_mark_busy:
 #endif
 		if (pipe->flags & ATH6KL_USB_PIPE_FLAG_TX) {
 			ath6kl_dbg(ATH6KL_DBG_USB_BULK,
@@ -2542,9 +2551,6 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 	if (!htc_bundle_recv) {
 		ath6kl_usb_post_recv_transfers(
 				&device->pipes[ATH6KL_USB_PIPE_RX_DATA],
-				ATH6KL_USB_RX_BUFFER_SIZE);
-		ath6kl_usb_post_recv_transfers(
-				&device->pipes[ATH6KL_USB_PIPE_RX_DATA2],
 				ATH6KL_USB_RX_BUFFER_SIZE);
 	} else {
 		hif_usb_post_recv_bundle_transfers(
