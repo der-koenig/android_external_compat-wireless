@@ -743,6 +743,14 @@ int ath6kl_reg_target_notify(struct ath6kl *ar, u32 reg_code)
 
 	if ((reg_code & ATH6KL_REG_CODE_MASK) == NULL_REG_CODE) {
 		ath6kl_err("reg unknown code 0x%x, ignore it\n", reg_code);
+
+		/* Looks set country was rejected by the target. */
+		if ((reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB) &&
+		    test_bit(REG_COUNTRY_UPDATE, &ar->flag)) {
+			clear_bit(REG_COUNTRY_UPDATE, &ar->flag);
+			wake_up(&ar->event_wq);
+		}
+
 		return -EINVAL;
 	}
 
@@ -940,3 +948,96 @@ void ath6kl_reg_bss_info(struct ath6kl *ar,
 
 	return;
 }
+
+static void _reg_set_country(struct ath6kl *ar)
+{
+	struct ath6kl_vif *vif;
+	/* These 11 channels are always active channel */
+	u16 ch_list[11] = {2412, 2417, 2422, 2427,
+			   2432, 2437, 2442, 2447,
+			   2452, 2457, 2462};
+	bool scan_on_going = false;
+	int i;
+
+	/* Any scan on-going? */
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if (vif && vif->scan_req)
+			scan_on_going = true;
+	}
+
+	/* Start a quick scan to kick it works */
+	if (scan_on_going == false)
+		ath6kl_wmi_startscan_cmd(ar->wmi,
+					0, WMI_LONG_SCAN,
+					true, false, 0, 0,
+					11,
+					ch_list);
+
+	ath6kl_dbg(ATH6KL_DBG_REGDB,
+		   "reg set country done, scan_on_going %d\n",
+		   scan_on_going);
+
+	return;
+}
+
+
+int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName)
+{
+#define WAIT_REG_RESULT		(HZ / 5)	/* 200 ms. */
+	struct ath6kl_vif *vif;
+	struct reg_info *reg = ar->reg_ctx;
+	long left;
+	int i;
+
+	BUG_ON(!reg);
+
+	if (!(reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB))
+		return -EPERM;
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if ((vif) &&
+		    (test_bit(CONNECTED, &vif->flags) ||
+		     test_bit(CONNECT_PEND, &vif->flags))) {
+			ath6kl_err("reg not allow to change now\n");
+
+			return -EPERM;
+		}
+	}
+
+	if (down_interruptible(&ar->sem))
+		return -EBUSY;
+
+	set_bit(REG_COUNTRY_UPDATE, &ar->flag);
+
+	ath6kl_dbg(ATH6KL_DBG_REGDB,
+		   "reg set country %c%c\n",
+		   isoName[0], isoName[1]);
+
+	if (ath6kl_wmi_set_regdomain_cmd(ar->wmi, isoName)) {
+		clear_bit(REG_COUNTRY_UPDATE, &ar->flag);
+		up(&ar->sem);
+
+		return -EIO;
+	}
+
+	left = wait_event_interruptible_timeout(ar->event_wq,
+						!test_bit(REG_COUNTRY_UPDATE,
+							  &ar->flag),
+						WAIT_REG_RESULT);
+	up(&ar->sem);
+
+	if (test_bit(REG_COUNTRY_UPDATE, &ar->flag)) {
+		clear_bit(REG_COUNTRY_UPDATE, &ar->flag);
+		_reg_set_country(ar);
+	} else {
+		ath6kl_err("reg set country failed\n");
+
+		return -EINVAL;
+	}
+
+	return 0;
+#undef WAIT_REG_RESULT
+}
+

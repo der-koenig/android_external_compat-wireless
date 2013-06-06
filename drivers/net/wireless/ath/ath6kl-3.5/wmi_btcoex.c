@@ -43,7 +43,6 @@
 	(30 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME     \
 	(60 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
-#define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
 #define BTCOEX_A2DP_WLAN_MAX_DUR			   25
 #define BTCOEX_A2DP_BDR_WLAN_MAX_DUR           20
 #define BTCOEX_APMODE_A2DP_BDR_WLAN_MAX_DUR    40
@@ -249,9 +248,6 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				/* use BDR parameter for A2DP EDR slave case */
 				a2dp_config->a2dp_flags |= cpu_to_le32(
 					BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
-
-				pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
-					BTCOEX_A2DP_BDR_MIN_BURST_CNT);
 			}
 			pspoll_config->a2dp_wlan_max_dur =
 				BTCOEX_A2DP_WLAN_MAX_DUR;
@@ -259,8 +255,6 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 			/* A2DP BDR config overwrites */
 			a2dp_config->a2dp_flags |= cpu_to_le32(
 				BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
-			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
-				BTCOEX_A2DP_BDR_MIN_BURST_CNT);
 			pspoll_config->a2dp_wlan_max_dur =
 				BTCOEX_A2DP_BDR_WLAN_MAX_DUR;
 		}

@@ -373,4 +373,5 @@ void ath6kl_reg_bss_info(struct ath6kl *ar,
 			int len,
 			u8 snr,
 			struct ieee80211_channel *channel);
+int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName);
 #endif /* REG_H */

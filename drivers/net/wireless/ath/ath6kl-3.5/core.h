@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.375)
+#define __BUILD_VERSION_ (3.5.0.377)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1448,6 +1448,7 @@ enum ath6kl_dev_state {
 	DISABLE_SCAN,
 	INTERNAL_REGDB,
 	EAPOL_HANDSHAKE_PROTECT,
+	REG_COUNTRY_UPDATE,
 };
 
 enum ath6kl_state {

@@ -5699,6 +5699,36 @@ static const struct file_operations fops_dtim_ext = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for Regulatory-Country */
+static ssize_t ath6kl_reg_country_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[8], alpha2[2];
+	unsigned int len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	alpha2[0] = buf[0];
+	alpha2[1] = buf[1];
+
+	if (ath6kl_reg_set_country(ar, alpha2))
+		return -EIO;
+
+	return count;
+}
+
+/* debug fs for Regulatory-Country */
+static const struct file_operations fops_reg_country_write = {
+	.write = ath6kl_reg_country_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -5931,6 +5961,10 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("wow_pattern", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_wowpattern_gen);
+
+	debugfs_create_file("reg_country", S_IWUSR,
+				ar->debugfs_phy, ar, &fops_reg_country_write);
+
 	return 0;
 }
 

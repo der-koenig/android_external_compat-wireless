@@ -2039,6 +2039,7 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 {
 	struct ath6kl_vif *vif;
 	u8 pwr_mode = REC_POWER;
+	int connected = 0;
 
 	/* Not support PS in MCC mode currently. */
 
@@ -2056,7 +2057,8 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 			} else if (vif->wdev.iftype ==
 						NL80211_IFTYPE_P2P_CLIENT) {
 				/* SCC/P2P-GC - Set to PS OFF if need. */
-				if (ar->p2p_war_p2p_client_awake) {
+				if ((ar->p2p_war_p2p_client_awake) &&
+				    connected) {
 					set_bit(PS_STICK, &vif->flags);
 					pwr_mode = MAX_PERF_POWER;
 				} else {
@@ -2079,12 +2081,14 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 						pwr_mode = MAX_PERF_POWER;
 				}
 			}
+			connected++;
 
 			ath6kl_dbg(ATH6KL_DBG_INFO,
-				"PS vif %d ps %d-%d %s %s => %s\n",
+				"PS vif %d ps %d-%d conn %d %s %s => %s\n",
 				vif->fw_vif_idx,
 				vif->last_pwr_mode,
 				vif->wdev.ps,
+				connected,
 				(mcc ? "MCC" : "SCC"),
 				(call_on_disconnect ? "DISCONN" : "CONN"),
 				(pwr_mode == REC_POWER ? "ON" : "OFF"));
