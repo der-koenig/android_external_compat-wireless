@@ -726,6 +726,8 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
 	vif->scan_plan.numChan = 0;
+	vif->data_cookie_count = 0;
+
 }
 
 /*
@@ -3331,6 +3333,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
 	}
+	vif->data_cookie_count = 0;
 }
 
 void ath6kl_stop_txrx(struct ath6kl *ar)

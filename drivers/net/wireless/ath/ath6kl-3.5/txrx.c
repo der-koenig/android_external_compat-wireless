@@ -652,15 +652,25 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
-	if (htc_tag == ATH6KL_DATA_PKT_TAG)
-		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
-	else
+	if (htc_tag == ATH6KL_DATA_PKT_TAG) {
+		if (test_bit(MCC_ENABLED, &ar->flag)) {
+			if (vif->data_cookie_count <= MAX_VIF_COOKIE_NUM) {
+				cookie = ath6kl_alloc_cookie(ar,
+					COOKIE_TYPE_DATA);
+			}
+		} else
+			cookie = ath6kl_alloc_cookie(ar,
+				COOKIE_TYPE_DATA);
+	} else
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
 	}
+
+	if (htc_tag == ATH6KL_DATA_PKT_TAG)
+		vif->data_cookie_count++;
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;
@@ -1096,6 +1106,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 		}
 
 		ath6kl_tx_clear_node_map(vif, eid, map_no);
+		if (ath6kl_cookie->htc_pkt->info.tx.tag ==
+			ATH6KL_DATA_PKT_TAG)
+			vif->data_cookie_count--;
 
 		ath6kl_free_cookie(ar, ath6kl_cookie);
 
@@ -2744,6 +2757,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
 	}
+	vif->data_cookie_count++;
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;

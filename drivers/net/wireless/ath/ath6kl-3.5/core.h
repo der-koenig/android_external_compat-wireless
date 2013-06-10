@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.377)
+#define __BUILD_VERSION_ (3.5.0.378)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -312,6 +312,7 @@
  */
 #define MAX_DEF_COOKIE_NUM                400
 #define MAX_HI_COOKIE_NUM                 40	/* 10% of MAX_COOKIE_NUM */
+#define MAX_VIF_COOKIE_NUM                200   /* 50% of MAX_COOKIE_NUM */
 
 #define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 #define MAX_COOKIE_CTRL_NUM	(64 + 2)
@@ -1424,6 +1425,7 @@ struct ath6kl_vif {
 	struct p2p_pending_connect_info *pending_connect_info;
 
 	struct bss_post_proc *bss_post_proc_ctx;
+	u32 data_cookie_count;
 };
 
 #define WOW_LIST_ID		0
