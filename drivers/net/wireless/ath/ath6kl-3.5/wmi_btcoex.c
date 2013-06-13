@@ -165,7 +165,8 @@ u8 fe_antenna_type(struct ath6kl *ar)
 
 	if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
 #ifdef CONFIG_ANDROID
-		if (machine_is_apq8064_dma())
+		if (machine_is_apq8064_dma() ||
+			machine_is_apq8064_bueller())
 			fe_antenna =
 				WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO;
 		else

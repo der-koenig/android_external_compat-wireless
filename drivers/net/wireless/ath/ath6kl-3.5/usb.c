@@ -186,6 +186,10 @@ struct semaphore usb_probe_sem;
 #define USB_PROBE_WAIT_TIMEOUT           2000
 #endif
 
+#ifdef ATH6KL_HSIC_RECOVER
+struct work_struct recover_war_work;
+#endif
+
 #ifdef ATHTST_SUPPORT
 struct hif_product_info_t {
 	uint16_t	idVendor;
@@ -1262,7 +1266,11 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 		list_del(&entry->list);
 		kfree(entry);
 	}
-	usb_auto_pm_turnoff(ar);
+#ifdef ATH6KL_BUS_VOTE
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller() ||
+		ath6kl_platform_has_vreg == 0)
+#endif
+		usb_auto_pm_turnoff(ar);
 #endif
 
 #ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
@@ -1481,7 +1489,7 @@ void usb_auto_pm_turnon(struct ath6kl *ar)
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM))
 #ifdef CONFIG_ANDROID
-		if (!machine_is_apq8064_dma())
+		if (!machine_is_apq8064_dma() || !machine_is_apq8064_bueller())
 #endif
 			usb_enable_autosuspend(device->udev);
 }
@@ -2032,7 +2040,7 @@ static int ath6kl_usb_power_on(struct ath6kl *ar)
 		struct ath6kl_usb *ar_usb = (struct ath6kl_usb *)ar->hif_priv;
 
 #ifdef CONFIG_ANDROID
-		if (!machine_is_apq8064_dma())
+		if (!machine_is_apq8064_dma() || !machine_is_apq8064_bueller())
 #endif
 			usb_reset_device(ar_usb->udev);
 	}
@@ -2312,6 +2320,35 @@ int ath6kl_usb_diag_warm_reset(struct ath6kl *ar)
 			0, NULL, NULL);
 }
 
+#ifdef ATH6KL_HSIC_RECOVER
+static void ath6kl_recover_war_work(struct work_struct *work)
+{
+	ath6kl_info("%s do HSIC rediscovery\n", __func__);
+	ath6kl_hsic_rediscovery();
+}
+
+int ath6kl_hsic_sw_recover(struct ath6kl *ar)
+{
+	struct ath6kl_usb *ar_usb = ar->hif_priv;
+	struct ath6kl_vif *vif;
+	struct net_device *netdev;
+
+	vif = ath6kl_vif_first(ar);
+
+	usb_disable_autosuspend(ar_usb->udev);
+
+	netdev = vif->ndev;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+	netdev->stop(netdev);
+#else
+	netdev->netdev_ops->ndo_stop(netdev);
+#endif
+
+	ath6kl_info("%s schedule recover worker thread\n", __func__);
+	schedule_work(&recover_war_work);
+	return 0;
+}
+#endif
 
 static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.diag_read32 = ath6kl_usb_diag_read32,
@@ -2347,6 +2384,9 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.auto_pm_get_usage_cnt = usb_debugfs_get_pm_usage_cnt,
 #endif
 	.pipe_set_rxq_threshold = ath6kl_usb_set_rxq_threshold,
+#ifdef ATH6KL_HSIC_RECOVER
+	.sw_recover = ath6kl_hsic_sw_recover,
+#endif
 };
 
 #ifdef ATHTST_SUPPORT
@@ -2435,7 +2475,7 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		!(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_ENABLE) ||
 		ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING))) {
 #ifdef CONFIG_ANDROID
-		if (machine_is_apq8064_dma())
+		if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
 			usb_disable_autosuspend(ar_usb->udev);
 		else
 #endif
@@ -2449,6 +2489,12 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		ath6kl_err("Failed to init ath6kl core: %d\n", ret);
 		goto err_core_free;
 	}
+
+#ifdef ATH6KL_HSIC_RECOVER
+	/* Initialize the worker */
+	INIT_WORK(&recover_war_work,
+		  ath6kl_recover_war_work);
+#endif
 
 #ifdef ATH6KL_BUS_VOTE
 	up(&usb_probe_sem);
@@ -2657,7 +2703,7 @@ static int ath6kl_usb_init(void)
 
 #ifdef ATH6KL_BUS_VOTE
 #ifdef CONFIG_ANDROID
-	if (machine_is_apq8064_dma()) {
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller()) {
 		ath6kl_platform_has_vreg = 1;
 		ath6kl_hsic_bind(1);
 	}
@@ -2700,7 +2746,7 @@ finish:
 #endif
 
 #ifdef ATH6KL_BUS_VOTE
-	if (machine_is_apq8064_dma())
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
 		ath6kl_hsic_bind(0);
 #endif
 

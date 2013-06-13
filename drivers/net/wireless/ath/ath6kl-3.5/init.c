@@ -97,6 +97,11 @@ module_param(fwdatapath, charp, 0644);
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
 
+#ifdef ATH6KL_HSIC_RECOVER
+u8 cached_mac[ETH_ALEN];
+bool cached_mac_valid;
+#endif
+
 static const struct ath6kl_hw hw_list[] = {
 	{
 		.id				= AR6003_HW_2_0_VERSION,
@@ -3053,8 +3058,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 	}
 
 	/* Always use internal-regdb by default. */
-	if (ath6kl_regdb)
+	if (ath6kl_regdb == 1) {
+		clear_bit(CFG80211_REGDB, &ar->flag);
 		set_bit(INTERNAL_REGDB, &ar->flag);
+	} else if (ath6kl_regdb == 2) {
+		clear_bit(INTERNAL_REGDB, &ar->flag);
+		set_bit(CFG80211_REGDB, &ar->flag);
+	}
 
 	ret = ath6kl_register_ieee80211_hw(ar);
 	if (ret)

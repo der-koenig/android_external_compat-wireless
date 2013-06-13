@@ -38,8 +38,6 @@ unsigned int debug_quirks = ATH6KL_MODULE_DEF_DEBUG_QUIRKS;
 
 module_param(debug_quirks, uint, 0644);
 
-
-
 #define RATETAB_ENT(_rate, _rateid, _flags) {   \
 	.bitrate    = (_rate),                  \
 	.flags      = (_flags),                 \
@@ -6336,6 +6334,42 @@ static void _judge_vap_framework(struct ath6kl *ar, unsigned int vap_config)
 
 }
 
+static int ath6kl_cfg80211_reg_notify(struct wiphy *wiphy,
+					struct regulatory_request *request)
+{
+	struct ath6kl *ar = wiphy_priv(wiphy);
+	int ret;
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		"cfg reg_notify %c%c%s%s initiator %d\n",
+		request->alpha2[0], request->alpha2[1],
+		request->intersect ? " intersect" : "",
+		request->processed ? " processed" : "",
+		request->initiator);
+
+	ret = ath6kl_wmi_set_regdomain_cmd(ar->wmi, request->alpha2);
+	if (ret) {
+		ath6kl_err("failed to set regdomain: %d\n", ret);
+		return ret;
+	}
+
+	/*
+	 * Firmware will apply the regdomain change only after a scan is
+	 * issued and it will send a WMI_REGDOMAIN_EVENTID when it has been
+	 * changed.
+	 */
+	ret = ath6kl_wmi_startscan_cmd(ar->wmi, 0, WMI_LONG_SCAN, false,
+					false, 0, ATH6KL_FG_SCAN_INTERVAL,
+					0, NULL);
+	if (ret) {
+		ath6kl_err("failed to start scan for a regdomain change: %d\n",
+			ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 struct ath6kl *ath6kl_core_alloc(struct device *dev)
 {
 	struct ath6kl *ar;
@@ -6425,6 +6459,11 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	    (ar->p2p_dedicate))
 		ar->sche_scan = ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_ENABLE_SCHE_SCAN);
+
+#ifdef CONFIG_ANDROID
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
+		ath6kl_roam_mode = ATH6KL_MODULEROAM_DISABLE;
+#endif
 
 	ar->roam_mode = ath6kl_roam_mode;
 
@@ -6637,6 +6676,12 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 		wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_STRICT_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_DISABLE_BEACON_HINTS;
+	} else if (test_bit(CFG80211_REGDB, &ar->flag)) {
+		wiphy->reg_notifier = ath6kl_cfg80211_reg_notify;
+
+		wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
+		wiphy->flags |= WIPHY_FLAG_STRICT_REGULATORY;
+		wiphy->flags |= WIPHY_FLAG_DISABLE_BEACON_HINTS;
 	}
 
 #ifdef NL80211_CMD_SET_AP_MAC_ACL
@@ -6830,6 +6875,9 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	struct net_device *ndev;
 	struct ath6kl_vif *vif;
 	int i;
+#ifdef ATH6KL_HSIC_RECOVER
+	u8 zero_mac[ETH_ALEN] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+#endif
 
 	ndev = alloc_netdev(sizeof(*vif), name, ether_setup);
 	if (!ndev)
@@ -6847,6 +6895,15 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	vif->nw_type = vif->next_mode = nw_type;
 
 	memcpy(ndev->dev_addr, ar->mac_addr, ETH_ALEN);
+
+#ifdef ATH6KL_HSIC_RECOVER
+	/* If we don't get the mac address just in time */
+	if (memcmp(ar->mac_addr, zero_mac, ETH_ALEN)  == 0 &&
+		cached_mac_valid == true) {
+		memcpy(ndev->dev_addr, cached_mac, ETH_ALEN);
+	}
+#endif
+
 	if (fw_vif_idx != 0)
 		ndev->dev_addr[0] = (ndev->dev_addr[0] ^ (1 << fw_vif_idx)) |
 				     0x2;

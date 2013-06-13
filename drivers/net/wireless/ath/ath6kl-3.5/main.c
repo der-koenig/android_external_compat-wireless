@@ -136,7 +136,7 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	struct list_head container;
-	int reclaim = 0;
+	int reclaim = 0, j;
 
 	del_timer_sync(&sta->psq_age_timer);
 
@@ -147,7 +147,7 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 
 		spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 		fw_conn = &p2p_flowctrl->fw_conn_list[0];
-		for (i = 0; i < NUM_CONN; i++, fw_conn++) {
+		for (j = 0; j < NUM_CONN; j++, fw_conn++) {
 			if (fw_conn->connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID)
 				continue;
 
@@ -1094,6 +1094,10 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 	ath6kl_info("notify firmware crash to user %p\n", ar);
 
 	/* TODO */
+#ifdef ATH6KL_HSIC_RECOVER
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
+		ath6kl_hif_sw_recover(ar);
+#endif
 
 	return;
 }
@@ -1344,6 +1348,11 @@ void ath6kl_ready_event(void *devt, u8 *datap, u32 sw_ver, u32 abi_ver)
 		 (ar->version.wlan_ver & 0x0f000000) >> 24,
 		 (ar->version.wlan_ver & 0x00ff0000) >> 16,
 		 (ar->version.wlan_ver & 0x0000ffff));
+
+#ifdef ATH6KL_HSIC_RECOVER
+	memcpy(cached_mac, ar->mac_addr, ETH_ALEN);
+	cached_mac_valid = true;
+#endif
 
 	/* indicate to the waiting thread that the ready event was received */
 	set_bit(WMI_READY, &ar->flag);

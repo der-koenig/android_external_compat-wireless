@@ -295,6 +295,9 @@ struct ath6kl_hif_ops {
 	void (*auto_pm_turnoff)(struct ath6kl *ar);
 #endif
 	int (*pipe_set_rxq_threshold)(struct ath6kl *ar, u32 rxq_threshold);
+#ifdef ATH6KL_HSIC_RECOVER
+	int (*sw_recover)(struct ath6kl *ar);
+#endif
 };
 
 int ath6kl_hif_setup(struct ath6kl_device *dev);

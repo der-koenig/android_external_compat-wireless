@@ -3563,6 +3563,7 @@ int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
 
 	cmd = (struct wmi_set_regdomain_cmd *) skb->data;
 	memcpy(cmd->iso_name, alpha2, 2);
+	cmd->length = 2;
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "%s: regdomain = %s\n", __func__, alpha2);
 

@@ -292,4 +292,13 @@ static inline u16 ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,
 	return ar->hif_ops->pipe_set_rxq_threshold(ar, rxq_threshold);
 }
 
+#ifdef ATH6KL_HSIC_RECOVER
+static inline int ath6kl_hif_sw_recover(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif start sw recover\n");
+
+	return ar->hif_ops->sw_recover(ar);
+}
+#endif
+
 #endif

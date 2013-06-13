@@ -30,6 +30,11 @@ extern unsigned int ath6kl_wow_ext;
 extern unsigned int ath6kl_scan_timeout;
 extern unsigned int ath6kl_roam_mode;
 
+#ifdef ATH6KL_HSIC_RECOVER
+extern u8 cached_mac[ETH_ALEN];
+extern bool cached_mac_valid;
+#endif
+
 struct ath6kl_beacon_parameters {
 	/* Settings */
 	int beacon_interval;
