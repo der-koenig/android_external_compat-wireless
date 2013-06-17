@@ -52,12 +52,8 @@ unsigned int ath6kl_ath0_name;
 #ifdef CE_SUPPORT
 unsigned int ath6kl_ce_flags = 1;
 #endif
-unsigned int ath6kl_regdb = 1;
-
-#ifdef CONFIG_QC_INTERNAL
-unsigned short reg_domain = 0xffff;
-module_param(reg_domain, ushort, 0644);
-#endif
+unsigned int ath6kl_regdb = ATH6KL_REG_INTERNAL_REGDB;
+unsigned short reg_domain = NULL_REG_CODE;
 
 #ifdef ATH6KL_DIAGNOSTIC
 unsigned int diag_local_test;
@@ -96,6 +92,7 @@ module_param(fwdatapath, charp, 0644);
 #endif
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
+module_param(reg_domain, ushort, 0644);
 
 #ifdef ATH6KL_HSIC_RECOVER
 u8 cached_mac[ETH_ALEN];
@@ -2728,13 +2725,12 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 	if (ret)
 		goto err_power_off;
 
-#ifdef CONFIG_QC_INTERNAL
-	if (reg_domain != 0xffff) {
-		ret = ath6kl_set_rd(ar);
+	/* Overwrite the default rd code */
+	if (reg_domain != NULL_REG_CODE) {
+		ret = ath6kl_reg_set_rdcode(ar, reg_domain);
 		if (ret)
 			goto err_power_off;
 	}
-#endif
 
 	/* Do we need to finish the BMI phase */
 	/* FIXME: return error from ath6kl_bmi_done() */
@@ -3057,14 +3053,14 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	}
 
-	/* Always use internal-regdb by default. */
-	if (ath6kl_regdb == 1) {
-		clear_bit(CFG80211_REGDB, &ar->flag);
+	/*
+	 * Always use internal-regdb by default.
+	 * The INTERNAL_REGDB & CFG80211_REGDB is exclusive.
+	 */
+	if (ath6kl_regdb == ATH6KL_REG_INTERNAL_REGDB)
 		set_bit(INTERNAL_REGDB, &ar->flag);
-	} else if (ath6kl_regdb == 2) {
-		clear_bit(INTERNAL_REGDB, &ar->flag);
+	else if (ath6kl_regdb == ATH6KL_REG_CFG80211_REGDB)
 		set_bit(CFG80211_REGDB, &ar->flag);
-	}
 
 	ret = ath6kl_register_ieee80211_hw(ar);
 	if (ret)
@@ -3165,14 +3161,24 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
-	if (test_bit(INTERNAL_REGDB, &ar->flag)) {
+	if (test_bit(INTERNAL_REGDB, &ar->flag) ||
+	    test_bit(CFG80211_REGDB, &ar->flag)) {
 		/* Disable P2P-in-passive-chan channels by default. */
-		ar->reg_ctx = ath6kl_reg_init(ar, true, ar->p2p_in_pasv_chan);
+		if (test_bit(INTERNAL_REGDB, &ar->flag))
+			ar->reg_ctx = ath6kl_reg_init(ar,
+							true,
+							false,
+							ar->p2p_in_pasv_chan);
+		else	/* TODO: support P2P-in-passive-chan */
+			ar->reg_ctx = ath6kl_reg_init(ar,
+							false,
+							true,
+							false);
 
-		/* P2P recommend channel works only internal regdb turns on. */
+		/* P2P recommend channel works only ath6kl regdb turns on. */
 		ar->p2p_rc_info_ctx = ath6kl_p2p_rc_init(ar);
 	} else
-		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
+		ar->reg_ctx = ath6kl_reg_init(ar, false, false, false);
 
 	set_bit(FIRST_BOOT, &ar->flag);
 

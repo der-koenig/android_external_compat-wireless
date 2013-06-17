@@ -577,7 +577,7 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 						ar->event_wq,
 						!test_bit(PORT_STATUS_PEND,
 						&vif->flags),
-						WMI_TIMEOUT/10);
+						WMI_TIMEOUT/5);
 			WARN_ON(left <= 0);
 
 			if (type == NL80211_IFTYPE_P2P_CLIENT) {
@@ -1315,7 +1315,7 @@ struct ath6kl_p2p_rc_info *ath6kl_p2p_rc_init(struct ath6kl *ar)
 	}
 
 	p2p_rc->ar = ar;
-	p2p_rc->flags = ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN;
+	p2p_rc->flags = ATH6KL_RC_FLAGS_DONE;
 	spin_lock_init(&p2p_rc->p2p_rc_lock);
 	p2p_rc->snr_compensation = P2P_RC_DEF_SNR_COMP;
 
@@ -1665,7 +1665,8 @@ static struct p2p_rc_chan_record *_p2p_rc_get_2g_chan(
 
 static struct p2p_rc_chan_record *_p2p_rc_get_5g_chan(
 	struct ath6kl_p2p_rc_info *p2p_rc,
-	bool only_p2p)
+	bool only_p2p,
+	bool no_dfs)
 {
 	struct p2p_rc_chan_record *p2p_rc_chan, *best_p2p_rc_chan = NULL;
 	struct ieee80211_channel *chan;
@@ -1683,12 +1684,12 @@ static struct p2p_rc_chan_record *_p2p_rc_get_5g_chan(
 					    IEEE80211_CHAN_NO_IBSS)) &&
 			    !ath6kl_p2p_is_p2p_channel(chan->center_freq))
 				continue;
+			else if ((no_dfs) &&
+				 (chan->flags & IEEE80211_CHAN_RADAR) &&
+				 (p2p_rc_chan->best_snr == P2P_RC_NULL_SNR))
+				continue;
 
 			/* If DFS channel but any AP exist and still use it. */
-			if ((p2p_rc->flags & ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN) &&
-			    (chan->flags & IEEE80211_CHAN_RADAR) &&
-			    (p2p_rc_chan->best_snr == P2P_RC_NULL_SNR))
-				continue;
 
 			if (best_p2p_rc_chan) {
 				snr_h = (int)p2p_rc_chan->best_snr;
@@ -1719,7 +1720,9 @@ int ath6kl_p2p_rc_get(struct ath6kl *ar,
 			u16 *rc_p2p_social,
 			u16 *rc_p2p_2g,
 			u16 *rc_p2p_5g,
-			u16 *rc_p2p_all)
+			u16 *rc_p2p_all,
+			u16 *rc_5g_nodfs,
+			u16 *rc_all_nodfs)
 {
 	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
 	struct p2p_rc_chan_record **p2p_rc_chan;
@@ -1752,6 +1755,7 @@ int ath6kl_p2p_rc_get(struct ath6kl *ar,
 								false);
 	/* Get 5G recommand channel */
 	p2p_rc_chan[P2P_RC_TYPE_5GALL] = _p2p_rc_get_5g_chan(p2p_rc,
+								false,
 								false);
 
 	/* Get overall recommand channel. */
@@ -1784,6 +1788,7 @@ int ath6kl_p2p_rc_get(struct ath6kl *ar,
 
 	/* Get P2P-5G recommand channel */
 	p2p_rc_chan[P2P_RC_TYPE_5GP2P] = _p2p_rc_get_5g_chan(p2p_rc,
+								true,
 								true);
 
 	/* Get P2P-All recommand channel. */
@@ -1803,6 +1808,29 @@ int ath6kl_p2p_rc_get(struct ath6kl *ar,
 	} else if (p2p_rc_chan[P2P_RC_TYPE_5GP2P])
 		p2p_rc_chan[P2P_RC_TYPE_ALLP2P] =
 			p2p_rc_chan[P2P_RC_TYPE_5GP2P];
+
+	/* Get 5G w/o DFS recommand channel */
+	p2p_rc_chan[P2P_RC_TYPE_5GNODFS] = _p2p_rc_get_5g_chan(p2p_rc,
+								false,
+								true);
+
+	/* Get overall w/o DFS recommand channel. */
+	if (p2p_rc_chan[P2P_RC_TYPE_2GALL]) {
+		if (p2p_rc_chan[P2P_RC_TYPE_5GNODFS]) {
+			if (p2p_rc_chan[P2P_RC_TYPE_2GALL]->aver_snr >
+			    (p2p_rc_chan[P2P_RC_TYPE_5GNODFS]->best_snr +
+			     p2p_rc->snr_compensation))
+				p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS] =
+					p2p_rc_chan[P2P_RC_TYPE_2GALL];
+			else	/* Prefer to use 5G if has the same value. */
+				p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS] =
+					p2p_rc_chan[P2P_RC_TYPE_5GNODFS];
+		} else
+			p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS] =
+					p2p_rc_chan[P2P_RC_TYPE_2GALL];
+	} else if (p2p_rc_chan[P2P_RC_TYPE_5GNODFS])
+		p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS] =
+			p2p_rc_chan[P2P_RC_TYPE_5GNODFS];
 
 	p2p_rc->flags |= ATH6KL_RC_FLAGS_DONE;
 
@@ -1836,15 +1864,25 @@ done:
 		*rc_p2p_all =
 		p2p_rc_chan[P2P_RC_TYPE_ALLP2P]->channel->center_freq;
 
+	if ((p2p_rc_chan[P2P_RC_TYPE_5GNODFS]) && rc_5g_nodfs)
+		*rc_5g_nodfs =
+		p2p_rc_chan[P2P_RC_TYPE_5GNODFS]->channel->center_freq;
+
+	if ((p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS]) && rc_all_nodfs)
+		*rc_all_nodfs =
+		p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS]->channel->center_freq;
+
 	ath6kl_dbg(ATH6KL_DBG_RC,
-			"p2p_rc get 2/5/A %p %p %p P2P-S/2/5/A %p %p %p %p\n",
-			p2p_rc->last_p2p_rc[P2P_RC_TYPE_2GALL],
-			p2p_rc->last_p2p_rc[P2P_RC_TYPE_5GALL],
-			p2p_rc->last_p2p_rc[P2P_RC_TYPE_OVERALL],
-			p2p_rc->last_p2p_rc[P2P_RC_TYPE_SOCAIL],
-			p2p_rc->last_p2p_rc[P2P_RC_TYPE_2GP2P],
-			p2p_rc->last_p2p_rc[P2P_RC_TYPE_5GP2P],
-			p2p_rc->last_p2p_rc[P2P_RC_TYPE_ALLP2P]);
+		"p2p_rc 2/5/A %p %p %p P2P-S/2/5/A %p %p %p %p nD-5/A %p %p\n",
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_2GALL],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_5GALL],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_OVERALL],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_SOCAIL],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_2GP2P],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_5GP2P],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_ALLP2P],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_5GNODFS],
+		p2p_rc->last_p2p_rc[P2P_RC_TYPE_OVERALLNODFS]);
 
 	spin_unlock_bh(&p2p_rc->p2p_rc_lock);
 
@@ -1857,6 +1895,7 @@ int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 	struct p2p_rc_chan_record *p2p_rc_chan;
 	int i, idx = 0, len = 0;
 	u16 rc_2g, rc_5g, rc_all, rc_p2p_so, rc_p2p_2g, rc_p2p_5g, rc_p2p_all;
+	u16 rc_5g_nodfs, rc_all_nodfs;
 
 	if ((!p2p_rc) || (!buf))
 		return 0;
@@ -1870,6 +1909,7 @@ int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 
 	rc_2g = rc_5g = rc_all = 0;
 	rc_p2p_so = rc_p2p_2g = rc_p2p_5g = rc_p2p_all = 0;
+	rc_5g_nodfs = rc_all_nodfs = 0;
 	if (ath6kl_p2p_rc_get(ar,
 			&rc_2g,
 			&rc_5g,
@@ -1877,18 +1917,22 @@ int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 			&rc_p2p_so,
 			&rc_p2p_2g,
 			&rc_p2p_5g,
-			&rc_p2p_all) != 0)
+			&rc_p2p_all,
+			&rc_5g_nodfs,
+			&rc_all_nodfs) != 0)
 		return 0;
 
 	len += snprintf(buf + len, buf_len - len,
-			"\n2G/5G/ALL %d %d %d P2P-So/2G/5G/ALL %d %d %d %d\n",
-			rc_2g,
-			rc_5g,
-			rc_all,
-			rc_p2p_so,
-			rc_p2p_2g,
-			rc_p2p_5g,
-			rc_p2p_all);
+		"\n2/5/A %d %d %d P2P-S/2/5/A %d %d %d %d noDFS-5/A %d %d\n",
+		rc_2g,
+		rc_5g,
+		rc_all,
+		rc_p2p_so,
+		rc_p2p_2g,
+		rc_p2p_5g,
+		rc_p2p_all,
+		rc_5g_nodfs,
+		rc_all_nodfs);
 
 	spin_lock_bh(&p2p_rc->p2p_rc_lock);
 	len += snprintf(buf + len, buf_len - len,

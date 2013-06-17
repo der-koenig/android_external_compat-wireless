@@ -322,6 +322,10 @@ enum ath6kl_RegionCode {
 
 #define NULL_REG_CODE	(0xFFFF)
 
+#define ATH6KL_REG_UNSUPPORT_REGDB	(0)	/* NOT SUPPORT */
+#define ATH6KL_REG_INTERNAL_REGDB	(1)	/* ath6kl-internal-regdb */
+#define ATH6KL_REG_CFG80211_REGDB	(2)	/* cfg80211-internal-regdb */
+
 struct reg_code_to_isoname {
 	u16 reg_code;
 	char *iso_name;
@@ -345,7 +349,8 @@ struct reg_code_to_isoname {
 
 struct reg_info {
 #define ATH6KL_REG_FALGS_INTERNAL_REGDB		(1 << 0)
-#define ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN	(1 << 1)
+#define ATH6KL_REG_FALGS_CFG80211_REGDB		(1 << 1)
+#define ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN	(1 << 2)
 	u32 flags;
 	struct ath6kl *ar;
 	struct wiphy *wiphy;
@@ -366,6 +371,7 @@ bool ath6kl_reg_is_p2p_channel(struct ath6kl *ar, u32 freq);
 bool ath6kl_reg_is_dfs_channel(struct ath6kl *ar, u32 freq);
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
+				bool cfgRegdb,
 				bool p2pInPasvCh);
 void ath6kl_reg_deinit(struct ath6kl *ar);
 void ath6kl_reg_bss_info(struct ath6kl *ar,
@@ -374,4 +380,5 @@ void ath6kl_reg_bss_info(struct ath6kl *ar,
 			u8 snr,
 			struct ieee80211_channel *channel);
 int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName);
+int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode);
 #endif /* REG_H */

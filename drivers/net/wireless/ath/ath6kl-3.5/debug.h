@@ -232,15 +232,6 @@ void ath6kl_send_genevent_to_app(struct net_device *dev,
 					u16 event_id, u8 ifid,
 					u8 *datap, int len);
 
-#ifdef CONFIG_QC_INTERNAL
-int ath6kl_set_rd(struct ath6kl *ar);
-#else
-static inline int ath6kl_set_rd(struct ath6kl *ar)
-{
-	return 0;
-}
-#endif
-
 #ifdef CONFIG_ATH6KL_DEBUG
 #define ath6kl_dbg(mask, fmt, ...)					\
 	({								\

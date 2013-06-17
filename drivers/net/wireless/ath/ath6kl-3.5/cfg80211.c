@@ -6334,42 +6334,6 @@ static void _judge_vap_framework(struct ath6kl *ar, unsigned int vap_config)
 
 }
 
-static int ath6kl_cfg80211_reg_notify(struct wiphy *wiphy,
-					struct regulatory_request *request)
-{
-	struct ath6kl *ar = wiphy_priv(wiphy);
-	int ret;
-
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-		"cfg reg_notify %c%c%s%s initiator %d\n",
-		request->alpha2[0], request->alpha2[1],
-		request->intersect ? " intersect" : "",
-		request->processed ? " processed" : "",
-		request->initiator);
-
-	ret = ath6kl_wmi_set_regdomain_cmd(ar->wmi, request->alpha2);
-	if (ret) {
-		ath6kl_err("failed to set regdomain: %d\n", ret);
-		return ret;
-	}
-
-	/*
-	 * Firmware will apply the regdomain change only after a scan is
-	 * issued and it will send a WMI_REGDOMAIN_EVENTID when it has been
-	 * changed.
-	 */
-	ret = ath6kl_wmi_startscan_cmd(ar->wmi, 0, WMI_LONG_SCAN, false,
-					false, 0, ATH6KL_FG_SCAN_INTERVAL,
-					0, NULL);
-	if (ret) {
-		ath6kl_err("failed to start scan for a regdomain change: %d\n",
-			ret);
-		return ret;
-	}
-
-	return 0;
-}
-
 struct ath6kl *ath6kl_core_alloc(struct device *dev)
 {
 	struct ath6kl *ar;
@@ -6667,18 +6631,13 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 	ath6kl_setup_android_resource(ar);
 #endif
 
-	if (test_bit(INTERNAL_REGDB, &ar->flag)) {
+	if (test_bit(INTERNAL_REGDB, &ar->flag) ||
+	    test_bit(CFG80211_REGDB, &ar->flag)) {
 #ifdef CFG80211_VOID_REG_NOTIFIER
 		wiphy->reg_notifier = ath6kl_reg_notifier2;
 #else
 		wiphy->reg_notifier = ath6kl_reg_notifier;
 #endif
-		wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
-		wiphy->flags |= WIPHY_FLAG_STRICT_REGULATORY;
-		wiphy->flags |= WIPHY_FLAG_DISABLE_BEACON_HINTS;
-	} else if (test_bit(CFG80211_REGDB, &ar->flag)) {
-		wiphy->reg_notifier = ath6kl_cfg80211_reg_notify;
-
 		wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_STRICT_REGULATORY;
 		wiphy->flags |= WIPHY_FLAG_DISABLE_BEACON_HINTS;

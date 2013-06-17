@@ -1463,12 +1463,6 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 	ev = (struct ath6kl_wmi_regdomain *) datap;
 	reg_code = le32_to_cpu(ev->reg_code);
 
-#ifdef CONFIG_QC_INTERNAL
-	ath6kl_info("%s: 0x%x WWR:%d\n",
-			reg_code & BIT(31) ? "Country Code" : "Reg Domain",
-			reg_code & 0xfff, !!(reg_code & BIT(30)));
-#endif
-
 	ath6kl_reg_target_notify(ar, reg_code);
 
 	return;

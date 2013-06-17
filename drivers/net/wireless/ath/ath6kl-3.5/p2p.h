@@ -165,8 +165,7 @@ struct ath6kl_p2p_flowctrl {
 #define ATH6KL_RC_FLAGS_DONE			(1 << 1)
 #define ATH6KL_RC_FLAGS_HIGH_CHAN		(1 << 2)
 #define ATH6KL_RC_FLAGS_ALWAYS_FRESH		(1 << 3)
-#define ATH6KL_RC_FLAGS_IGNORE_DFS_CHAN		(1 << 4)
-#define ATH6KL_RC_FLAGS_CHAN_RECORD_FETCHED	(1 << 5)
+#define ATH6KL_RC_FLAGS_CHAN_RECORD_FETCHED	(1 << 4)
 
 #define ATH6KL_RC_MAX_2G_CHAN_RECORD	(14)
 #define ATH6KL_RC_MAX_5G_CHAN_RECORD	(66)
@@ -188,6 +187,8 @@ enum p2p_rc_type {
 	P2P_RC_TYPE_2GP2P,	/* the best in P2P 2G channels */
 	P2P_RC_TYPE_5GP2P,	/* the best in P2P 5G channels */
 	P2P_RC_TYPE_ALLP2P,	/* the best in P2P channels */
+	P2P_RC_TYPE_5GNODFS,	/* the best in all 5G channels w/o DFS */
+	P2P_RC_TYPE_OVERALLNODFS, /* the best in all channels w/o DFS */
 
 	P2P_RC_TYPE_MAX,	/* keep last */
 };
@@ -315,7 +316,9 @@ int ath6kl_p2p_rc_get(struct ath6kl *ar,
 			u16 *rc_p2p_social,
 			u16 *rc_p2p_2g,
 			u16 *rc_p2p_5g,
-			u16 *rc_p2p_all);
+			u16 *rc_p2p_all,
+			u16 *rc_5g_nodfs,
+			u16 *rc_all_nodfs);
 int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len);
 
 bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len);

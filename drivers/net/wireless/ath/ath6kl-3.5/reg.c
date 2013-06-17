@@ -681,7 +681,71 @@ static struct ieee80211_regdomain *ath6kl_reg_update(struct reg_info *reg,
 	return regd;
 }
 
-int ath6kl_reg_notifier(struct wiphy *wiphy,
+static void ath6kl_reg_cfg80211_update(struct reg_info *reg,
+					u32 reg_code,
+					bool target_update)
+{
+	u16 code;
+	const char *iso_name;
+	char alpha2[2];
+
+	BUG_ON(!reg);
+
+	ath6kl_dbg(ATH6KL_DBG_REGDB,
+			"reg cfg80211_update reg_code %x %sfrom target\n",
+			reg_code,
+			target_update ? "" : "not ");
+
+	code = (u16)(reg_code & ATH6KL_REG_CODE_MASK);
+	if ((reg_code >> ATH6KL_COUNTRY_RD_SHIFT) &
+						ATH6KL_COUNTRY_ERD_FLAG)
+		iso_name = _reg_find_iso_name(reg_code, true, false);
+	else
+		iso_name = _reg_find_iso_name(reg_code, false, true);
+
+	if (iso_name) {
+		alpha2[0] = iso_name[0];
+		alpha2[1] = iso_name[1];
+
+		ath6kl_dbg(ATH6KL_DBG_REGDB,
+				"Alpha2 string being used: %c%c\n",
+				alpha2[0], alpha2[1]);
+
+		/* Update to cfg80211 & CRDA */
+		regulatory_hint(reg->wiphy, alpha2);
+	}
+
+	/* Notify to update the channel record. */
+	ath6kl_p2p_rc_fetch_chan(reg->ar);
+
+	return;
+}
+
+static int _reg_cfg80211_notify(struct wiphy *wiphy,
+					struct regulatory_request *request)
+{
+	char initiatorString[4][16] = {
+		"driver",
+		"core",
+		"user",
+		"country-ie",
+	};
+	struct ath6kl *ar = wiphy_priv(wiphy);
+	int ret = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_REGDB,
+		"cfg cfg80211_notify %c%c%s%s initiator %s\n",
+		request->alpha2[0], request->alpha2[1],
+		request->intersect ? " intersect" : "",
+		request->processed ? " processed" : "",
+		initiatorString[request->initiator]);
+
+	ret = ath6kl_reg_set_country(ar, request->alpha2);
+
+	return ret;
+}
+
+static int _reg_notifier(struct wiphy *wiphy,
 			struct regulatory_request *request)
 {
 	char initiatorString[4][16] = {
@@ -693,12 +757,6 @@ int ath6kl_reg_notifier(struct wiphy *wiphy,
 	struct ath6kl *ar = (struct ath6kl *)wiphy_priv(wiphy);
 	struct reg_info *reg = ar->reg_ctx;
 	struct ieee80211_regdomain *regd = NULL;
-
-	if (reg == NULL)
-		return 0;
-
-	if (!(reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB))
-		return 0;
 
 	switch (request->initiator) {
 	case NL80211_REGDOM_SET_BY_DRIVER:
@@ -726,6 +784,23 @@ int ath6kl_reg_notifier(struct wiphy *wiphy,
 	return 0;
 }
 
+int ath6kl_reg_notifier(struct wiphy *wiphy,
+			struct regulatory_request *request)
+{
+	struct ath6kl *ar = (struct ath6kl *)wiphy_priv(wiphy);
+	struct reg_info *reg = ar->reg_ctx;
+
+	if (reg == NULL)
+		return 0;
+
+	if (reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB)
+		_reg_notifier(wiphy, request);
+	else if (reg->flags & ATH6KL_REG_FALGS_CFG80211_REGDB)
+		_reg_cfg80211_notify(wiphy, request);
+
+	return 0;
+}
+
 void ath6kl_reg_notifier2(struct wiphy *wiphy,
 			struct regulatory_request *request)
 {
@@ -745,7 +820,8 @@ int ath6kl_reg_target_notify(struct ath6kl *ar, u32 reg_code)
 		ath6kl_err("reg unknown code 0x%x, ignore it\n", reg_code);
 
 		/* Looks set country was rejected by the target. */
-		if ((reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB) &&
+		if (((reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB) ||
+		     (reg->flags & ATH6KL_REG_FALGS_CFG80211_REGDB)) &&
 		    test_bit(REG_COUNTRY_UPDATE, &ar->flag)) {
 			clear_bit(REG_COUNTRY_UPDATE, &ar->flag);
 			wake_up(&ar->event_wq);
@@ -756,6 +832,8 @@ int ath6kl_reg_target_notify(struct ath6kl *ar, u32 reg_code)
 
 	if (reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB)
 		regd = ath6kl_reg_update(reg, reg_code, true);
+	else if (reg->flags & ATH6KL_REG_FALGS_CFG80211_REGDB)
+		ath6kl_reg_cfg80211_update(reg, reg_code, true);
 	else {
 		u16 code;
 		const char *iso_name;
@@ -857,6 +935,7 @@ bool ath6kl_reg_is_dfs_channel(struct ath6kl *ar, u32 freq)
 
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
+				bool cfgRegdb,
 				bool p2pInPasvCh)
 {
 	struct reg_info *reg;
@@ -867,6 +946,8 @@ struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 		return NULL;
 	}
 
+	BUG_ON((intRegdb && cfgRegdb));
+
 	reg->ar = ar;
 	reg->wiphy = ar->wiphy;
 	if (intRegdb) {
@@ -876,6 +957,10 @@ struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 
 		ath6kl_info("Using driver's regdb%s.\n",
 				(p2pInPasvCh ? " & p2p-in-passive-chan" : ""));
+	} else if (cfgRegdb) {
+		reg->flags |= ATH6KL_REG_FALGS_CFG80211_REGDB;
+
+		ath6kl_info("Using cfg80211's regdb.\n");
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,
@@ -981,7 +1066,6 @@ static void _reg_set_country(struct ath6kl *ar)
 	return;
 }
 
-
 int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName)
 {
 #define WAIT_REG_RESULT		(HZ / 5)	/* 200 ms. */
@@ -992,7 +1076,8 @@ int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName)
 
 	BUG_ON(!reg);
 
-	if (!(reg->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB))
+	if (!(reg->flags & (ATH6KL_REG_FALGS_INTERNAL_REGDB |
+				ATH6KL_REG_FALGS_CFG80211_REGDB)))
 		return -EPERM;
 
 	for (i = 0; i < ar->vif_max; i++) {
@@ -1039,5 +1124,86 @@ int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName)
 
 	return 0;
 #undef WAIT_REG_RESULT
+}
+
+#define AR6004_BOARD_DATA_ADDR		0x00400854
+#define AR6004_BOARD_DATA_OFFSET	4
+#define AR6004_RD_OFFSET		20
+
+#define AR6006_BOARD_DATA_ADDR		0x00428854
+#define AR6006_BOARD_DATA_OFFSET	4
+#define AR6006_RD_OFFSET		20
+
+int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode)
+{
+	u8 buf[32];
+	u16 o_sum, o_ver, o_rd, o_rd_next;
+	u32 n_rd, n_sum;
+	u32 bd_addr = 0;
+	int ret;
+	u32 rd_offset, bd_offset;
+
+	/* TODO: check rdcode invalid or not? */
+	if (rdcode == NULL_REG_CODE)
+		return -EINVAL;
+
+	switch (ar->target_type) {
+	case TARGET_TYPE_AR6004:
+		rd_offset = AR6004_RD_OFFSET;
+		bd_offset = AR6004_BOARD_DATA_OFFSET;
+		ret = ath6kl_bmi_read(ar,
+					AR6004_BOARD_DATA_ADDR,
+					(u8 *)&bd_addr,
+					4);
+		break;
+	case TARGET_TYPE_AR6006:
+		rd_offset = AR6006_RD_OFFSET;
+		bd_offset = AR6006_BOARD_DATA_OFFSET;
+		ret = ath6kl_bmi_read(ar,
+					AR6006_BOARD_DATA_ADDR,
+					(u8 *)&bd_addr,
+					4);
+		break;
+	default:
+		ath6kl_err("No support rdcode overwrite! target_type %d\n",
+				ar->target_type);
+		return -EOPNOTSUPP;
+	}
+
+	if (ret)
+		return ret;
+
+	memset(buf, 0, sizeof(buf));
+	ret = ath6kl_bmi_read(ar, bd_addr, buf, sizeof(buf));
+	if (ret)
+		return ret;
+
+	memcpy((u8 *)&o_sum, buf + bd_offset, 2);
+	memcpy((u8 *)&o_ver, buf + bd_offset + 2, 2);
+	memcpy((u8 *)&o_rd, buf + rd_offset, 2);
+	memcpy((u8 *)&o_rd_next, buf + rd_offset + 2, 2);
+
+	ath6kl_dbg(ATH6KL_DBG_REGDB,
+		   "reg set rd_code 0x%x ver 0x%x ori 0x%x-%x\n",
+		   rdcode,
+		   o_ver,
+		   o_rd_next,
+		   o_rd);
+
+	n_rd = (o_rd_next << 16) + rdcode;
+	ret = ath6kl_bmi_write(ar,
+				bd_addr + rd_offset,
+				(u8 *)&n_rd,
+				4);
+	if (ret)
+		return ret;
+
+	n_sum = (o_ver << 16) + (o_sum ^ o_rd ^ rdcode);
+	ret = ath6kl_bmi_write(ar,
+				bd_addr + bd_offset,
+				(u8 *)&n_sum,
+				4);
+
+	return ret;
 }
 

@@ -2175,7 +2175,9 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 				NULL,
 				&rc_2g,
 				&rc_5g,
-				&rc_all);
+				&rc_all,
+				NULL,
+				NULL);
 
 done:
 	if (ret == 0) {
