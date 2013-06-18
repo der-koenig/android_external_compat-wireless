@@ -5532,11 +5532,44 @@ static const struct file_operations fops_ap_admc = {
 };
 
 /* File operation for P2P RecommendChannel */
+static ssize_t ath6kl_p2p_rc_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u32 tmp;
+	int type = 0;
+	u16 freq = 0;
+	char buf[8];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &tmp))
+		return -EINVAL;
+
+	if (tmp == P2P_RC_USER_BLACK_CHAN)
+		type = P2P_RC_USER_BLACK_CHAN;
+	else if (tmp == P2P_RC_USER_WHITE_CHAN)
+		type = P2P_RC_USER_WHITE_CHAN;
+	else if ((tmp >= 2412) && (tmp <= 5825))
+		freq = (u16)tmp;
+	else
+		return -EINVAL;
+
+	ath6kl_p2p_rc_config(ar, freq, (freq ? -1 : type));
+
+	return count;
+}
+
 static ssize_t ath6kl_p2p_rc_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-#define _BUF_SIZE	(1500)
+#define _BUF_SIZE	(2048)
 	struct ath6kl *ar = file->private_data;
 	u8 *buf;
 	unsigned int len = 0;
@@ -5559,6 +5592,7 @@ static ssize_t ath6kl_p2p_rc_read(struct file *file,
 /* debug fs for P2P RecommendChannel. */
 static const struct file_operations fops_p2p_rc = {
 	.read = ath6kl_p2p_rc_read,
+	.write = ath6kl_p2p_rc_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -5947,7 +5981,7 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR,
 				ar->debugfs_phy, ar, &fops_pattern_gen);
 
-	debugfs_create_file("p2p_rc", S_IRUSR,
+	debugfs_create_file("p2p_rc", S_IRUSR | S_IWUSR,
 				ar->debugfs_phy, ar, &fops_p2p_rc);
 
 	debugfs_create_file("hif_rxq_threshold", S_IWUSR,

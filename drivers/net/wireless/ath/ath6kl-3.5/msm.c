@@ -501,12 +501,14 @@ chip_pwd_fail:
 #ifdef ATH6KL_HSIC_RECOVER
 void ath6kl_hsic_rediscovery(void)
 {
+#ifdef ATH6KL_BUS_VOTE
 	mdelay(100);
 	ath6kl_hsic_bind(0);
 
 	/* delay a while */
 	mdelay(1000);
 	ath6kl_hsic_bind(1);
+#endif
 }
 
 #endif
